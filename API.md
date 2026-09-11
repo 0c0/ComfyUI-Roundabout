@@ -494,7 +494,7 @@ call generate_video(prompt="a cat walking in rain", model="minimax-h3-turbo",
 
 ## 9. 注意事项
 
-- **共享端口实现细节**：MCP 的 `streamable-http` 是 Starlette(ASGI)，ComfyUI 网关是 aiohttp，二者无法同端口直挂。最终采用「回环 uvicorn 后端 + aiohttp 原生代理」：客户端只连 ComfyUI 端口的 `/mcp`，代理原样转发 POST/GET(SSE)/DELETE 到内部回环后端（`127.0.0.1`，端口由系统分配；后端监听就绪后代理才注册，因此转发目标始终是真实端口）。
+- **共享端口实现细节**：MCP 的 `streamable-http` 是 Starlette(ASGI)，ComfyUI 网关是 aiohttp，二者无法同端口直挂。最终采用「回环 uvicorn 后端 + aiohttp 原生代理」：客户端只连 ComfyUI 端口的 `/mcp`，代理原样转发 POST/GET(SSE)/DELETE 到内部回环后端（`127.0.0.1`）。<br>**注册时序**：aiohttp 的路由表在 `AppRunner.setup()` 里冻结，之后任何 `add_route` 都抛 `RuntimeError: Cannot register a resource into frozen router`；而后端端口要等 uvicorn bind 成功才知道（可能是 `MCP_PORT=0` 由系统分配，也可能因端口被占而回落）。因此代理路由在**节点 import 期**就注册好（此时必定早于冻结），转发目标先留空、后端就绪后回填端口；这期间到达的 `/mcp` 请求会先等 `READY_WAIT_TIMEOUT`（10s），等到才开始转发，超时则回 `503` + `Retry-After`。
 - **取消 running 任务的副作用**：ComfyUI 无按 id 中断接口，`interrupt` 会中断**当前正在执行**的任务；并发 >1 时需谨慎。
 - **异步任务内存态**：任务表为进程内存，重启 ComfyUI 后未完成任务丢失（可选凭 task_id 缺失判定失败重试）。终态记录保留 6 小时。
 - **图片无异步**：只有视频生成支持 `background/async` 异步模式；图片请求始终同步返回（但仍会在任务表留一条终态记录）。
@@ -507,6 +507,7 @@ call generate_video(prompt="a cat walking in rain", model="minimax-h3-turbo",
 | 启动日志 `MCP gateway: failed to start embedded server: No module named 'mcp'` | ComfyUI 的 Python 未装 `mcp`/`uvicorn`（其自带依赖不含） | 见 [2.1 Python 依赖](#21-python-依赖换机器部署必看)，用运行 ComfyUI 的解释器装，装完重启 |
 | `/mcp` 404 / 连不上 | URL 用了内部回环端口；或 MCP 被显式关闭（`.env` 里 `MCP_ENABLED=false`）；或后端端口绑定失败（启动日志出现 `backend server stopped`） | URL 用 **ComfyUI 对外端口** + `/mcp`；删掉该行或改成 `true` 后重启 |
 | 日志反复出现 `Error handling request from <客户端IP>`，后面拖一整段 traceback | **看 traceback 最后一行**：<br>· `ClientConnectionResetError: Cannot write to closing transport` → MCP 客户端在 SSE 长连接上断开（长任务超时或重连后，服务端仍在往那条旧连接写通知）。**属常态，不是故障**<br>· `ClientConnectorError: Cannot connect to host 127.0.0.1:<port>` → 内部 MCP 后端没起来，代理转发失败 | 前者：代理层已把这类断开降为 DEBUG，更新代码即不再刷屏<br>后者：查启动日志 `ComfyUI port <N> -> MCP backend port <M>`，核对 `MCP_PORT` / `MCP_PORT_MAP` 与本实例 `--port` 是否对得上 |
+| 启动日志 `MCP gateway: on_ready callback failed: Cannot register a resource into frozen router` | 代理路由注册晚于 ComfyUI 冻结 aiohttp 路由表（旧版本在拿到后端端口后才 `add_route`） | 更新到当前代码即可（路由改为 import 期注册、端口后回填）。若仍出现，说明有别的节点/代码在 ComfyUI 起服务后才 import 本节点，或改用 `MCP_SHARE_PORT=false` 走独立端口 |
 | MCP 握手成功但工具列表为空 | 后端 uvicorn 未起来（上一行日志） | 同上；确认启动日志出现 `MCP gateway: embedded streamable-http shared on ComfyUI port` |
 | 访问远程 IP 不通（如 `:20003`）但本机 `127.0.0.1` 正常 | ComfyUI 未加 `--listen 0.0.0.0`，或反代未放行 SSE（`text/event-stream`）长连接 | 启动加 `--listen 0.0.0.0`；反代关闭缓冲、放行 `Accept: text/event-stream` |
 | 生成后 `url` 是相对路径 | 未设 `PUBLIC_BASE_URL` 且请求 host 不可达客户端 | 设 `PUBLIC_BASE_URL=http://<对外地址>` |

@@ -720,7 +720,54 @@ def start_embedded_task(
 
 
 # ------------------------------------------------------------------ 与 ComfyUI 同端口（aiohttp 原生代理）
-def register_share_port_proxy(aiohttp_app, backend_url: str, path: str = "/mcp") -> None:
+# 后端就绪前的 /mcp 请求最多等这么久，超过才回 503。MCP 客户端通常只在会话开始时
+# 连一次，ComfyUI 启动窗口内等它一下，比直接拒绝（客户端往往不重试）体验好得多。
+READY_WAIT_TIMEOUT = 10.0
+
+
+class BackendTarget:
+    """共享端口代理的转发目标，允许先建后填。
+
+    为什么需要它：aiohttp 的路由表在 `AppRunner.setup()` 里就被冻结
+    （`app.freeze()`），此后任何 `add_route` 都会抛
+    `RuntimeError: Cannot register a resource into frozen router`。
+    而后端端口要等 uvicorn 真正 bind 成功才知道（MCP_PORT=0 由系统分配、
+    配好的端口被占还会回落）。所以拆成两步——路由赶在冻结前注册好，转发目标
+    留空，等 on_ready 回填；`_proxy` 每次请求现读 `url`，自然看到最新值，
+    并且在拿到之前会先 `wait_ready()` 等一小会儿。
+    """
+
+    def __init__(self, url: str | None = None) -> None:
+        self._url = url
+        self._ready = asyncio.Event()
+        if url:
+            self._ready.set()
+
+    @property
+    def url(self) -> str | None:
+        return self._url
+
+    @url.setter
+    def url(self, value: str | None) -> None:
+        self._url = value
+        if value:
+            self._ready.set()
+
+    async def wait_ready(self, timeout: float = READY_WAIT_TIMEOUT) -> bool:
+        """等后端回填端口。超时返回 False（后端没起来，调用方负责回 503）。"""
+        try:
+            await asyncio.wait_for(self._ready.wait(), timeout)
+            return True
+        except (asyncio.TimeoutError, TimeoutError):
+            return False
+
+
+def register_share_port_proxy(
+    aiohttp_app,
+    backend_url: str | None = None,
+    path: str = "/mcp",
+    ready_timeout: float = READY_WAIT_TIMEOUT,
+) -> BackendTarget:
     """把内部 uvicorn MCP 后端通过 aiohttp 原生代理暴露到 ComfyUI 同一端口。
 
     背景：MCP SDK 的 streamable-http 传输是 Starlette（ASGI）实现的，而 ComfyUI
@@ -731,11 +778,32 @@ def register_share_port_proxy(aiohttp_app, backend_url: str, path: str = "/mcp")
     aiohttp 原生 StreamResponse 的 SSE 流式是可靠的（见节点内验证）。
 
     POST / GET(SSE) / DELETE 全部按原样转发，响应头/流式体原样回传。
+
+    backend_url 建议留空：调用方先在 ComfyUI 冻结路由表之前把路由挂上（把返回的
+    BackendTarget 存起来），等后端报告端口后再写 `target.url`。显式传入则立即生效
+    （便于测试与其它嵌入场景）。
     """
     from aiohttp import ClientError, ClientSession, web
 
+    holder = BackendTarget(backend_url)
+
     async def _proxy(request: web.Request) -> web.StreamResponse:
-        target = backend_url.rstrip("/") + request.path
+        backend = holder.url
+        if not backend:
+            # 路由注册早于后端就绪（这是刻意的，见上），启动窗口内的请求会落在这里。
+            # 先等后端一小会儿：MCP 客户端一般只连一次，直接 503 等于让它失败。
+            if not await holder.wait_ready(ready_timeout):
+                log.debug(
+                    "MCP gateway: %s requested before the internal backend reported its port",
+                    request.path,
+                )
+                return web.Response(
+                    status=503,
+                    text="MCP backend not ready yet (Roundabout is still starting).",
+                    headers={"Retry-After": "1"},
+                )
+            backend = holder.url
+        target = backend.rstrip("/") + request.path
         headers = {
             k: v
             for k, v in request.headers.items()
@@ -771,7 +839,7 @@ def register_share_port_proxy(aiohttp_app, backend_url: str, path: str = "/mcp")
             if resp is None:
                 log.warning(
                     "MCP gateway: upstream %s dropped the connection before reply: %s",
-                    backend_url, exc,
+                    backend, exc,
                 )
                 return web.Response(status=502, text="MCP backend unavailable")
             log.debug(
@@ -784,14 +852,19 @@ def register_share_port_proxy(aiohttp_app, backend_url: str, path: str = "/mcp")
             log.warning(
                 "MCP gateway: upstream backend %s unreachable (%s); "
                 "check MCP_PORT / MCP_PORT_MAP for this instance",
-                backend_url, exc,
+                backend, exc,
             )
             return web.Response(status=502, text="MCP backend unavailable")
 
     aiohttp_app.router.add_route("*", path, _proxy)
     if not path.endswith("/"):
         aiohttp_app.router.add_route("*", path + "/{tail:.*}", _proxy)
-    log.info("MCP gateway: shared-port proxy registered at %s -> %s", path, backend_url)
+    log.info(
+        "MCP gateway: shared-port proxy registered at %s (backend %s)",
+        path,
+        backend_url or "pending — filled in once the embedded backend binds",
+    )
+    return holder
 
 
 if __name__ == "__main__":

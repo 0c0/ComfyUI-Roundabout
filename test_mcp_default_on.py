@@ -5,8 +5,8 @@
     （用户克隆下来、装完依赖、重启 ComfyUI 就应该有 /mcp），而 get 一个 bool 是测
     不出「嵌入式 server 能不能真起来」的。本测试按节点在 ComfyUI 里的真实路径跑一遍：
     伪造 PromptServer.instance.app（真实 aiohttp Application）→ 以包形式导入节点
-    __init__.py（会注册 REST 路由 + 拉起嵌入式 MCP + 后端就绪后挂共享端口代理）→ 用真实 HTTP
-    打一发 MCP initialize / tools/list。
+    __init__.py（会注册 REST 路由 + 拉起嵌入式 MCP + 在路由表冻结前挂好共享端口代理）
+    → 用真实 HTTP 打一发 MCP initialize / tools/list。
 
     刻意把 MCP_ENABLED / MCP_PORT 置空字符串：既挡住 .env 的覆盖，又让 config 走代码
     默认值，因此断言通过 = 「代码默认就是开的、端口默认就是自动分配」这两件事成立。
@@ -110,12 +110,10 @@ async def main() -> int:
     def _routes() -> set:
         return {r.resource.canonical for r in app.router.routes() if r.resource is not None}
 
-    # 代理要等内部后端 bind 成功后才注册（端口由系统分配，事先不知道），故轮询等待
-    for _ in range(60):
-        if PATH in _routes():
-            break
-        await asyncio.sleep(0.1)
-    check("共享端口代理已注册 /mcp（后端就绪后）", PATH in _routes(),
+    # 代理路由必须在节点 import 期就注册好，不能等后端就绪再 add_route：aiohttp 在
+    # AppRunner.setup() 里冻结路由表，之后注册会抛
+    # 「Cannot register a resource into frozen router」（见 test_mcp_proxy_frozen_router.py）。
+    check("共享端口代理在 import 期已注册 /mcp", PATH in _routes(),
           str(sorted(_routes()))[:160])
 
     runner = web.AppRunner(app)

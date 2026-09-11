@@ -88,6 +88,12 @@ except Exception as exc:  # noqa: BLE001
 # 显式 MCP_PORT 优先，其次是 MCP_PORT_MAP 按本实例 ComfyUI 端口映射出的值
 # （如 [8188,888],[8189,999]），都没命中则交给操作系统分配。因此同一台机器同时跑
 # 多个 ComfyUI 实例（各自 --port 不同）时，各实例的 MCP 后端互不抢端口。
+#
+# 注意本函数必须在 **ComfyUI 冻结路由表之前** 调用（节点 import 期即可，见文件末尾）。
+# aiohttp 在 AppRunner.setup() 里 freeze 路由表，之后 add_route 一律抛
+# 「Cannot register a resource into frozen router」；而后端端口要等 uvicorn bind
+# 成功才知道，所以共享端口模式分两步：这里先把 /mcp 路由挂上（目标留空），后端就绪
+# 后再回填真实端口。
 def _maybe_start_embedded_mcp() -> None:
     if not settings.mcp_enabled:
         return
@@ -99,12 +105,32 @@ def _maybe_start_embedded_mcp() -> None:
         os.environ["ROUNDABOUT_MCP_EMBEDDED"] = "1"
         from . import mcp_server
 
+        # 共享端口模式：路由先注册，端口后回填（此时 ComfyUI 尚未冻结路由表）。
+        proxy_target = None
+        if settings.mcp_share_port:
+            try:
+                proxy_target = mcp_server.register_share_port_proxy(
+                    PromptServer.instance.app, path=settings.mcp_path
+                )
+            except RuntimeError as exc:
+                # 路由表已冻结：本节点 import 得太晚，/mcp 挂不上 ComfyUI 端口。
+                log.error(
+                    "MCP gateway: cannot register %s on the ComfyUI port (%s). "
+                    "The proxy route must be added before ComfyUI starts its server; "
+                    "set MCP_SHARE_PORT=false to fall back to a standalone MCP port.",
+                    settings.mcp_path, exc,
+                )
+
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
             loop = None
         if loop is None or not loop.is_running():
-            log.warning("MCP gateway: no running event loop yet; skip embedded start (MCP_ENABLED is on)")
+            log.warning(
+                "MCP gateway: no running event loop yet; skip embedded start (MCP_ENABLED is on). "
+                "%s will answer 503 until the backend runs.",
+                settings.mcp_path if proxy_target is not None else "MCP",
+            )
             return
 
         # 内部后端：共享端口模式只绑回环（外部入口是 ComfyUI 端口的代理），
@@ -119,23 +145,20 @@ def _maybe_start_embedded_mcp() -> None:
         )
 
         def _on_backend_ready(actual_port) -> None:
-            """监听就绪后才知道真实端口（端口可能配的是 0，由系统分配，
-            或配的端口被占用后回落到随机端口），共享端口模式的 /mcp 代理
-            必须等到这个端口才能确定转发目标。"""
+            """监听就绪后才知道真实端口（端口可能配的是 0 由系统分配，或配好的
+            端口被占用后回落到随机端口）。共享端口模式下只需把真实地址写回
+            已注册的代理目标——**绝不能在这里碰路由表**，那时它早已冻结。"""
             if not actual_port:
                 log.error(
                     "MCP gateway: embedded backend never bound a port; /mcp is not served "
                     "(set MCP_ENABLED=false to silence, or check MCP_PORT / MCP_PORT_MAP)"
                 )
                 return
-            if settings.mcp_share_port:
-                backend_url = f"http://127.0.0.1:{actual_port}"
-                mcp_server.register_share_port_proxy(
-                    PromptServer.instance.app, backend_url, settings.mcp_path
-                )
+            if proxy_target is not None:
+                proxy_target.url = f"http://127.0.0.1:{actual_port}"
                 log.info(
                     "MCP gateway: embedded streamable-http shared on ComfyUI port (internal backend %s%s)",
-                    backend_url, settings.mcp_path,
+                    proxy_target.url, settings.mcp_path,
                 )
             else:
                 log.info(
