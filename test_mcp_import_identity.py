@@ -23,7 +23,7 @@ for p in (ROOT, NODE):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-# 节点 __init__.py 会读 MCP_ENABLED；关掉以免真的去抢 8189 端口
+# 节点 __init__.py 会读 MCP_ENABLED；关掉以免真的去起嵌入式 MCP 后端
 os.environ["MCP_ENABLED"] = "false"
 
 # 伪造 ComfyUI 的 server 模块：节点启动时会给 PromptServer.instance.app 注册路由

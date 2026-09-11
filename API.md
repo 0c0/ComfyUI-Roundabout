@@ -18,7 +18,8 @@
    MCP 客户端   ──/mcp──▶ │   aiohttp 原生代理 (MCP_SHARE_PORT=true)       │
                           │        │  转发 POST/GET(SSE)/DELETE          │
                           │        ▼                                     │
-                          │   内部 uvicorn (127.0.0.1:8189, streamable-http)
+                          │   内部 uvicorn (127.0.0.1, streamable-http)   │
+                          │        端口由系统分配或按映射表指定          │
                           │        = MCP Server (12 tools)               │
                           └───────────────┬──────────────────────────────┘
                                           │ 复用
@@ -29,9 +30,9 @@
 ```
 
 - **REST 网关**：注册在 ComfyUI 自己的 aiohttp 上，监听 ComfyUI 端口（默认 `8188`）。
-- **MCP 网关（嵌入）**：在 ComfyUI 进程内以 `streamable-http` 起一个 uvicorn 后端。
-  - `MCP_SHARE_PORT=true`（默认）：通过 aiohttp 原生代理把 `/mcp` 挂在 **ComfyUI 同一端口**（`http://host:8188/mcp`）。内部 uvicorn 只绑 `127.0.0.1:8189` 回环。
-  - `MCP_SHARE_PORT=false`：客户端直连 `http://MCP_HOST:MCP_PORT/mcp`（默认 `127.0.0.1:8189`）。
+- **MCP 网关（嵌入）**：在 ComfyUI 进程内以 `streamable-http` 起一个 uvicorn 后端。后端端口按 `MCP_PORT` → `MCP_PORT_MAP` → 系统分配的顺序解析（见 §2.3）——同一台机器同时跑多个 ComfyUI 实例（各自 `--port` 不同）时，各实例的 MCP 后端各占各的端口，不会互抢；配置的端口被别的程序占用时会回落到空闲端口并在日志告警；实际端口在监听就绪后写入启动日志。
+  - `MCP_SHARE_PORT=true`（默认）：通过 aiohttp 原生代理把 `/mcp` 挂在 **ComfyUI 同一端口**（`http://host:8188/mcp`）。内部 uvicorn 只绑 `127.0.0.1` 回环。
+  - `MCP_SHARE_PORT=false`：客户端直连 `http://MCP_HOST:<MCP_PORT>/mcp`；此时建议用 `MCP_PORT` 或 `MCP_PORT_MAP` 把端口钉死（对外可预期），否则端口由系统分配、以启动日志为准。
 - **共用**：模型注册表、生成链路、异步任务表全部共享。通过 MCP 提交的异步任务能在 REST 队列监控里看到，反之亦然。
 
 ---
@@ -83,7 +84,7 @@ python\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-Roundabout\requ
 节点在 ComfyUI 启动时自动：加载 `models.yaml` → 注册 `/v1/*` 路由 → 拉起 MCP 后端并挂载代理（`MCP_ENABLED` 默认 `true`；设为 `false` 则跳过）。
 
 > **MCP 地址 = ComfyUI 自身的地址 + `/mcp`**，没有独立端口。ComfyUI 跑在 `192.168.1.10:20003`（经 `--port 20003` 或反代），MCP 端点就是 `http://192.168.1.10:20003/mcp`。
-> 共享端口模式下不存在对外可访问的 8189——8189 只是进程内回环后端。
+> 共享端口模式下内部后端不对外暴露——它只绑 `127.0.0.1` 回环，端口由 `MCP_PORT` / `MCP_PORT_MAP` 决定（默认交给系统分配），客户端一律只连 ComfyUI 端口。
 
 ### 2.3 节点根目录 `.env`（手写最小 dotenv，仅补充未设置的环境变量）
 
@@ -91,7 +92,8 @@ python\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-Roundabout\requ
 |---|---|---|
 | `MCP_ENABLED` | `true` | 嵌入式 MCP 网关（**默认开**）；设 `false` 关闭，同时可省掉 `mcp`/`uvicorn` 依赖 |
 | `MCP_SHARE_PORT` | `true` | true=挂到 ComfyUI 同端口；false=独立端口直连 |
-| `MCP_PORT` | `8189` | 内部 uvicorn 端口 |
+| `MCP_PORT` | `0` | 内部 uvicorn 回环端口；留空/`0` = 由系统分配空闲端口 |
+| `MCP_PORT_MAP` | 空 | 固定端口映射，成对书写「ComfyUI 端口,Roundabout 端口」，如 `[8188,888],[8189,999]`；按本实例的 `--port` 取值，未命中回落系统分配；**优先级低于 `MCP_PORT`** |
 | `MCP_PATH` | `/mcp` | MCP 端点路径 |
 | `MCP_HOST` | `127.0.0.1` | `MCP_SHARE_PORT=false` 时的绑定地址 |
 | `COMFY_BASE_URL` | 自动取 ComfyUI `--listen/--port` | 覆盖后端指向（指向另一个 ComfyUI 实例） |
@@ -390,7 +392,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 **默认启用**（`MCP_ENABLED` 默认 `true`）：装好 `mcp` / `uvicorn`、重启 ComfyUI 即可用，不需要任何配置。
 
-传输：`streamable-http`，端点 `/mcp`（共享端口挂在 ComfyUI 端口，或 `MCP_HOST:MCP_PORT` 独立）。与 REST 完全互通。
+传输：`streamable-http`，端点 `/mcp`（共享端口挂在 ComfyUI 端口，或 `MCP_HOST:<MCP_PORT>` 独立，端口由 `MCP_PORT` / `MCP_PORT_MAP` 决定）。与 REST 完全互通。
 
 工具分三类：**生成**（`generate_image` / `edit_image` / `remove_background` / `generate_video`）、**查询与控制**（`list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health`）、**运维**（`reload` / `get_view_url`）。
 
@@ -489,7 +491,7 @@ call generate_video(prompt="a cat walking in rain", model="minimax-h3-turbo",
 
 ## 9. 注意事项
 
-- **共享端口实现细节**：MCP 的 `streamable-http` 是 Starlette(ASGI)，ComfyUI 网关是 aiohttp，二者无法同端口直挂。最终采用「回环 uvicorn 后端 + aiohttp 原生代理」：客户端只连 ComfyUI 端口的 `/mcp`，代理原样转发 POST/GET(SSE)/DELETE 到内部 `127.0.0.1:8189`。
+- **共享端口实现细节**：MCP 的 `streamable-http` 是 Starlette(ASGI)，ComfyUI 网关是 aiohttp，二者无法同端口直挂。最终采用「回环 uvicorn 后端 + aiohttp 原生代理」：客户端只连 ComfyUI 端口的 `/mcp`，代理原样转发 POST/GET(SSE)/DELETE 到内部回环后端（`127.0.0.1`，端口由系统分配；后端监听就绪后代理才注册，因此转发目标始终是真实端口）。
 - **取消 running 任务的副作用**：ComfyUI 无按 id 中断接口，`interrupt` 会中断**当前正在执行**的任务；并发 >1 时需谨慎。
 - **异步任务内存态**：任务表为进程内存，重启 ComfyUI 后未完成任务丢失（可选凭 task_id 缺失判定失败重试）。终态记录保留 6 小时。
 - **图片无异步**：只有视频生成支持 `background/async` 异步模式；图片请求始终同步返回（但仍会在任务表留一条终态记录）。
@@ -500,7 +502,7 @@ call generate_video(prompt="a cat walking in rain", model="minimax-h3-turbo",
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | 启动日志 `MCP gateway: failed to start embedded server: No module named 'mcp'` | ComfyUI 的 Python 未装 `mcp`/`uvicorn`（其自带依赖不含） | 见 [2.1 Python 依赖](#21-python-依赖换机器部署必看)，用运行 ComfyUI 的解释器装，装完重启 |
-| `/mcp` 404 / 连不上 | URL 用了内部回环端口 8189；或 MCP 被显式关闭（`.env` 里 `MCP_ENABLED=false`） | URL 用 **ComfyUI 对外端口** + `/mcp`；删掉该行或改成 `true` 后重启 |
+| `/mcp` 404 / 连不上 | URL 用了内部回环端口；或 MCP 被显式关闭（`.env` 里 `MCP_ENABLED=false`）；或后端端口绑定失败（启动日志出现 `backend server stopped`） | URL 用 **ComfyUI 对外端口** + `/mcp`；删掉该行或改成 `true` 后重启 |
 | MCP 握手成功但工具列表为空 | 后端 uvicorn 未起来（上一行日志） | 同上；确认启动日志出现 `MCP gateway: embedded streamable-http shared on ComfyUI port` |
 | 访问远程 IP 不通（如 `:20003`）但本机 `127.0.0.1` 正常 | ComfyUI 未加 `--listen 0.0.0.0`，或反代未放行 SSE（`text/event-stream`）长连接 | 启动加 `--listen 0.0.0.0`；反代关闭缓冲、放行 `Accept: text/event-stream` |
 | 生成后 `url` 是相对路径 | 未设 `PUBLIC_BASE_URL` 且请求 host 不可达客户端 | 设 `PUBLIC_BASE_URL=http://<对外地址>` |

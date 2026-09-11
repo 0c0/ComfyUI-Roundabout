@@ -7,12 +7,16 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
 # 节点根目录（gateway/..）
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+log = logging.getLogger("roundabout.config")
 
 
 def _load_dotenv(path: Path = BASE_DIR / ".env") -> None:
@@ -78,6 +82,34 @@ def _env_list(key: str) -> list[str]:
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
+# 端口映射串里的整数：只关心数字，括号/冒号/等号/箭头等分隔符一律忽略，
+# 因此 `[8188,888],[8189,999]`、`8188:888,8189:999`、`8188=888;8189=999`
+# 三种写法解析结果完全相同。
+_PORT_NUM_RE = re.compile(r"\d+")
+
+
+def parse_port_map(raw: str) -> dict[int, int]:
+    """解析「ComfyUI 端口 -> MCP 端口」映射表。
+
+    语义是**成对**的：每两个数字一组，左边是 ComfyUI 的 `--port`，右边是该实例
+    的 Roundabout(MCP) 端口，顺序敏感。举例：
+        [8188,888],[8189,999]   → {8188: 888, 8189: 999}
+        8188:888, 8189:999      → 同上
+    只取串中的整数再两两成组，故分隔符随便写；落单的最后一个数字会被丢弃。
+    """
+    nums = [int(x) for x in _PORT_NUM_RE.findall(raw or "")]
+    if len(nums) % 2:
+        log.warning(
+            "MCP_PORT_MAP: ignored trailing value without a pair (need comfy_port,mcp_port): %r", raw
+        )
+        nums = nums[:-1]
+    return {nums[i]: nums[i + 1] for i in range(0, len(nums), 2)}
+
+
+def _env_port_map(key: str) -> dict[int, int]:
+    return parse_port_map(_env(key, ""))
+
+
 def _resolve(p: str) -> Path:
     path = Path(p)
     return path if path.is_absolute() else (BASE_DIR / p)
@@ -118,6 +150,50 @@ def _default_comfy_base_url() -> str:
         return "http://127.0.0.1:8188"
 
 
+def _comfy_port() -> int:
+    """本机这个 ComfyUI 实例的监听端口（即 `--port`）。
+
+    节点跑在 ComfyUI 进程内，端口与 ComfyUI 同源：先看 PromptServer 是否已经
+    完成绑定（`PromptServer.instance.port`，绑定后才有），否则退回命令行参数
+    `server.args.port`（节点导入时就能拿到），都取不到时按 ComfyUI 默认 8188。
+    自定义节点是在服务开始监听之前加载的，所以正常情况下走的是第二条。
+    """
+    try:
+        from server import PromptServer  # type: ignore
+
+        bound = getattr(getattr(PromptServer, "instance", None), "port", None)
+        if bound:
+            return int(bound)
+    except Exception:  # noqa: BLE001 - server 不可用时回落
+        pass
+    try:
+        from server import args  # type: ignore
+
+        port = getattr(args, "port", None)
+        if port:
+            return int(port)
+    except Exception:  # noqa: BLE001
+        pass
+    return 8188
+
+
+def resolve_mcp_port(
+    port_map: dict[int, int], explicit_port: int = 0, comfy_port: int | None = None
+) -> int:
+    """算出嵌入式 MCP 后端应该绑哪个端口。
+
+    优先级（自上而下，先命中先用）：
+      1. `MCP_PORT` > 0：手动钉死一个端口，最强覆盖；
+      2. `MCP_PORT_MAP` 命中当前 ComfyUI 端口：例如 8188 的实例用 888、
+         8189 的实例用 999 —— 同一台机器跑多个 ComfyUI 实例时各占各的；
+      3. 0：交给操作系统分配空闲端口，保证任何配置下都能起来。
+    """
+    if explicit_port:
+        return explicit_port
+    port = _comfy_port() if comfy_port is None else comfy_port
+    return port_map.get(port, 0)
+
+
 @dataclass(frozen=True)
 class Settings:
     # ---- ComfyUI 后端（默认本机 loopback；可用 COMFY_BASE_URL 覆盖指向远端）----
@@ -141,11 +217,30 @@ class Settings:
     # （同时可省掉 mcp / uvicorn 这两个依赖）。
     mcp_enabled: bool = field(default_factory=lambda: _env_bool("MCP_ENABLED", True))
     mcp_host: str = field(default_factory=lambda: _env("MCP_HOST", "127.0.0.1"))
-    mcp_port: int = field(default_factory=lambda: _env_int("MCP_PORT", 8189))
+    # 内部 uvicorn 后端端口。留空/0（默认）= 由操作系统分配空闲端口——同一台机器上
+    # 同时跑多个 ComfyUI 实例（各自 --port 不同）时，每个实例的 MCP 后端各占各的端口，
+    # 不会像写死端口那样后来者绑不上；实际端口在监听成功后由节点写入日志。
+    mcp_port: int = field(default_factory=lambda: _env_int("MCP_PORT", 0))
+    # 「ComfyUI 端口 -> Roundabout(MCP) 端口」映射，成对书写，顺序敏感：
+    #   MCP_PORT_MAP=[8188,888],[8189,999]
+    # 启动时按本实例的 ComfyUI 端口取右边那个值来绑定，于是 --port 8188 的实例用 888、
+    # --port 8189 的实例用 999，同机多开互不干扰；未命中则回落到系统分配。
+    # 优先级低于显式 MCP_PORT（二者同时设置时 MCP_PORT 生效）。
+    mcp_port_map: dict[int, int] = field(default_factory=lambda: _env_port_map("MCP_PORT_MAP"))
     mcp_path: str = field(default_factory=lambda: _env("MCP_PATH", "/mcp"))
     # true（默认）：MCP 端点通过 aiohttp 原生代理挂到 ComfyUI 同一端口（如 8188/mcp），
     # 内部 uvicorn 后端只绑定 127.0.0.1 回环；false：客户端直连 MCP_HOST:MCP_PORT。
     mcp_share_port: bool = field(default_factory=lambda: _env_bool("MCP_SHARE_PORT", True))
+
+    @property
+    def comfy_port(self) -> int:
+        """本实例的 ComfyUI 端口（映射表的左值）。"""
+        return _comfy_port()
+
+    @property
+    def resolved_mcp_port(self) -> int:
+        """实际要绑定的 MCP 后端端口：见 resolve_mcp_port() 的优先级说明。"""
+        return resolve_mcp_port(self.mcp_port_map, self.mcp_port)
 
     # ---- 鉴权 ----
     api_keys: list[str] = field(default_factory=lambda: _env_list("OPENAI_GATEWAY_API_KEYS"))

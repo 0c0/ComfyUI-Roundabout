@@ -83,7 +83,11 @@ except Exception as exc:  # noqa: BLE001
 # 若启用（MCP_ENABLED=true），在 ComfyUI 事件循环中后台拉起 MCP streamable-http
 # server，与 REST 网关同进程共享 task_store/registry。默认（MCP_SHARE_PORT=true）
 # 通过 aiohttp 原生代理把 /mcp 暴露在 ComfyUI 同一端口上，内部 uvicorn 后端只绑
-# 127.0.0.1 回环；MCP_SHARE_PORT=false 时客户端直连 http://<host>:8189/mcp。
+# 127.0.0.1 回环；MCP_SHARE_PORT=false 时客户端直连 MCP_HOST:MCP_PORT。
+# 内部后端端口由 MCP_PORT / MCP_PORT_MAP 决定（见 gateway.config.resolve_mcp_port）：
+# 显式 MCP_PORT 优先，其次是 MCP_PORT_MAP 按本实例 ComfyUI 端口映射出的值
+# （如 [8188,888],[8189,999]），都没命中则交给操作系统分配。因此同一台机器同时跑
+# 多个 ComfyUI 实例（各自 --port 不同）时，各实例的 MCP 后端互不抢端口。
 def _maybe_start_embedded_mcp() -> None:
     if not settings.mcp_enabled:
         return
@@ -106,23 +110,49 @@ def _maybe_start_embedded_mcp() -> None:
         # 内部后端：共享端口模式只绑回环（外部入口是 ComfyUI 端口的代理），
         # 独立端口模式按 MCP_HOST 配置绑定。
         backend_host = "127.0.0.1" if settings.mcp_share_port else settings.mcp_host
+        # 端口映射：MCP_PORT > MCP_PORT_MAP[本实例 ComfyUI 端口] > 系统分配
+        mcp_port = settings.resolved_mcp_port
+        log.info(
+            "MCP gateway: ComfyUI port %s -> MCP backend port %s",
+            settings.comfy_port,
+            mcp_port or "auto (OS-assigned)",
+        )
+
+        def _on_backend_ready(actual_port) -> None:
+            """监听就绪后才知道真实端口（端口可能配的是 0，由系统分配，
+            或配的端口被占用后回落到随机端口），共享端口模式的 /mcp 代理
+            必须等到这个端口才能确定转发目标。"""
+            if not actual_port:
+                log.error(
+                    "MCP gateway: embedded backend never bound a port; /mcp is not served "
+                    "(set MCP_ENABLED=false to silence, or check MCP_PORT / MCP_PORT_MAP)"
+                )
+                return
+            if settings.mcp_share_port:
+                backend_url = f"http://127.0.0.1:{actual_port}"
+                mcp_server.register_share_port_proxy(
+                    PromptServer.instance.app, backend_url, settings.mcp_path
+                )
+                log.info(
+                    "MCP gateway: embedded streamable-http shared on ComfyUI port (internal backend %s%s)",
+                    backend_url, settings.mcp_path,
+                )
+            else:
+                log.info(
+                    "MCP gateway: embedded streamable-http on http://%s:%s%s",
+                    settings.mcp_host, actual_port, settings.mcp_path,
+                )
+
         loop.create_task(
             mcp_server.serve_embedded(
-                host=backend_host, port=settings.mcp_port, path=settings.mcp_path
+                host=backend_host,
+                port=mcp_port,
+                path=settings.mcp_path,
+                on_ready=_on_backend_ready,
+                # 配好的映射端口被别的程序占了也别让端点失效：退回系统分配。
+                fallback_auto=True,
             )
         )
-        if settings.mcp_share_port:
-            backend_url = f"http://127.0.0.1:{settings.mcp_port}"
-            mcp_server.register_share_port_proxy(PromptServer.instance.app, backend_url, settings.mcp_path)
-            log.info(
-                "MCP gateway: embedded streamable-http shared on ComfyUI port (internal backend %s%s)",
-                backend_url, settings.mcp_path,
-            )
-        else:
-            log.info(
-                "MCP gateway: starting embedded streamable-http on http://%s:%s%s",
-                settings.mcp_host, settings.mcp_port, settings.mcp_path,
-            )
     except ModuleNotFoundError as exc:
         # 最常见失败：ComfyUI 的 python 没装 mcp/uvicorn（ComfyUI 自带依赖不含它们）。
         # 给出可直接照抄的修复命令，避免再去翻文档。

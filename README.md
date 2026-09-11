@@ -288,11 +288,23 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 |---|---|---|
 | `MCP_ENABLED` | `true` | 嵌入式 MCP 网关（默认开；设 `false` 关掉，同时可省掉 `mcp`/`uvicorn` 依赖） |
 | `MCP_SHARE_PORT` | `true` | MCP 挂到 ComfyUI 同端口（`/mcp`）；`false` 则用 `MCP_PORT` 独立端口 |
+| `MCP_PORT` | `0` | 内部回环后端端口；留空/`0` = 系统分配空闲端口（实际端口见启动日志） |
+| `MCP_PORT_MAP` | 空 | 固定端口映射，按「ComfyUI 端口 → Roundabout 端口」成对写：`[8188,888],[8189,999]`。同机多开时按各实例的 `--port` 取各自端口；未命中回落系统分配；设了 `MCP_PORT` 则以其为准 |
 | `DEFAULT_MODEL` | `models.yaml` 内值 | 默认模型（优先级高于 YAML） |
 | `OPENAI_GATEWAY_API_KEYS` | 空 | 填了才启用鉴权（逗号分隔多 key） |
 | `PUBLIC_BASE_URL` | 空 | 产物 `url` 绝对化基准，**远程部署必填** |
 | `MAX_CONCURRENCY` | `2` | 并发生成上限 |
 | `JOB_TIMEOUT` / `OUTPUT_TTL` | `300` / `3600` | 任务超时（秒）/ `url` 产物存活期（秒） |
+
+### 同机跑多个 ComfyUI 实例
+
+Roundabout 随 ComfyUI 进程启动，每个实例都有自己的 MCP 后端。如果想让端口可预期（防火墙放行、日志好认），用映射表把「ComfyUI 端口 → Roundabout 端口」一一对上：
+
+```env
+MCP_PORT_MAP=[8188,888],[8189,999]
+```
+
+于是 `--port 8188` 的实例用 `888`、`--port 8189` 的实例用 `999`，互不干扰。不配映射也不会冲突（自动分配空闲端口），配了映射更可控；映射端口恰好被别的程序占用时会自动回落到空闲端口并在日志里告警，端点不会因此失效。
 
 ---
 

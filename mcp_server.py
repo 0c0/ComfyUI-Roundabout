@@ -13,9 +13,11 @@ task_store 异步任务表、ComfyClient 后端客户端），本文件只做协
     或按 MCP 客户端约定配置为外部命令：
        {"command": "<comfyui-python>", "args": ["<路径>/mcp_server.py"]}
 2) 嵌入 ComfyUI 进程（streamable-http，与 REST 网关共享 task_store/registry）：
-       由节点 __init__.py 在启动时自动拉起，端口/路径见环境变量
-       MCP_PORT（默认 8189）/ MCP_PATH（默认 /mcp）。客户端连接
-       http://<host>:<port>/mcp 即可，提交/轮询与 REST 网关完全互通。
+       由节点 __init__.py 在启动时自动拉起，路径见 MCP_PATH（默认 /mcp），内部
+       后端端口见 MCP_PORT / MCP_PORT_MAP（都留空时由系统分配空闲端口，同机多
+       实例并存不抢端口）。
+       默认 MCP_SHARE_PORT=true 时客户端连 http://<comfyui-host>:<comfyui-port>/mcp
+       即可，提交/轮询与 REST 网关完全互通。
 
 工具清单：
     list_models       列出可用模型（模式 / 能力 / 默认参数）
@@ -600,28 +602,121 @@ def main() -> None:
 
 
 # ------------------------------------------------------------------ 嵌入 ComfyUI 进程
-async def serve_embedded(host: str = "127.0.0.1", port: int = 8189, path: str = "/mcp") -> None:
+def _bound_port(server) -> int | None:
+    """从已启动的 uvicorn Server 上读回实际监听端口。
+
+    port=0 时端口由操作系统分配，只有在 bind 成功之后才知道具体是哪一个。
+    """
+    for srv in getattr(server, "servers", None) or []:
+        for sock in getattr(srv, "sockets", None) or []:
+            try:
+                return int(sock.getsockname()[1])
+            except Exception:  # noqa: BLE001 - socket 已关闭等情况直接跳过
+                continue
+    return None
+
+
+async def _report_bound_port(server, report) -> None:
+    """等 uvicorn 完成绑定，再把实际端口交给 report()。"""
+    try:
+        while not server.started and not server.should_exit:
+            await asyncio.sleep(0.05)
+        report(_bound_port(server) if server.started else None)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        log.warning("MCP gateway: failed to determine backend port: %s", exc)
+        report(None)
+
+
+async def serve_embedded(
+    host: str = "127.0.0.1",
+    port: int = 0,
+    path: str = "/mcp",
+    on_ready=None,
+    fallback_auto: bool = True,
+) -> None:
     """在 ComfyUI 进程内以 streamable-http 提供 MCP 端点。
 
     与 REST 网关同进程：registry / task_store / ComfyClient 全部共享，
     通过 MCP 提交的异步任务可在 REST 队列监控中看到，反之亦然。
     由节点 __init__.py 在启动事件循环中 create_task 调用。
+
+    port 来自 gateway.config.resolve_mcp_port()：显式 MCP_PORT 优先，其次是
+    MCP_PORT_MAP 按本实例的 ComfyUI 端口映射出来的值，都没命中时为 0（由操作系统
+    分配空闲端口）——同一台机器同时跑多个 ComfyUI 实例时各占各的，不会互抢。
+
+    fallback_auto=True（默认）：配置的端口若已被占用，退回让系统分配一个空闲端口，
+    保证 MCP 端点始终可用（共享端口模式下该端口只是进程内回环后端，换端口对外无感）；
+    False 则绑定失败即回传 None。端口只有 bind 成功后才确定，因此监听就绪后经
+    on_ready(actual_port) 回传；最终失败回传 None。
     """
     import uvicorn
 
-    starlette_app = mcp.streamable_http_app(streamable_http_path=path, host=host)
-    config = uvicorn.Config(starlette_app, host=host, port=port, log_level="warning")
-    server = uvicorn.Server(config)
-    await server.serve()
+    reported = False
+    suppress_none = bool(port) and fallback_auto  # 还有退路时先别宣告失败
+
+    def _report(actual: int | None) -> None:
+        nonlocal reported
+        if reported:
+            return
+        if actual is None and suppress_none:
+            # 这一轮没绑上，但马上要用随机端口重试：等重试结果出来再回传，否则
+            # 共享端口模式的 /mcp 代理会拿到 None 而永久失效。
+            return
+        reported = True
+        if on_ready is None:
+            return
+        try:
+            on_ready(actual)
+        except Exception as exc:  # noqa: BLE001 - 回调出错不该拖垮后端
+            log.warning("MCP gateway: on_ready callback failed: %s", exc)
+
+    async def _serve_once(bind_port: int) -> None:
+        starlette_app = mcp.streamable_http_app(streamable_http_path=path, host=host)
+        config = uvicorn.Config(starlette_app, host=host, port=bind_port, log_level="warning")
+        server = uvicorn.Server(config)
+        watcher = (
+            asyncio.ensure_future(_report_bound_port(server, _report))
+            if on_ready is not None
+            else None
+        )
+        try:
+            await server.serve()
+        finally:
+            if watcher is not None and not watcher.done():
+                watcher.cancel()
+
+    try:
+        try:
+            await _serve_once(port)
+        except (SystemExit, OSError) as exc:
+            # 端口被占用时 uvicorn 走 sys.exit(1)：吞掉，不要连带影响 ComfyUI 主进程。
+            if not suppress_none:
+                log.error(
+                    "MCP gateway: backend server stopped (%s); MCP endpoint is unavailable", exc
+                )
+                _report(None)
+                return
+            suppress_none = False
+            log.warning(
+                "MCP gateway: configured port %s is unavailable (%s); falling back to an "
+                "OS-assigned port so the MCP endpoint stays up",
+                port,
+                exc,
+            )
+            await _serve_once(0)
+    except (SystemExit, OSError) as exc:  # 连系统分配的端口都绑不上
+        log.error("MCP gateway: backend server stopped (%s); MCP endpoint is unavailable", exc)
+        _report(None)
 
 
-def start_embedded_task(host: str = "127.0.0.1", port: int = 8189, path: str = "/mcp") -> None:
+def start_embedded_task(
+    host: str = "127.0.0.1", port: int = 0, path: str = "/mcp", on_ready=None
+) -> None:
     """在运行中的事件循环里调度 MCP streamable-http server（嵌入模式入口）。"""
-    import asyncio
-
     loop = asyncio.get_running_loop()
-    loop.create_task(serve_embedded(host=host, port=port, path=path))
-    log.info("MCP gateway: streamable-http serving on http://%s:%s%s (embedded)", host, port, path)
+    loop.create_task(serve_embedded(host=host, port=port, path=path, on_ready=on_ready))
 
 
 # ------------------------------------------------------------------ 与 ComfyUI 同端口（aiohttp 原生代理）
@@ -632,7 +727,7 @@ def register_share_port_proxy(aiohttp_app, backend_url: str, path: str = "/mcp")
     的网关是 aiohttp——两套服务器框架无法直接共端口；`aiohttp-asgi` 桥接在
     aiohttp 3.13 下流式响应（SSE）会静默失败（prepare 成功但字节不落 socket）。
     因此采用「回环 uvicorn 后端 + aiohttp 原生代理」：客户端只连 ComfyUI 端口
-    （如 http://<host>:8188/mcp），本代理把请求转发到 127.0.0.1:<MCP_PORT>/mcp；
+    （如 http://<host>:8188/mcp），本代理把请求转发到 127.0.0.1:<后端实际端口>；
     aiohttp 原生 StreamResponse 的 SSE 流式是可靠的（见节点内验证）。
 
     POST / GET(SSE) / DELETE 全部按原样转发，响应头/流式体原样回传。

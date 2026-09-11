@@ -5,13 +5,13 @@
     （用户克隆下来、装完依赖、重启 ComfyUI 就应该有 /mcp），而 get 一个 bool 是测
     不出「嵌入式 server 能不能真起来」的。本测试按节点在 ComfyUI 里的真实路径跑一遍：
     伪造 PromptServer.instance.app（真实 aiohttp Application）→ 以包形式导入节点
-    __init__.py（会注册 REST 路由 + 拉起嵌入式 MCP + 挂共享端口代理）→ 用真实 HTTP
+    __init__.py（会注册 REST 路由 + 拉起嵌入式 MCP + 后端就绪后挂共享端口代理）→ 用真实 HTTP
     打一发 MCP initialize / tools/list。
 
-    刻意把 MCP_ENABLED 置空字符串：既挡住 .env 的覆盖，又让 config 走代码默认值，
-    因此断言通过 = 「代码默认就是开的」这件事成立。
+    刻意把 MCP_ENABLED / MCP_PORT 置空字符串：既挡住 .env 的覆盖，又让 config 走代码
+    默认值，因此断言通过 = 「代码默认就是开的、端口默认就是自动分配」这两件事成立。
 
-不碰正在运行的 ComfyUI：自己占用 8199（入口）与 8189（内部后端），跑完即退。
+不碰正在运行的 ComfyUI：入口占用 8199，MCP 内部后端走系统分配的临时端口，跑完即退。
 """
 
 from __future__ import annotations
@@ -30,11 +30,12 @@ for p in (ROOT, NODE):
     if p not in sys.path:
         sys.path.insert(0, p)
 
-# 挡住 .env 里的 MCP_ENABLED，强制走 gateway/config.py 的代码默认值
+# 挡住 .env 里的同名项，强制走 gateway/config.py 的代码默认值
 os.environ["MCP_ENABLED"] = ""
+os.environ["MCP_PORT"] = ""
+os.environ["MCP_PORT_MAP"] = ""
 
 FRONT_PORT = 8199  # 冒充 ComfyUI 对外端口
-BACK_PORT = 8189   # MCP 内部回环后端（默认值）
 PATH = "/mcp"
 
 results: list[bool] = []
@@ -97,9 +98,23 @@ async def main() -> int:
     settings = importlib.import_module(PKG + ".gateway.config").settings
     check("config 默认 mcp_enabled=True（未设环境变量）", settings.mcp_enabled is True,
           f"mcp_enabled={settings.mcp_enabled}")
+    check("config 默认 mcp_port=0（未显式钉死端口）", settings.mcp_port == 0,
+          f"mcp_port={settings.mcp_port}")
+    check("config 默认 mcp_port_map 为空（未配映射）", settings.mcp_port_map == {},
+          f"mcp_port_map={settings.mcp_port_map}")
+    check("无映射时回落到系统分配的 0 端口", settings.resolved_mcp_port == 0,
+          f"resolved={settings.resolved_mcp_port}")
 
-    routes = {r.resource.canonical for r in app.router.routes() if r.resource is not None}
-    check("共享端口代理已注册 /mcp", PATH in routes, str(sorted(routes))[:160])
+    def _routes() -> set:
+        return {r.resource.canonical for r in app.router.routes() if r.resource is not None}
+
+    # 代理要等内部后端 bind 成功后才注册（端口由系统分配，事先不知道），故轮询等待
+    for _ in range(60):
+        if PATH in _routes():
+            break
+        await asyncio.sleep(0.1)
+    check("共享端口代理已注册 /mcp（后端就绪后）", PATH in _routes(),
+          str(sorted(_routes()))[:160])
 
     runner = web.AppRunner(app)
     await runner.setup()
