@@ -99,6 +99,7 @@ python\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-Roundabout\requ
 | `MCP_PORT_MAP` | 空 | 固定端口映射，成对书写「ComfyUI 端口,Roundabout 端口」，如 `[8188,888],[8189,999]`；按本实例的 `--port` 取值，未命中回落系统分配；**优先级低于 `MCP_PORT`** |
 | `MCP_PATH` | `/mcp` | MCP 端点路径 |
 | `MCP_HOST` | `127.0.0.1` | `MCP_SHARE_PORT=false` 时的绑定地址 |
+| `ROUNDABOUT_RAW_AIOHTTP_LOGS` | 空 | 设 `true` 关闭 aiohttp「客户端断开」日志降噪（见 §10 排障），恢复 aiohttp 原始 ERROR |
 | `COMFY_BASE_URL` | 自动取 ComfyUI `--listen/--port` | 覆盖后端指向（指向另一个 ComfyUI 实例） |
 | `COMFY_HTTP_TIMEOUT` | `30` | 后端请求超时（秒） |
 | `OPENAI_GATEWAY_API_KEYS` | 空 | 逗号分隔的 Bearer key；**为空则鉴权自动放行** |
@@ -506,7 +507,7 @@ call generate_video(prompt="a cat walking in rain", model="minimax-h3-turbo",
 |---|---|---|
 | 启动日志 `MCP gateway: failed to start embedded server: No module named 'mcp'` | ComfyUI 的 Python 未装 `mcp`/`uvicorn`（其自带依赖不含） | 见 [2.1 Python 依赖](#21-python-依赖换机器部署必看)，用运行 ComfyUI 的解释器装，装完重启 |
 | `/mcp` 404 / 连不上 | URL 用了内部回环端口；或 MCP 被显式关闭（`.env` 里 `MCP_ENABLED=false`）；或后端端口绑定失败（启动日志出现 `backend server stopped`） | URL 用 **ComfyUI 对外端口** + `/mcp`；删掉该行或改成 `true` 后重启 |
-| 日志反复出现 `Error handling request from <客户端IP>`，后面拖一整段 traceback | **看 traceback 最后一行**：<br>· `ClientConnectionResetError: Cannot write to closing transport` → MCP 客户端在 SSE 长连接上断开（长任务超时或重连后，服务端仍在往那条旧连接写通知）。**属常态，不是故障**<br>· `ClientConnectorError: Cannot connect to host 127.0.0.1:<port>` → 内部 MCP 后端没起来，代理转发失败 | 前者：代理层已把这类断开降为 DEBUG，更新代码即不再刷屏<br>后者：查启动日志 `ComfyUI port <N> -> MCP backend port <M>`，核对 `MCP_PORT` / `MCP_PORT_MAP` 与本实例 `--port` 是否对得上 |
+| 日志反复出现 `Error handling request from <客户端IP>`，后面拖一整段 traceback | aiohttp 在 handler 抛异常时**先打这条 ERROR、再判断连接是否已断**（`web_protocol.handle_error`），所以 SSE 场景下「客户端超时/重连把旧连接关掉」这种常态每次都会刷一条。**看 traceback 最后一行**：<br>· `ClientConnectionResetError: Cannot write to closing transport`（或 `ConnectionResetError` / `ConnectionAbortedError` / `BrokenPipeError`）→ 就是客户端断开，**属常态，不是故障**<br>· `ClientConnectorError: Cannot connect to host 127.0.0.1:<port>` → 内部 MCP 后端没起来，代理转发失败 | 前者：已由两层兜住——`mcp_server._proxy` 把这类断开降为 DEBUG，`gateway/log_filters.py` 再给 `aiohttp.server` 挂一个过滤器把这类记录降级（只降「客户端断开」，**真异常照旧报 ERROR**）。更新代码即可；想看原始日志设 `ROUNDABOUT_RAW_AIOHTTP_LOGS=true`<br>后者：查启动日志 `ComfyUI port <N> -> MCP backend port <M>`，核对 `MCP_PORT` / `MCP_PORT_MAP` 与本实例 `--port` 是否对得上 |
 | 启动日志 `MCP gateway: on_ready callback failed: Cannot register a resource into frozen router` | 代理路由注册晚于 ComfyUI 冻结 aiohttp 路由表（旧版本在拿到后端端口后才 `add_route`） | 更新到当前代码即可（路由改为 import 期注册、端口后回填）。若仍出现，说明有别的节点/代码在 ComfyUI 起服务后才 import 本节点，或改用 `MCP_SHARE_PORT=false` 走独立端口 |
 | MCP 握手成功但工具列表为空 | 后端 uvicorn 未起来（上一行日志） | 同上；确认启动日志出现 `MCP gateway: embedded streamable-http shared on ComfyUI port` |
 | 访问远程 IP 不通（如 `:20003`）但本机 `127.0.0.1` 正常 | ComfyUI 未加 `--listen 0.0.0.0`，或反代未放行 SSE（`text/event-stream`）长连接 | 启动加 `--listen 0.0.0.0`；反代关闭缓冲、放行 `Accept: text/event-stream` |

@@ -15,6 +15,7 @@ import logging
 from server import PromptServer
 
 from .gateway.config import settings
+from .gateway.log_filters import install_aiohttp_disconnect_noise_filter
 from .gateway.registry import registry
 from .gateway.routes import register_routes
 
@@ -49,6 +50,12 @@ def _install_log_tag() -> None:
 
 
 _install_log_tag()
+
+# aiohttp 在 handler 抛异常时**先**打 ERROR 再判断连接是否已断（见 aiohttp/web_protocol.py
+# handle_error），于是「客户端断开」这种 SSE 场景下的常态会刷出
+# 「[ERROR] Error handling request from <ip>」+ 整段 traceback。这里把它降级为 DEBUG，
+# 真的异常（非连接类）一律照旧报 ERROR。细节见 gateway/log_filters.py。
+install_aiohttp_disconnect_noise_filter()
 
 # 前端扩展目录：web/ 下的 .js 会被 ComfyUI 以 /extensions/ComfyUI-Roundabout/ 路径
 # 静态托管，并自动加载（见 server.py 的 get_extensions 路由）。

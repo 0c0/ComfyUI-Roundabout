@@ -15,6 +15,10 @@ gateway_handler，admin / viewer 也都有）。于是「客户端断开」这�
 
 修复后：客户端断开 → DEBUG；上游后端不可达 → WARNING + 502。
 
+> 本文件只测 `_proxy` 自己这一层，因此整场都**摘掉**了 aiohttp.server 上的降噪过滤器
+> （`gateway/log_filters.py`）——否则「没有 ERROR」可能是被过滤器掩盖出来的假绿。
+> 过滤器本身由 `test_aiohttp_error_noise.py` 单独覆盖。
+
 本测试断言：
   1. 对照组：裸流式 handler（无兜底）遇到 RST 断开，**必须**产生 ERROR —— 证明场景真实；
   2. 真实 _proxy 遇到同样的断开，**不得**产生任何 ERROR 级日志；
@@ -180,9 +184,16 @@ async def main() -> int:
 
     # 关掉 MCP_ENABLED 时 __init__.py 不拉 mcp_server，本测试只关心代理层，显式导入
     mcp_server = importlib.import_module(PKG + ".mcp_server")
+    log_filters = importlib.import_module(PKG + ".gateway.log_filters")
     check("register_share_port_proxy 可用", callable(mcp_server.register_share_port_proxy))
 
     # ---- 对照组：裸 handler + RST —— 必须产生 ERROR（证明场景真实存在）----
+    # 节点 import 时已在 aiohttp.server 上装了降噪过滤器（gateway/log_filters.py），
+    # 对照组要证明的是「没有这层兜底时确实会刷 ERROR」，所以先把它摘掉，跑完再装回。
+    saved_filters = list(srv_logger.filters)
+    srv_logger.filters = [
+        f for f in saved_filters if not isinstance(f, log_filters.AiohttpDisconnectNoiseFilter)
+    ]
     srv_collector.reset()
     bare_port = _free_port()
     bare_app = web.Application()
@@ -266,6 +277,10 @@ async def main() -> int:
         " | ".join(f"{r.levelname} {r.getMessage()}" for r in gw_collector.records),
     )
     await front_runner.cleanup()
+
+    # 恢复降噪过滤器（对照组起就摘掉了，见上）：A/B 两段刻意在「没有过滤器」的前提下跑，
+    # 这样断言的是 _proxy 自己的兜底是否成立，而不是被日志过滤器掩盖过去。
+    srv_logger.filters = saved_filters
 
     print()
     total, ok = len(results), sum(results)

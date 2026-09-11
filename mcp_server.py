@@ -65,6 +65,7 @@ if __package__:
         generate_tracked,
         generate_video_tracked,
     )
+    from .gateway.log_filters import client_gone  # noqa: E402
     from .gateway.registry import registry  # noqa: E402
     from .gateway.schemas import ImageGenerationRequest, VideoGenerationRequest  # noqa: E402
     from .gateway.tasks import task_store  # noqa: E402
@@ -81,6 +82,7 @@ else:
         generate_tracked,
         generate_video_tracked,
     )
+    from gateway.log_filters import client_gone  # noqa: E402
     from gateway.registry import registry  # noqa: E402
     from gateway.schemas import ImageGenerationRequest, VideoGenerationRequest  # noqa: E402
     from gateway.tasks import task_store  # noqa: E402
@@ -789,30 +791,34 @@ def register_share_port_proxy(
 
     async def _proxy(request: web.Request) -> web.StreamResponse:
         backend = holder.url
-        if not backend:
-            # 路由注册早于后端就绪（这是刻意的，见上），启动窗口内的请求会落在这里。
-            # 先等后端一小会儿：MCP 客户端一般只连一次，直接 503 等于让它失败。
-            if not await holder.wait_ready(ready_timeout):
-                log.debug(
-                    "MCP gateway: %s requested before the internal backend reported its port",
-                    request.path,
-                )
-                return web.Response(
-                    status=503,
-                    text="MCP backend not ready yet (Roundabout is still starting).",
-                    headers={"Retry-After": "1"},
-                )
-            backend = holder.url
-        target = backend.rstrip("/") + request.path
-        headers = {
-            k: v
-            for k, v in request.headers.items()
-            if k.lower() not in ("host", "content-length", "connection")
-        }
-        data = await request.read()
         resp: web.StreamResponse | None = None
         try:
-            async with ClientSession() as session:
+            if not backend:
+                # 路由注册早于后端就绪（这是刻意的，见上），启动窗口内的请求会落在这里。
+                # 先等后端一小会儿：MCP 客户端一般只连一次，直接 503 等于让它失败。
+                if not await holder.wait_ready(ready_timeout):
+                    log.debug(
+                        "MCP gateway: %s requested before the internal backend reported its port",
+                        request.path,
+                    )
+                    return web.Response(
+                        status=503,
+                        text="MCP backend not ready yet (Roundabout is still starting).",
+                        headers={"Retry-After": "1"},
+                    )
+                backend = holder.url
+            target = backend.rstrip("/") + request.path
+            headers = {
+                k: v
+                for k, v in request.headers.items()
+                if k.lower() not in ("host", "content-length", "connection")
+            }
+            # 请求体也在 try 内读：客户端若在读到一半时断开，同样不能让异常逃出去。
+            data = await request.read()
+            # auto_decompress=False：本代理只做**字节**转发，上游响应的
+            # Content-Length / Content-Encoding 都原样透传给客户端；若让客户端库
+            # 自动解压，头里写的是压缩后长度、发出去的却是解压后的字节，响应会被截断。
+            async with ClientSession(auto_decompress=False) as session:
                 async with session.request(
                     request.method, target, params=request.query, headers=headers, data=data or None
                 ) as upstream:
@@ -829,17 +835,22 @@ def register_share_port_proxy(
                         await resp.write(chunk)
                     await resp.write_eof()
                     return resp
-        except ConnectionResetError as exc:
+        except ConnectionError as exc:
             # 客户端在流式响应（SSE 长连接 / notification 推送）写到一半就断开。
             # MCP streamable-http 下这是常态而非故障：客户端超时或重连后，服务端
-            # 仍在往那条旧连接写。降为 DEBUG，否则每次重连都会刷一条
-            # 「[ERROR] Error handling request from <ip>」外加整段 traceback。
-            # 注意：ClientConnectionResetError 同时继承 ConnectionResetError 与
-            # ClientError，所以本分支必须排在下面的 ClientError 之前。
+            # 仍在往那条旧连接写。这里必须整族兜住 ConnectionError——Windows 上对端
+            # 硬断开抛的不一定是 ConnectionResetError，还可能是
+            # ConnectionAbortedError(WinError 10053) / BrokenPipeError；
+            # aiohttp 自己的 ClientConnectionResetError 也在这一族里。
+            # 本分支必须排在下面的 ClientError 之前：前者同时是后者的子类。
             if resp is None:
-                log.warning(
-                    "MCP gateway: upstream %s dropped the connection before reply: %s",
-                    backend, exc,
+                # 一个字节都还没回。区分是「客户端没等到结果就走了」还是「后端在回首个
+                # 响应前就断了」——前者是常态（降 DEBUG），后者值得 WARNING。
+                client_left = request.transport is None or request.transport.is_closing()
+                log.log(
+                    logging.DEBUG if client_left else logging.WARNING,
+                    "MCP gateway: %s %s from %s ended before the first byte: %s",
+                    request.method, request.path, request.remote, exc,
                 )
                 return web.Response(status=502, text="MCP backend unavailable")
             log.debug(
@@ -848,6 +859,14 @@ def register_share_port_proxy(
             )
             return resp
         except ClientError as exc:
+            if resp is not None:
+                # 响应头 / 部分字节已经发给客户端了，上游此刻断流：当作流正常结束即可。
+                # 这里**不能**返回一个新的响应对象——那会在同一条连接上再写一遍状态行。
+                log.warning(
+                    "MCP gateway: upstream %s cut the %s stream mid-flight: %s",
+                    backend, request.path, exc,
+                )
+                return resp
             # 内部 uvicorn 后端不可达：端口被占且未回落、进程未起、或仍在启动中。
             log.warning(
                 "MCP gateway: upstream backend %s unreachable (%s); "
@@ -855,6 +874,26 @@ def register_share_port_proxy(
                 backend, exc,
             )
             return web.Response(status=502, text="MCP backend unavailable")
+        except Exception as exc:  # noqa: BLE001
+            # 兜底：连「非 ConnectionError 族、但语义上就是写向已关闭连接」的包装异常也认。
+            if client_gone(exc):
+                log.debug(
+                    "MCP gateway: client %s left during %s %s: %s",
+                    request.remote, request.method, request.path, exc,
+                )
+                if resp is not None:
+                    return resp
+                return web.Response(status=502, text="MCP backend unavailable")
+            # 最后一道网：任何真正的异常都不许逃回 aiohttp——逃回去只会得到一条
+            # 「[ERROR] Error handling request from <ip>」+ 整段 traceback，
+            # 既看不出是哪个 handler 也看不出请求路径。这里带上上下文自己打。
+            log.exception(
+                "MCP gateway: unexpected error proxying %s %s: %s",
+                request.method, request.path, exc,
+            )
+            if resp is not None and resp.prepared:
+                return resp
+            return web.Response(status=500, text="MCP gateway internal error")
 
     aiohttp_app.router.add_route("*", path, _proxy)
     if not path.endswith("/"):

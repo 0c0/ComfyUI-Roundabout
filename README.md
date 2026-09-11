@@ -326,6 +326,7 @@ ComfyUI-Roundabout/
 │   ├── viewer.py          # 资源浏览与任务进度页面后端
 │   ├── analyze.py         # 上传工作流时的参数映射自动分析
 │   ├── tasks.py           # 任务表
+│   ├── log_filters.py     # 把 aiohttp「客户端断开」的 ERROR 降级为 DEBUG
 │   └── ...
 ├── web/                   # 前端（可视化页面 + 设置面板）
 ├── workflows/             # API 格式工作流（example_txt2img.json 为接入样本）
@@ -342,10 +343,16 @@ ComfyUI-Roundabout/
 ## 测试
 
 ```bash
-# 网关冒烟（需 ComfyUI 在跑）
+# 离线自测（不需要 ComfyUI 在跑，全部用系统分配的临时端口）
+<ComfyUI>/python/python.exe test_mcp_proxy_disconnect.py    # /mcp 代理的断开与不可达兜底
+<ComfyUI>/python/python.exe test_aiohttp_error_noise.py     # Error handling request 降噪
+<ComfyUI>/python/python.exe test_mcp_import_identity.py
+<ComfyUI>/python/python.exe test_port_map.py
+<ComfyUI>/python/python.exe test_video_size.py
+
+# 需 ComfyUI 在跑
 <ComfyUI>/python/python.exe test_viewer_smoke.py
 <ComfyUI>/python/python.exe test_removebg_e2e.py     # 去背景独立实例 e2e
-<ComfyUI>/python/python.exe test_mcp_import_identity.py
 # 前端 jsdom（需 node + jsdom）
 node test_view_frontend.cjs
 ```
