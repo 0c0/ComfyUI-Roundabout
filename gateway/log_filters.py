@@ -1,4 +1,6 @@
-"""把 aiohttp 对「客户端中途断开」的 ERROR 降级为 DEBUG。
+"""拦掉 aiohttp 为「客户端中途断开」打出的那条 ERROR。
+
+（aiohttp 3.13 / ComfyUI 自带环境实测；换 aiohttp 大版本请重新核对 web_protocol.py。）
 
 **为什么会有这条噪音**
 
