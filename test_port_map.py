@@ -17,11 +17,13 @@ import importlib.util
 import os
 import sys
 import types
+from pathlib import Path
 
-ROOT = r"E:\ai\ComfyUI-aki-v3\ComfyUI"
-NODE = rf"{ROOT}\custom_nodes\ComfyUI-Roundabout"
-CONFIG_PY = os.path.join(NODE, "gateway", "config.py")
-for p in (ROOT, NODE):
+# 从本文件位置反推目录，不写死安装路径：<ComfyUI>/custom_nodes/ComfyUI-Roundabout/test_port_map.py
+NODE = Path(__file__).resolve().parent   # 节点目录
+ROOT = NODE.parent.parent                # ComfyUI 根目录（custom_nodes 的上一级）
+CONFIG_PY = str(NODE / "gateway" / "config.py")
+for p in (str(ROOT), str(NODE)):
     if p not in sys.path:
         sys.path.insert(0, p)
 

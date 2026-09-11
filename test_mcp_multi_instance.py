@@ -28,10 +28,12 @@ import importlib.util
 import os
 import sys
 import types
+from pathlib import Path
 
-ROOT = r"E:\ai\ComfyUI-aki-v3\ComfyUI"
-NODE = rf"{ROOT}\custom_nodes\ComfyUI-Roundabout"
-for p in (ROOT, NODE):
+# 从本文件位置反推目录，不写死安装路径：<ComfyUI>/custom_nodes/ComfyUI-Roundabout/test_mcp_multi_instance.py
+NODE = Path(__file__).resolve().parent   # 节点目录
+ROOT = NODE.parent.parent                # ComfyUI 根目录（custom_nodes 的上一级）
+for p in (str(ROOT), str(NODE)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
@@ -120,7 +122,7 @@ async def main() -> int:
 
     PKG = "ComfyUI-Roundabout"
     spec = importlib.util.spec_from_file_location(
-        PKG, os.path.join(NODE, "__init__.py"), submodule_search_locations=[NODE]
+        PKG, str(NODE / "__init__.py"), submodule_search_locations=[str(NODE)]
     )
     assert spec and spec.loader
     pkg = importlib.util.module_from_spec(spec)

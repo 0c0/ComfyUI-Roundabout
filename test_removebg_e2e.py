@@ -19,9 +19,10 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-ROOT = r"E:\ai\ComfyUI-aki-v3\ComfyUI"
-NODE = rf"{ROOT}\custom_nodes\ComfyUI-Roundabout"
-for p in (NODE, ROOT):
+# 从本文件位置反推目录，不写死安装路径：<ComfyUI>/custom_nodes/ComfyUI-Roundabout/test_removebg_e2e.py
+NODE = Path(__file__).resolve().parent   # 节点目录
+ROOT = NODE.parent.parent                # ComfyUI 根目录（custom_nodes 的上一级）
+for p in (str(NODE), str(ROOT)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
@@ -30,14 +31,14 @@ from aiohttp import web  # noqa: E402
 from gateway.registry import registry  # noqa: E402
 from gateway.routes import register_routes  # noqa: E402
 
-registry.load(Path(NODE) / "models.yaml", Path(NODE) / "workflows", "", "")
+registry.load(NODE / "models.yaml", NODE / "workflows")
 
 PORT = 8199
 BASE = f"http://127.0.0.1:{PORT}"
 
 # 找一张真实测试图
 SRC = next(
-    Path(rf"{ROOT}\output").glob("*.png")
+    (ROOT / "output").glob("*.png")
 )
 PNG = SRC.read_bytes()
 
@@ -90,7 +91,7 @@ async def main() -> int:
     url = d["data"][0]["url"]
     check("data[0].url 存在", bool(url), d)
     fname = url.split("filename=")[-1].split("&")[0]
-    out = Path(rf"{ROOT}\output") / fname
+    out = ROOT / "output" / fname
     check("产物已落盘(output/)", out.exists(), fname)
     if out.exists():
         head = out.read_bytes()[:33]

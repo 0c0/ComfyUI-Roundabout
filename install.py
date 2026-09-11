@@ -6,7 +6,7 @@
        "<ComfyUI 的 python>" "本目录/install.py"
 
 关键点：必须用**运行 ComfyUI 的那个解释器**安装，装到系统 python 里无效。
-典型路径（ComfyUI-aki 便携包）：E:\\ai\\ComfyUI-aki-v3\\python\\python.exe
+ComfyUI-aki 便携包中它就是 <ComfyUI 根>/python/python.exe。
 """
 
 from __future__ import annotations

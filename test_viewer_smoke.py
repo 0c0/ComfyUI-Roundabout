@@ -11,9 +11,10 @@ import sys
 import urllib.request
 from pathlib import Path
 
-ROOT = r"E:\ai\ComfyUI-aki-v3\ComfyUI"
-NODE = rf"{ROOT}\custom_nodes\ComfyUI-Roundabout"
-for p in (NODE, ROOT):
+# 从本文件位置反推目录，不写死安装路径：<ComfyUI>/custom_nodes/ComfyUI-Roundabout/test_viewer_smoke.py
+NODE = Path(__file__).resolve().parent   # 节点目录
+ROOT = NODE.parent.parent                # ComfyUI 根目录（custom_nodes 的上一级）
+for p in (str(NODE), str(ROOT)):
     if p not in sys.path:
         sys.path.insert(0, p)
 

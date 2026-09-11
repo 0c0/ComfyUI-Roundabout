@@ -13,15 +13,16 @@ import sys
 import types
 from pathlib import Path
 
-ROOT = r"E:\ai\ComfyUI-aki-v3\ComfyUI"
-NODE = rf"{ROOT}\custom_nodes\ComfyUI-Roundabout"
-for p in (ROOT, NODE):
+# 从本文件位置反推目录，不写死安装路径：<ComfyUI>/custom_nodes/ComfyUI-Roundabout/test_video_size.py
+NODE = Path(__file__).resolve().parent   # 节点目录
+ROOT = NODE.parent.parent                # ComfyUI 根目录（custom_nodes 的上一级）
+for p in (str(ROOT), str(NODE)):
     if p not in sys.path:
         sys.path.insert(0, p)
 
 # 只给包挂 __path__、不执行 gateway/__init__.py：避免 import 期就去建 registry 单例。
 _pkg = types.ModuleType("rb_gateway")
-_pkg.__path__ = [str(Path(NODE) / "gateway")]
+_pkg.__path__ = [str(NODE / "gateway")]
 sys.modules["rb_gateway"] = _pkg
 
 from rb_gateway.errors import APIError  # noqa: E402

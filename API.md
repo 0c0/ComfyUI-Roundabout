@@ -54,8 +54,11 @@ Fix with: "<...>/python.exe" -m pip install -r "<...>/ComfyUI-Roundabout/require
 用**运行 ComfyUI 的那个解释器**安装（装到系统 Python 无效）：
 
 ```bat
-cd /d E:\ai\ComfyUI-aki-v3
+:: <ComfyUI 根> = ComfyUI 安装目录（ComfyUI-aki 便携包形如 X:\...\ComfyUI-aki-v3，
+:: 含 python\python.exe 与 ComfyUI\ 两层）
+cd /d <ComfyUI 根>
 python\python.exe -m pip install mcp uvicorn
+:: 若 ComfyUI 用的是系统 Python，改成：python -m pip install mcp uvicorn
 ```
 
 或一次性按 `requirements.txt` 安装（等价，推荐）：
@@ -77,7 +80,7 @@ python\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-Roundabout\requ
 ### 2.2 启动 ComfyUI
 
 ```bat
-"E:\ai\ComfyUI-aki-v3\python\python.exe" E:\ai\ComfyUI-aki-v3\ComfyUI\main.py ^
+"<ComfyUI 根>\python\python.exe" "<ComfyUI 根>\ComfyUI\main.py" ^
   --auto-launch --preview-method auto --disable-cuda-malloc --use-ck-attention
 ```
 
