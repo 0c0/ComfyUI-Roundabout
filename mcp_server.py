@@ -732,7 +732,7 @@ def register_share_port_proxy(aiohttp_app, backend_url: str, path: str = "/mcp")
 
     POST / GET(SSE) / DELETE 全部按原样转发，响应头/流式体原样回传。
     """
-    from aiohttp import ClientSession, web
+    from aiohttp import ClientError, ClientSession, web
 
     async def _proxy(request: web.Request) -> web.StreamResponse:
         target = backend_url.rstrip("/") + request.path
@@ -742,23 +742,51 @@ def register_share_port_proxy(aiohttp_app, backend_url: str, path: str = "/mcp")
             if k.lower() not in ("host", "content-length", "connection")
         }
         data = await request.read()
-        async with ClientSession() as session:
-            async with session.request(
-                request.method, target, params=request.query, headers=headers, data=data or None
-            ) as upstream:
-                resp = web.StreamResponse(status=upstream.status)
-                clen = upstream.headers.get("Content-Length")
-                for k, v in upstream.headers.items():
-                    if k.lower() in ("transfer-encoding", "connection"):
-                        continue
-                    resp.headers[k] = v
-                if not clen:
-                    resp.enable_chunked_encoding()
-                await resp.prepare(request)
-                async for chunk in upstream.content.iter_any():
-                    await resp.write(chunk)
-                await resp.write_eof()
-                return resp
+        resp: web.StreamResponse | None = None
+        try:
+            async with ClientSession() as session:
+                async with session.request(
+                    request.method, target, params=request.query, headers=headers, data=data or None
+                ) as upstream:
+                    resp = web.StreamResponse(status=upstream.status)
+                    clen = upstream.headers.get("Content-Length")
+                    for k, v in upstream.headers.items():
+                        if k.lower() in ("transfer-encoding", "connection"):
+                            continue
+                        resp.headers[k] = v
+                    if not clen:
+                        resp.enable_chunked_encoding()
+                    await resp.prepare(request)
+                    async for chunk in upstream.content.iter_any():
+                        await resp.write(chunk)
+                    await resp.write_eof()
+                    return resp
+        except ConnectionResetError as exc:
+            # 客户端在流式响应（SSE 长连接 / notification 推送）写到一半就断开。
+            # MCP streamable-http 下这是常态而非故障：客户端超时或重连后，服务端
+            # 仍在往那条旧连接写。降为 DEBUG，否则每次重连都会刷一条
+            # 「[ERROR] Error handling request from <ip>」外加整段 traceback。
+            # 注意：ClientConnectionResetError 同时继承 ConnectionResetError 与
+            # ClientError，所以本分支必须排在下面的 ClientError 之前。
+            if resp is None:
+                log.warning(
+                    "MCP gateway: upstream %s dropped the connection before reply: %s",
+                    backend_url, exc,
+                )
+                return web.Response(status=502, text="MCP backend unavailable")
+            log.debug(
+                "MCP gateway: client %s closed the %s stream early: %s",
+                request.remote, request.path, exc,
+            )
+            return resp
+        except ClientError as exc:
+            # 内部 uvicorn 后端不可达：端口被占且未回落、进程未起、或仍在启动中。
+            log.warning(
+                "MCP gateway: upstream backend %s unreachable (%s); "
+                "check MCP_PORT / MCP_PORT_MAP for this instance",
+                backend_url, exc,
+            )
+            return web.Response(status=502, text="MCP backend unavailable")
 
     aiohttp_app.router.add_route("*", path, _proxy)
     if not path.endswith("/"):
