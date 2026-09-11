@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="KA0uDrUALPfrqqXazhmpvS">
+<head data-page-node-id="bYSBQQJyNxRdZdAZZGDaLA">
+<meta charset="utf-8" data-page-node-id="ZCFh3dKI5DfOTygoYOvG3x">
+<meta name="viewport" content="width=device-width, initial-scale=1" data-page-node-id="jxjTmi9zV3AtPrJrE2FuP4">
+<title>Roundabout · 资源与任务</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --border: #e4e7ec;
+    --text: #1f2328;
+    --muted: #6b7280;
+    --accent: #2563eb;
+    --accent-soft: #eff4ff;
+    --pending: #d97706;
+    --running: #2563eb;
+    --done: #16a34a;
+    --fail: #dc2626;
+    --cancel: #6b7280;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    padding: 12px 20px; background: var(--card); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .brand { font-weight: 650; font-size: 15px; white-space: nowrap; }
+  .brand span { color: var(--muted); font-weight: 400; margin-left: 6px; font-size: 12px; }
+  .tabs { display: flex; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+  .tabs button {
+    border: 0; background: transparent; padding: 5px 14px; border-radius: 6px;
+    cursor: pointer; font: inherit; color: var(--muted);
+  }
+  .tabs button.on { background: var(--card); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
+  .crumbs a { color: var(--accent); text-decoration: none; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
+  .crumbs a:hover { background: var(--accent-soft); }
+  .crumbs .sep { color: #c4c8ce; }
+  .spacer { flex: 1; }
+  .btn {
+    border: 1px solid var(--border); background: var(--card); color: var(--text);
+    padding: 5px 12px; border-radius: 7px; cursor: pointer; font: inherit;
+  }
+  .btn:hover { border-color: #c9ced6; }
+  .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; cursor: pointer; }
+
+  /* 默认不给面板让位（它是悬浮的）；只有展开时才让出右侧，避免遮挡资源栏 */
+  main { display: block; padding: 16px 20px 32px; transition: padding-right .18s ease; }
+  @media (min-width: 1001px) { body:not(.tasks-collapsed) main { padding-right: 372px; } }
+
+  .panel { background: var(--card); border: 1px solid var(--border); border-radius: 10px; }
+  .panel > h2 {
+    margin: 0; padding: 11px 14px; font-size: 13px; font-weight: 600;
+    border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px;
+  }
+  .panel > h2 .count { color: var(--muted); font-weight: 400; margin-left: auto; }
+  .panel-body { padding: 12px 14px; }
+
+  /* 任务面板：钉在右下角，展开时向上弹出；收起时缩成半透明胶囊按钮 */
+  aside.panel {
+    position: fixed; bottom: 22px; right: 22px; width: 340px; z-index: 20;
+    max-height: min(72vh, calc(100vh - 120px));
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 10px 30px rgba(16,20,28,.16);
+    transition: background .18s ease, box-shadow .18s ease;
+  }
+  #taskList { overflow-y: auto; }
+  aside.panel > h2 { cursor: pointer; user-select: none; }
+  .collapse {
+    border: 0; background: transparent; color: var(--muted); cursor: pointer;
+    font: inherit; line-height: 1; padding: 2px 4px; border-radius: 4px; flex: none;
+  }
+  .collapse:hover { background: var(--bg); color: var(--text); }
+
+  body.tasks-collapsed aside.panel {
+    width: auto; max-height: none; border-radius: 999px; overflow: visible;
+    background: rgba(255,255,255,.72); border-color: rgba(228,231,236,.9);
+    -webkit-backdrop-filter: blur(10px) saturate(1.4);
+    backdrop-filter: blur(10px) saturate(1.4);
+    box-shadow: 0 6px 20px rgba(16,20,28,.18);
+  }
+  body.tasks-collapsed aside.panel > h2 { border-bottom: 0; padding: 9px 14px; }
+  body.tasks-collapsed aside.panel > h2 .count { margin-left: 0; }
+  body.tasks-collapsed #queueBox,
+  body.tasks-collapsed #taskList { display: none; }
+
+  /* 收起时用一个呼吸的点提示仍有任务在跑/在排队 */
+  .fab-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--running); flex: none; display: none; }
+  body.tasks-collapsed aside.panel.has-active .fab-dot { display: block; animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
+  @media (max-width: 1000px) {
+    aside.panel { left: 8px; right: 8px; width: auto; }
+    body.tasks-collapsed aside.panel { left: auto; right: 14px; }
+  }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 12px; }
+  .cell {
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg);
+    cursor: pointer; transition: border-color .12s, transform .12s;
+  }
+  .cell:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .thumb {
+    aspect-ratio: 1 / 1; width: 100%; object-fit: cover; display: block; background: #eceef1;
+  }
+  /* 音频/普通文件：与目录格同款的图标卡片（1:1 灰底 + 居中 SVG） */
+  .thumb.icon { display: flex; align-items: center; justify-content: center; color: #6b7280; }
+  .thumb.icon svg { width: 34px; height: 34px; opacity: .55; }
+  .lb-audio { background: #fff; padding: 22px 26px; border-radius: 8px; }
+  .lb-audio audio { width: min(60vw, 460px); }
+  .cell .meta { padding: 6px 8px; font-size: 12px; }
+  .cell .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cell .sub { color: var(--muted); font-size: 11px; margin-top: 1px; }
+  /* 目录格与图片卡片同构：上面 1:1 的图标区，下面 meta 显示名称 */
+  .dir {
+    aspect-ratio: 1 / 1;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text); background: #eceef1;
+  }
+  .dir svg { width: 34px; height: 34px; opacity: .55; }
+  .dir svg { width: 30px; height: 30px; opacity: .55; }
+  .empty { color: var(--muted); padding: 28px 0; text-align: center; font-size: 13px; }
+  .pager {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    padding: 16px 0 4px; color: var(--muted); font-size: 13px; flex-wrap: wrap;
+  }
+  .pager .btn { padding: 4px 10px; font-size: 13px; }
+  .pager .btn[disabled] { opacity: .45; cursor: not-allowed; }
+  .pager .btn[disabled]:hover { border-color: var(--border); }
+  .pager .pginfo { font-variant-numeric: tabular-nums; }
+  .note { color: var(--muted); font-size: 12px; padding: 8px 14px 0; }
+
+  .queue {
+    padding: 9px 14px; border-bottom: 1px solid var(--border);
+    display: flex; gap: 14px; align-items: center; color: var(--muted); font-size: 12px;
+  }
+  .queue b { font-size: 13px; }
+  .queue .live { color: var(--running); }
+  .queue .wait { color: var(--pending); }
+  .queue .idle { margin-left: auto; }
+
+  /* 新产物提示：与右下角任务按钮对称地放在左下角，不遮挡内容 */
+  .fresh {
+    position: fixed; left: 22px; bottom: 22px; z-index: 20;
+    border: 1px solid rgba(228,231,236,.9); border-radius: 999px; cursor: pointer;
+    background: rgba(255,255,255,.72); color: var(--accent); font: inherit; font-size: 13px;
+    padding: 9px 16px; display: flex; align-items: center; gap: 8px;
+    -webkit-backdrop-filter: blur(10px) saturate(1.4);
+    backdrop-filter: blur(10px) saturate(1.4);
+    box-shadow: 0 6px 20px rgba(16,20,28,.18);
+  }
+  .fresh:hover { color: #1d4ed8; }
+  .fresh[hidden] { display: none; }
+  .fresh i {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--done);
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  .task { border-top: 1px solid var(--border); padding: 10px 14px; }
+  .task:first-child { border-top: 0; }
+  .task .row1 { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .st { font-weight: 600; font-size: 12px; }
+  .model { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .elapsed { margin-left: auto; color: var(--muted); font-size: 12px; flex: none; font-variant-numeric: tabular-nums; }
+  .row2 { margin-top: 5px; color: var(--muted); font-size: 11px; display: flex; gap: 10px; align-items: center; }
+  .row2 a { color: var(--accent); text-decoration: none; }
+  .bar { height: 3px; border-radius: 2px; background: var(--border); margin-top: 7px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 40%; border-radius: 2px; animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+  .tid { font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
+
+  .lightbox {
+    position: fixed; inset: 0; background: rgba(17,20,24,.86); z-index: 50;
+    display: flex; align-items: center; justify-content: center; padding: 32px; cursor: zoom-out;
+  }
+  /* display:flex 会盖掉 [hidden] 的默认 display:none，必须显式复位，否则遮罩一直盖住页面 */
+  .lightbox[hidden] { display: none; }
+  .lightbox img, .lightbox video { max-width: 100%; max-height: 100%; border-radius: 6px; box-shadow: 0 12px 40px rgba(0,0,0,.5); }
+  .lightbox .cap {
+    position: absolute; bottom: 18px; left: 0; right: 0; text-align: center;
+    color: #e8eaed; font-size: 13px; cursor: default;
+  }
+  .lightbox .cap a { color: #9dc0ff; }
+</style>
+</head>
+<body class="tasks-collapsed" data-page-node-id="N3jDFDZRRIHYVK1iurF0Jg">
+
+<header data-page-node-id="BQsvuGajDc22j32QFEzTPg">
+  <div class="brand" data-page-node-id="I1AYtL25CUHPey4dnaC5HP">Roundabout 资源与任务<span id="rootPath" data-page-node-id="bpxwUXF8DlYRMHEIFNg7D4"></span></div>
+  <div class="tabs" data-page-node-id="PbCF8Sv61RhF5s5fysIvdr">
+    <button id="tabOutput" class="on" data-page-node-id="SnYHx4Lj4byRRx7ua9tqbA">Output</button>
+    <button id="tabInput" data-page-node-id="7QVHF7GO28Swuj5c4mt2lY">Input</button>
+  </div>
+  <div class="spacer" data-page-node-id="828GkXsAqTAETY41ZmdSIW"></div>
+  <label class="toggle" data-page-node-id="ht7ZC5fS4btA4VrEYNEDah"><input type="checkbox" id="auto" checked data-page-node-id="YemOz4oXWNCZwjyfEBOmC4"> 自动刷新</label>
+  <button class="btn" id="refresh" data-page-node-id="1tG6FSOtlhlB66FykuHCpp">刷新</button>
+</header>
+
+<main data-page-node-id="fnHUc98MK0S6WRbYvYAQG8">
+  <section class="panel" data-page-node-id="K2EaJ58EtVu3IC5amy6oHo">
+    <h2 data-page-node-id="cubbnU3dbJIC7H9v8oGt0M"><span class="crumbs" id="crumbs" data-page-node-id="uRnOCKezveV3kCAnOd0iMe"></span><span class="count" id="fileCount" data-page-node-id="P2j9njuQ68844OtFxGQszE"></span></h2>
+    <div class="panel-body" data-page-node-id="r7hu7FRJqDqGXCHEBj3LiK">
+      <div class="grid" id="grid" data-page-node-id="eH7yFmhQhPfzjp8aY95ILg"></div>
+      <div class="empty" id="emptyBox" hidden data-page-node-id="WsAX3M8AybZGq2t4vsz6hg"></div>
+      <div class="pager" id="pager" hidden data-page-node-id="yx3dicojV0HAbXlsDdOmhq"></div>
+    </div>
+  </section>
+
+  <aside class="panel" data-page-node-id="pO6mLJXQAnVNjHJFQy3O3b">
+    <h2 id="taskHeader" title="展开/收起任务面板" data-page-node-id="MJJwUCvE7XWUYLt3NO7oL5">
+      任务进度<span class="fab-dot" data-page-node-id="iPpUy2KuFSTpzu2vVfowTB"></span>
+      <span class="count" id="taskCount" data-page-node-id="jxpNo4K9rPE80dHR77irHU"></span>
+      <button class="collapse" id="collapseBtn" data-page-node-id="peTD58DSDpKNWjzOWCUKws">▸</button>
+    </h2>
+    <div class="queue" id="queueBox" data-page-node-id="mopAEGD3R8sH7tlc6Mgbqz"></div>
+    <div id="taskList" data-page-node-id="Mh68ucd4qqD9TUCIkbv6ZS"></div>
+  </aside>
+</main>
+
+<div class="lightbox" id="lightbox" hidden data-page-node-id="lbfKB5fOWKFed4i5jRc35W"></div>
+<button class="fresh" id="freshPill" hidden data-page-node-id="4m16K5hkFbwjlz9rUtYW2T"><i data-page-node-id="lft95uhyF0CJiYqtUIVG1Q"></i><span id="freshText" data-page-node-id="5RARbx2Hal4gKiNwiDNcGE"></span></button>
+
+<script>
+const API = '/roundabout/view';
+const KEY = new URLSearchParams(location.search).get('key') || '';
+const auth = () => KEY ? '&key=' + encodeURIComponent(KEY) : '';
+
+const STATUS = {
+  pending:     { label: '排队中',  color: 'var(--pending)' },
+  in_progress: { label: '执行中',  color: 'var(--running)' },
+  completed:   { label: '已完成',  color: 'var(--done)' },
+  failed:      { label: '失败',    color: 'var(--fail)' },
+  cancelled:   { label: '已取消',  color: 'var(--cancel)' },
+};
+
+// 每页条数按视口高度算（见 computePageSize）：一屏能放下几行就一页几行，
+// 免得大屏翻好几页、小屏滚半天。下面这些是量不到布局时的兜底值，以及 .grid 几何的镜像。
+const DEFAULT_PAGE_SIZE = 120;
+const GRID_MIN_COL = 148;       // 与 .grid 的 minmax(148px, 1fr) 一致
+const GRID_GAP = 12;            // 与 .grid 的 gap 一致
+const CELL_META_FALLBACK = 47;  // 缩略图下方那两行文字 + 内边距，首屏后会用真实节点量准
+const PAGER_RESERVE = 72;       // 分页条及其上下留白，预留下来免得最后一页看不到翻页
+const PAGE_MAX = 500;           // 后端 limit 上限
+// 任务面板最多渲染多少条（记录本身由后端按 6 小时保留期回收）
+const MAX_TASKS = 50;
+
+let root = 'output';
+let path = '';
+let offset = 0;
+let pageSize = 0;               // 0 = 还没量过，首次 loadFiles 时算出来
+let cellMetaH = CELL_META_FALLBACK;
+
+const $ = id => document.getElementById(id);
+
+// 音频/普通文件用与目录格同款的内联 SVG（currentColor，居中在 1:1 图标区里）
+const svgEl = inner => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">${inner}</svg>`;
+const AUDIO_SVG = svgEl('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>');
+const FILE_SVG = svgEl('<path d="M14 3v5h5"/><path d="M6 3h8l5 5v13H6z"/>');
+
+function fmtSize(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1048576).toFixed(1) + ' MB';
+}
+function fmtElapsed(s) {
+  if (s < 60) return s.toFixed(1) + 's';
+  return Math.floor(s / 60) + 'm ' + String(Math.floor(s % 60)).padStart(2, '0') + 's';
+}
+function fmtTime(ts) {
+  const d = new Date(ts * 1000);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// ---- 每页条数按视口高度自适应 --------------------------------------------
+// 网格宽度决定列数，列宽决定行高（缩略图 1:1 + 文字区），可见高度除以行高就是行数。
+// 量不到布局时（宽度为 0：首帧前、无头测试环境）退回 DEFAULT_PAGE_SIZE。
+function gridCols(width) {
+  return Math.max(1, Math.floor((width + GRID_GAP) / (GRID_MIN_COL + GRID_GAP)));
+}
+
+// 文字区高度 = 单元格高度 - 列宽。量准一次即可长期用，浏览器缩放/改字号后重新量也对。
+// 只量带缩略图的格子：目录格子是整块 1:1，量它会得到 0。
+function measureCellMeta() {
+  const thumb = $('grid').querySelector('.thumb');
+  if (!thumb) return;
+  const cell = thumb.closest('.cell');
+  const gridW = $('grid').getBoundingClientRect().width;
+  const cellH = cell ? cell.getBoundingClientRect().height : 0;
+  if (!gridW || !cellH) return;
+  const cols = gridCols(gridW);
+  const meta = cellH - (gridW - GRID_GAP * (cols - 1)) / cols;
+  if (meta > 4 && meta < 200) cellMetaH = meta;
+}
+
+function computePageSize() {
+  const grid = $('grid');
+  const w = grid.getBoundingClientRect().width;
+  if (!w) return DEFAULT_PAGE_SIZE;
+  measureCellMeta();
+  const cols = gridCols(w);
+  const colW = (w - GRID_GAP * (cols - 1)) / cols;
+  const rowH = colW + cellMetaH + GRID_GAP;
+  // 可见高度用固定占位算，不能用网格当前的 top：header 是 sticky，滚动后那个值会变负
+  const panel = grid.closest('.panel');
+  const headH = document.querySelector('header').getBoundingClientRect().height;
+  const titleH = panel.querySelector('h2').getBoundingClientRect().height;
+  const padTop = parseFloat(getComputedStyle(grid.parentElement).paddingTop) || 0;
+  const avail = window.innerHeight - headH - titleH - padTop - PAGER_RESERVE;
+  const rows = Math.max(1, Math.ceil(avail / rowH));   // 露半行也算一行，否则底部永远空一条
+  return Math.min(PAGE_MAX, Math.max(cols, cols * rows));
+}
+
+// 视口/布局变了就重新量，并把 offset 对齐到新页边界：位置大致不变，又不会留空档
+function resyncPageSize() {
+  const next = computePageSize();
+  if (next === pageSize) return false;
+  pageSize = next;
+  offset = Math.floor(offset / next) * next;
+  return true;
+}
+
+// ---- 产物自动同步 --------------------------------------------------------
+// 探测只取当前目录的第一条（offset=0&limit=1），返回几十字节；签名变了才整页重载，
+// 避免每 4 秒拉回 120 条记录。sort/order 显式写死，不依赖后端默认值。
+let lastProbe = null;
+let lastTotal = null;
+
+const dirSig = d => {
+  const newest = d.files && d.files[0];
+  return `${d.total}|${newest ? newest.name + ':' + newest.mtime : ''}`;
+};
+
+function hideFresh() {
+  $('freshPill').hidden = true;
+}
+
+// 用户不在第一页或正在看大图时不打断他，只在左下角提示；否则原地刷新
+async function probeFiles() {
+  if (document.hidden) return;
+  const qs = `root=${root}&path=${encodeURIComponent(path)}&offset=0&limit=1`
+    + `&sort=mtime&order=desc${auth()}`;
+  const r = await fetch(`${API}/files?${qs}`);
+  const d = await r.json().catch(() => null);
+  // 旧后端没有 total：无从判断分页与增量，直接不启用自动同步
+  if (!d || d.error || d.total == null) return;
+
+  const sig = dirSig(d);
+  if (lastProbe === null) { lastProbe = sig; lastTotal = d.total; return; }
+  if (sig === lastProbe) return;
+
+  const added = lastTotal == null ? 0 : d.total - lastTotal;
+  lastProbe = sig;
+  lastTotal = d.total;
+
+  if (offset === 0 && $('lightbox').hidden) { loadFiles(); return; }
+  $('freshText').textContent = added > 0 ? `发现 ${added} 个新产物 · 查看` : '内容已更新 · 刷新';
+  $('freshPill').hidden = false;
+}
+
+$('freshPill').onclick = () => {
+  $('lightbox').hidden = true;
+  $('lightbox').innerHTML = '';
+  offset = 0;
+  loadFiles();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+async function loadFiles(depth = 0) {
+  const used = pageSize || (pageSize = computePageSize());
+  const qs = `root=${root}&path=${encodeURIComponent(path)}&offset=${offset}&limit=${used}${auth()}`;
+  const r = await fetch(`${API}/files?${qs}`);
+  const d = await r.json().catch(() => null);
+  if (!d || d.error) {
+    $('emptyBox').hidden = false;
+    // 404 多半是页面被当成静态文件打开（IDE 预览/双击本地文件），API 根本不在那个源上
+    const hint = (!d && r.status === 404) || r.status === 404
+      ? `—— 此页面需由 ComfyUI 提供，请打开 http://${location.hostname || '127.0.0.1'}:8188/roundabout/view`
+      : '';
+    $('emptyBox').textContent = '加载失败：' + ((d && d.error && d.error.message) || r.status) + hint;
+    $('grid').innerHTML = '';
+    $('pager').hidden = true;
+    return;
+  }
+  lastProbe = dirSig(d);   // 刚渲染完，标记基线，避免探测循环立刻再刷一次
+  lastTotal = d.total;
+  hideFresh();
+  $('rootPath').textContent = d.root_path || '';
+  // 后端未重启时没有 total：此时不启用分页（点了也不会变），退回旧的「全量+截断」行为
+  const paging = d.total != null;
+  const total = paging ? d.total : d.files.length;
+  const dirCount = d.dir_count != null ? d.dir_count : d.dirs.length;
+  const limit = d.limit || used;
+  $('pager').hidden = true;
+  // 翻到越界的页（比如期间文件被删了）自动退回第一页
+  if (offset > 0 && total > 0 && !d.files.length) { offset = 0; loadFiles(); return; }
+  $('fileCount').textContent = `${dirCount} 个目录 · ${total} 个文件` + (d.truncated ? '（已截断）' : '');
+  if (paging) renderPager(total, d.offset || offset, limit);
+
+  const crumbs = d.crumbs.map((c, i) =>
+    i === 0 ? `<a data-path="">${c.name}</a>` : `<span class="sep">/</span><a data-path="${c.path}">${c.name}</a>`
+  ).join('');
+  $('crumbs').innerHTML = crumbs;
+  $('crumbs').querySelectorAll('a').forEach(a => a.onclick = () => { path = a.dataset.path; offset = 0; loadFiles(); });
+
+  const grid = $('grid');
+  grid.innerHTML = '';
+  d.dirs.forEach(dir => {
+    const el = document.createElement('div');
+    el.className = 'cell';
+    el.innerHTML = `<div class="dir">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+      </svg></div>
+      <div class="meta"><div class="name" title="${dir.name}">${dir.name}</div></div>`;
+    el.onclick = () => { path = dir.path; offset = 0; loadFiles(); };
+    grid.appendChild(el);
+  });
+
+  d.files.forEach(f => {
+    const el = document.createElement('div');
+    el.className = 'cell';
+    const inner = f.kind === 'image'
+      ? `<img class="thumb" data-src="${f.thumb}" alt="">`   // src 由分批懒加载引擎注入
+      : f.kind === 'video'
+        ? `<video class="thumb" muted preload="metadata" src="${f.url}"></video>`
+        : f.kind === 'audio'
+          ? `<div class="thumb icon">${AUDIO_SVG}</div>`
+          : `<div class="thumb icon">${FILE_SVG}</div>`;
+    el.innerHTML = inner + `<div class="meta">
+        <div class="name" title="${f.name}">${f.name}</div>
+        <div class="sub">${fmtSize(f.size)} · ${fmtTime(f.mtime)}</div>
+      </div>`;
+    // 只拦带控件的播放器；网格里的 video 无 controls，点它仍要弹大图
+    el.onclick = e => { if (!e.target.closest('audio[controls], video[controls]')) openLightbox(f); };
+    grid.appendChild(el);
+    if (f.kind === 'image') observeThumb(el.querySelector('img.thumb'));
+  });
+
+  const empty = !d.dirs.length && !d.files.length;
+  $('emptyBox').hidden = !empty;
+  if (empty) $('emptyBox').textContent = d.truncated ? '内容过多，已截断显示' : '这个目录是空的';
+
+  // 渲染后才有真实单元格能量文字区高度；量准后页大小若变了对齐重取一次。
+  // 深度上限 2：页大小不影响单元格高度与网格顶部，几何只由视口决定，最多收敛一次。
+  if (depth < 2 && resyncPageSize()) return loadFiles(depth + 1);
+}
+
+function renderPager(total, off, limit) {
+  const p = $('pager');
+  const pages = Math.max(1, Math.ceil(total / limit));
+  if (pages <= 1) { p.hidden = true; p.innerHTML = ''; return; }
+
+  const cur = Math.min(pages, Math.floor(off / limit) + 1);
+  p.hidden = false;
+  p.innerHTML = `
+    <button class="btn" data-page="1" ${cur === 1 ? 'disabled' : ''}>首页</button>
+    <button class="btn" data-page="${cur - 1}" ${cur === 1 ? 'disabled' : ''}>上一页</button>
+    <span class="pginfo">第 ${cur} / ${pages} 页 · 共 ${total} 个文件 · 每页 ${limit}</span>
+    <button class="btn" data-page="${cur + 1}" ${cur >= pages ? 'disabled' : ''}>下一页</button>
+    <button class="btn" data-page="${pages}" ${cur >= pages ? 'disabled' : ''}>末页</button>`;
+}
+// 事件委托：分页条每次重绘，按钮不能直接绑
+$('pager').onclick = e => {
+  const b = e.target.closest('button[data-page]');
+  if (!b || b.disabled) return;
+  offset = (Number(b.dataset.page) - 1) * (pageSize || computePageSize());
+  loadFiles();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+};
+
+function openLightbox(f) {
+  // 预览优先：该图缩略图插到懒加载队首；预览大图下载期间暂停其余批次（加载完自动恢复，
+  // 见下方 load/error 监听；关闭弹层也会恢复），把连接让给预览大图
+  if (f.kind === 'image') prioritizeThumb(f.thumb);
+  thumbPaused = true;
+  const box = $('lightbox');
+  const body = f.kind === 'video'
+    ? `<video src="${f.url}" controls autoplay loop style="max-height:80vh"></video>`
+    : f.kind === 'audio'
+      ? `<div class="lb-audio"><audio src="${f.url}" controls autoplay></audio></div>`
+      : f.kind === 'image'
+        ? `<img src="${f.url}" alt="">`
+        : `<div style="color:#fff">此格式无法预览</div>`;
+  box.innerHTML = body +
+    `<div class="cap">${f.name} · <a href="${f.url}" target="_blank" rel="noreferrer">打开原文件</a>（点击空白处关闭）</div>`;
+  // 预览大图加载完（成功/失败）即恢复缩略图批次，不必等关掉弹层；
+  // 视频/音频本身按流式拉取、不阻塞连接池，直接恢复
+  if (f.kind === 'image') {
+    const resume = () => { thumbPaused = false; pumpThumbs(); };
+    box.querySelector('img').addEventListener('load', resume, { once: true });
+    box.querySelector('img').addEventListener('error', resume, { once: true });
+  } else {
+    thumbPaused = false;
+    pumpThumbs();
+  }
+  box.hidden = false;
+}
+// 点在音视频控件上不关闭（否则拖进度条/点播放就关掉弹层）；图片照旧点哪都关
+$('lightbox').onclick = e => {
+  if (e.target.closest('audio[controls], video[controls]')) return;
+  $('lightbox').hidden = true;
+  $('lightbox').innerHTML = '';
+  thumbPaused = false;   // 关预览恢复缩略图批次
+  pumpThumbs();
+};
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('lightbox').click(); });
+
+// ---- 缩略图分批懒加载 ------------------------------------------------------
+// 替代原生 loading="lazy"（浏览器自调度无法插队）：IntersectionObserver 收集进入
+// 视口（含 300px 预载边距）的 <img data-src>，按固定并发一批批加载；打开预览时
+// 该图缩略图插到队首、其余批次暂停，把连接/带宽优先让给预览大图，关预览恢复。
+const THUMB_BATCH = 6;                       // 一批并发的图片数（≈浏览器每主机连接数）
+const thumbQueue = [];                       // 待加载的 img（按入队顺序）
+const thumbSeen = new WeakSet();             // 已入队过的 img，防重复
+let thumbActive = 0;                         // 在途并发数
+let thumbPaused = false;                     // 预览打开时暂停起新批次
+
+function enqueueThumb(img, front = false) {
+  if (thumbSeen.has(img)) {                  // 已入队/在途 → 只做插队
+    const i = thumbQueue.indexOf(img);
+    if (front && i > 0) { thumbQueue.splice(i, 1); thumbQueue.unshift(img); }
+    pumpThumbs();
+    return;
+  }
+  thumbSeen.add(img);
+  if (front) thumbQueue.unshift(img); else thumbQueue.push(img);
+  pumpThumbs();
+}
+function pumpThumbs() {
+  // 批处理：并发空闲且未被预览暂停时，从队首取下一张；重渲染后旧节点已断连则丢弃
+  while (!thumbPaused && thumbActive < THUMB_BATCH && thumbQueue.length) {
+    const img = thumbQueue.shift();
+    if (!img || !img.isConnected) continue;
+    if (!img.dataset.src) continue;
+    thumbActive++;
+    const done = () => {
+      thumbActive--;
+      delete img.dataset.src;
+      pumpThumbs();
+    };
+    img.addEventListener('load', done, { once: true });
+    img.addEventListener('error', done, { once: true });
+    img.src = img.dataset.src;               // 置 src 触发真实下载
+  }
+}
+function observeThumb(img) {
+  if (!('IntersectionObserver' in window)) { enqueueThumb(img); return; }  // 环境兜底：直接全量加载
+  thumbIO.observe(img);
+}
+const thumbIO = ('IntersectionObserver' in window)
+  ? new IntersectionObserver(entries => {
+      for (const en of entries) if (en.isIntersecting) { thumbIO.unobserve(en.target); enqueueThumb(en.target); }
+    }, { rootMargin: '300px 0px' })        // 提前 300px 进队，滚动不留白
+  : null;
+function prioritizeThumb(url) {
+  if (!url) return;
+  const img = [...$('grid').querySelectorAll('img.thumb')].find(i => i.dataset.src === url);
+  if (img) enqueueThumb(img, true);        // 未入队则插队首；已入队则提到队首
+}
+
+// 任务面板「查看产物」：不在新标签开裸文件（无页面外壳，显得关不掉），
+// 改为页面内 lightbox 弹层——与资源网格同一套关闭方式（点空白 / Esc / 标题栏开原文件）
+const _VID_EXT = new Set(['mp4', 'webm', 'mov', 'mkv', 'm4v', 'avi']);
+const _AUD_EXT = new Set(['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac']);
+$('taskList').addEventListener('click', e => {
+  const a = e.target.closest('a[data-task-url]');
+  if (!a) return;
+  e.preventDefault();
+  const u = a.dataset.taskUrl;
+  const m = u.match(/[?&]filename=([^&]+)/);
+  const fname = m ? decodeURIComponent(m[1]) : '产物';
+  const ext = fname.split('.').pop().toLowerCase();
+  const kind = _VID_EXT.has(ext) ? 'video' : _AUD_EXT.has(ext) ? 'audio' : 'image';
+  openLightbox({ kind, name: fname, url: u });
+});
+
+async function loadTasks() {
+  const r = await fetch(`${API}/tasks${KEY ? '?key=' + encodeURIComponent(KEY) : ''}`);
+  const d = await r.json().catch(() => null);
+  const list = $('taskList');
+  if (!d || d.error) {
+    list.innerHTML = `<div class="empty">任务加载失败</div>`;
+    return;
+  }
+  $('taskCount').textContent = `${d.tasks.length} 条`;
+  // 收起时也要能看出「还有活儿在跑」，用标题上的呼吸点提示
+  const active = d.tasks.some(t => t.status === 'pending' || t.status === 'in_progress');
+  document.querySelector('aside.panel').classList.toggle('has-active', active);
+
+  // ComfyUI 队列：同步生成（图片、不带 background 的视频）不进网关任务表，只有这里看得到。
+  // 后端未重启时没有 queue 字段，此时整块隐藏，不误报「不可达」。
+  const q = d.queue;
+  const qb = $('queueBox');
+  if (!q) {
+    qb.hidden = true;
+  } else if (q.reachable) {
+    const busy = q.running.length + q.pending.length;
+    qb.innerHTML = `<span>执行中 <b class="live">${q.running.length}</b></span>`
+      + `<span>排队 <b class="wait">${q.pending.length}</b></span>`
+      + (busy ? '<span class="idle">ComfyUI 忙碌</span>' : '<span class="idle">空闲</span>');
+    qb.hidden = false;
+  } else {
+    qb.innerHTML = `<span style="color:var(--fail)">ComfyUI 队列不可达</span>`;
+  }
+
+  if (!d.tasks.length) {
+    list.innerHTML = `<div class="empty">暂无生成记录
+      <div style="font-size:12px;margin-top:6px;line-height:1.7">
+        REST 端点与 MCP 工具的每次生成都会记在这里（含图片编辑、异步视频）。<br>
+        任务是否正在执行，看上方「执行中 / 排队」计数。
+      </div></div>`;
+    return;
+  }
+  // 记录按时间倒序，只渲染最近 MAX_TASKS 条，避免长时间运行后这里堆成几千行
+  const shown = d.tasks.slice(0, MAX_TASKS);
+  const rest = d.tasks.length - shown.length;
+  list.innerHTML = shown.map(t => {
+    const s = STATUS[t.status] || { label: t.status, color: 'var(--muted)' };
+    const active = t.status === 'pending' || t.status === 'in_progress';
+    const bar = active ? `<div class="bar"><i style="background:${s.color}"></i></div>` : '';
+    // 产物：url 可点（页面内弹层预览，点空白/Esc 关闭，标题栏可再开原文件）；
+    // path 是 input/output 之外的物理路径，只展示不可点
+    const result = t.url
+      ? `<a href="${t.url}" data-task-url="${t.url}" target="_blank" rel="noreferrer">查看产物</a>`
+      : t.path
+        ? `<span title="${t.path}">${t.path.split(/[\\/]/).pop()}</span>`
+        : (t.error ? `<span title="${(t.error || '').replace(/"/g, '&quot;')}">${t.error.slice(0, 40)}</span>` : '');
+    return `<div class="task">
+      <div class="row1">
+        <span class="dot" style="background:${s.color}"></span>
+        <span class="st" style="color:${s.color}">${s.label}</span>
+        <span class="model">${t.model || '-'}</span>
+        <span class="elapsed">${fmtElapsed(t.elapsed)}</span>
+      </div>
+      <div class="row2"><span class="tid">${t.id.slice(0, 8)}</span>${result}</div>
+      ${bar}
+    </div>`;
+  }).join('') + (rest > 0 ? `<div class="note">更早的 ${rest} 条已折叠</div>` : '');
+}
+
+$('tabOutput').onclick = () => { root = 'output'; path = ''; offset = 0; setTab(); loadFiles(); };
+$('tabInput').onclick  = () => { root = 'input';  path = ''; offset = 0; setTab(); loadFiles(); };
+function setTab() {
+  $('tabOutput').classList.toggle('on', root === 'output');
+  $('tabInput').classList.toggle('on', root === 'input');
+}
+$('refresh').onclick = () => { loadFiles(); loadTasks(); };
+
+// 视口尺寸（或任务面板展开导致网格变窄）变化后重新量每页条数。
+// 延迟到布局动画（padding-right .18s）结束再量，否则量到的是过渡中的旧宽度。
+let layoutTimer = null;
+function onLayoutChange() {
+  clearTimeout(layoutTimer);
+  layoutTimer = setTimeout(() => { if (resyncPageSize()) loadFiles(); }, 240);
+}
+window.addEventListener('resize', onLayoutChange);
+window.addEventListener('orientationchange', onLayoutChange);
+
+// 整个标题栏（含 ▸ 按钮）都可点：按钮的 click 冒泡到 h2，只 toggle 一次
+$('taskHeader').onclick = () => {
+  const collapsed = document.body.classList.toggle('tasks-collapsed');
+  $('collapseBtn').textContent = collapsed ? '▸' : '▾';
+  $('taskHeader').title = collapsed ? '展开任务面板' : '收起任务面板';
+  onLayoutChange();
+};
+
+loadFiles();
+loadTasks();
+setInterval(() => { if ($('auto').checked) loadTasks(); }, 2000);
+setInterval(() => { if ($('auto').checked) probeFiles(); }, 4000);
+</script>
+</body>
+</html>

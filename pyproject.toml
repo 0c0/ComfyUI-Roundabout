@@ -1,0 +1,47 @@
+# ComfyUI 节点包元数据（ComfyUI / ComfyUI-Manager 的抓取入口）
+#
+#   规范：https://docs.comfy.org/registry/specifications
+#
+# 本地安装不需要本文件；它的作用是让 ComfyUI 生态（ComfyUI-Manager、
+# 注册表爬虫、更新检查）能识别本节点的名称与版本。
+#
+# 注意：本仓库**不发布到 Comfy Registry**，节点通过 Git URL / git clone 安装，
+# 元数据仅供各工具自行抓取。若将来要发布，再按
+# https://docs.comfy.org/registry/publishing 补 `comfy node publish` 即可。
+
+[project]
+# 节点包名。规范建议不要带 "ComfyUI" 前缀，故用短名 roundabout。
+# 若将来发布到注册表，它会成为全局唯一 id 且不可再改。
+name = "roundabout"
+version = "1.0.0"
+description = "Expose ComfyUI workflows as an OpenAI-compatible REST API and an MCP server, so AI agents drive local image/video generation with semantic parameters instead of whole workflow graphs."
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+# 与 requirements.txt 保持一致：MCP 网关默认启用，故为必需依赖。
+dependencies = [
+    "mcp>=2.0.0",      # 必须 2.x；1.x 的 FastMCP API 不兼容
+    "uvicorn>=0.30.0",
+]
+classifiers = [
+    "Operating System :: OS Independent",
+    "Environment :: GPU :: NVIDIA CUDA",
+]
+
+[project.urls]
+Repository = "https://github.com/0c0/ComfyUI-Roundabout"
+Documentation = "https://github.com/0c0/ComfyUI-Roundabout/blob/main/README.md"
+"Bug Tracker" = "https://github.com/0c0/ComfyUI-Roundabout/issues"
+
+[tool.comfy]
+# 仅发布到 Comfy Registry 时才用得上（需先在 https://registry.comfy.org 注册
+# 同名 publisher）。此处保留 GitHub 用户名，将来真要发布时无需再改。
+PublisherId = "0c0"
+DisplayName = "Roundabout (OpenAI API + MCP)"
+# 可选：方图（≤400×400，SVG/PNG/JPG/GIF）。填了会显示在 ComfyUI-Manager 列表里。
+Icon = ""
+# 可选：21:9 横幅。
+# Banner = ""
+# 未设 requires-comfyui —— 网关本身只用 PromptServer 的通用路由 API，没有硬版本门槛；
+# 而内置工作流引用了较新的 comfy_extras 节点（如 MiniMaxH3 / LoadBackgroundRemovalModel），
+# 设了反而会把只想用自有工作流的用户挡在门外。建议版本写在 README「环境要求」里。
+# requires-comfyui = ">=0.3.0"

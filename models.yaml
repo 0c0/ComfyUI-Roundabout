@@ -1,0 +1,547 @@
+default_model: z-image-turbo
+defaults:
+  params:
+    negative_prompt: lowres, worst quality, blurry, jpeg artifacts, watermark, text,
+      signature, deformed
+  quality_presets:
+    low:
+      steps: 12
+    standard:
+      steps: 25
+    medium:
+      steps: 25
+    hd:
+      steps: 40
+    high:
+      steps: 40
+  style_presets:
+    vivid:
+      prompt_suffix: vivid saturated colors, high contrast, dramatic cinematic lighting,
+        hyper-detailed
+    natural:
+      prompt_suffix: natural lighting, true-to-life colors, photographic, subtle tones
+models:
+  z-image:
+    workflow: image_z_image_base.json
+    description: Z-Image base —— AuraFlow 架构完整模型，30 步高精度
+    mode: image
+    capabilities:
+    - text-to-image
+    output_node: '95'
+    timeout: 300
+    defaults:
+      width: 1024
+      height: 1024
+      steps: 30
+      cfg: 3
+      sampler_name: res_multistep
+      scheduler: simple
+      denoise: 1
+    bindings:
+      filename_prefix: 95.inputs.filename_prefix
+      prompt: 76:67.inputs.text
+      negative_prompt: 76:71.inputs.text
+      seed: 76:69.inputs.seed
+      steps: 76:69.inputs.steps
+      cfg: 76:69.inputs.cfg
+      sampler_name: 76:69.inputs.sampler_name
+      scheduler: 76:69.inputs.scheduler
+      denoise: 76:69.inputs.denoise
+      width: 76:68.inputs.width
+      height: 76:68.inputs.height
+    aliases:
+    - zimage
+    - z_image
+    - z-image-base
+  z-image-turbo:
+    workflow: image_z_image_turbo.json
+    description: Z-Image Turbo —— AuraFlow 架构 int8 蒸馏模型，8 步出图
+    mode: image
+    capabilities:
+    - text-to-image
+    output_node: '9'
+    timeout: 300
+    defaults:
+      width: 1024
+      height: 1024
+      steps: 8
+      cfg: 1
+      sampler_name: res_multistep
+      scheduler: simple
+      denoise: 1
+    bindings:
+      filename_prefix: 9.inputs.filename_prefix
+      prompt: 57:27.inputs.text
+      seed: 57:3.inputs.seed
+      steps: 57:3.inputs.steps
+      cfg: 57:3.inputs.cfg
+      sampler_name: 57:3.inputs.sampler_name
+      scheduler: 57:3.inputs.scheduler
+      denoise: 57:3.inputs.denoise
+      width: 57:13.inputs.width
+      height: 57:13.inputs.height
+    aliases:
+    - zimage-turbo
+    - z_image_turbo
+  boogu-image-base:
+    workflow: image_boogu_image_base.json
+    description: Boogu Image base —— 30 步高质量文生图
+    mode: image
+    capabilities:
+    - text-to-image
+    output_node: '33'
+    timeout: 300
+    defaults:
+      width: 1024
+      height: 1024
+      steps: 30
+      cfg: 4
+      sampler_name: euler
+      scheduler: simple
+      denoise: 1
+    bindings:
+      filename_prefix: 33.inputs.filename_prefix
+      prompt: 34:11.inputs.text
+      negative_prompt: 34:38.inputs.text
+      seed: 34:32.inputs.seed
+      steps: 34:32.inputs.steps
+      cfg: 34:32.inputs.cfg
+      sampler_name: 34:32.inputs.sampler_name
+      scheduler: 34:32.inputs.scheduler
+      denoise: 34:32.inputs.denoise
+      width: 34:8.inputs.width
+      height: 34:8.inputs.height
+    aliases:
+    - boogu-base
+  boogu-image-base-4step:
+    workflow: image_boogu_image_base_4step.json
+    description: Boogu Image base (4-step) —— 4 步快速预览
+    mode: image
+    capabilities:
+    - text-to-image
+    output_node: '33'
+    timeout: 300
+    defaults:
+      width: 1024
+      height: 1024
+      steps: 4
+      cfg: 1
+      sampler_name: lcm
+      scheduler: sgm_uniform
+      denoise: 1
+    bindings:
+      filename_prefix: 33.inputs.filename_prefix
+      prompt: 34:11.inputs.text
+      seed: 34:32.inputs.seed
+      steps: 34:32.inputs.steps
+      cfg: 34:32.inputs.cfg
+      sampler_name: 34:32.inputs.sampler_name
+      scheduler: 34:32.inputs.scheduler
+      denoise: 34:32.inputs.denoise
+      width: 34:8.inputs.width
+      height: 34:8.inputs.height
+  boogu-image-turbo:
+    workflow: image_boogu_image_turbo.json
+    description: Boogu Image Turbo —— int8 蒸馏 4 步出图
+    mode: image
+    capabilities:
+    - text-to-image
+    output_node: '33'
+    timeout: 300
+    defaults:
+      width: 1024
+      height: 1024
+      steps: 4
+      cfg: 1
+      sampler_name: lcm
+      scheduler: sgm_uniform
+      denoise: 1
+    bindings:
+      filename_prefix: 33.inputs.filename_prefix
+      prompt: 34:11.inputs.text
+      seed: 34:32.inputs.seed
+      steps: 34:32.inputs.steps
+      cfg: 34:32.inputs.cfg
+      sampler_name: 34:32.inputs.sampler_name
+      scheduler: 34:32.inputs.scheduler
+      denoise: 34:32.inputs.denoise
+      width: 34:8.inputs.width
+      height: 34:8.inputs.height
+    aliases:
+    - boogu-turbo
+  boogu-image-edit:
+    workflow: image_boogu_image_edit_base.json
+    description: Boogu Image Edit —— 单图编辑，擅长改写/添加图像内的文字，30 步（必须传 image）
+    mode: image
+    capabilities:
+    - image-to-image
+    output_node: '55'
+    timeout: 300
+    defaults:
+      # 全局默认负向含 text / watermark，与「编辑图中文字」的用途冲突，这里清空
+      negative_prompt: ''
+      steps: 30
+      cfg: 3.5
+      sampler_name: dpmpp_2m
+      scheduler: simple
+      denoise: 1
+    bindings:
+      filename_prefix: 55.inputs.filename_prefix
+      # 尺寸不绑：工作流内 ResizeImageMaskNode 把输入图缩到 1MP，EmptyLatentImage 的宽高来自 GetImageSize
+      image: 32.inputs.image
+      prompt: 45:36.inputs.prompt
+      negative_prompt: 45:36.inputs.negative_prompt
+      seed: 45:21.inputs.noise_seed
+      cfg: 45:21.inputs.cfg
+      steps: 45:26.inputs.steps
+      sampler_name: 45:22.inputs.sampler_name
+      scheduler: 45:26.inputs.scheduler
+      denoise: 45:26.inputs.denoise
+    aliases:
+    - boogu-edit
+    - boogu_image_edit
+  boogu-image-edit-turbo:
+    workflow: image_boogu_image_edit_turbo.json
+    description: Boogu Image Edit Turbo —— 单图编辑 6 步快速版，擅长改写/添加图像内的文字（必须传 image）
+    mode: image
+    capabilities:
+    - image-to-image
+    output_node: '55'
+    timeout: 300
+    defaults:
+      negative_prompt: ''
+      steps: 6
+      cfg: 1
+      sampler_name: euler
+      scheduler: sgm_uniform
+      denoise: 1
+    bindings:
+      filename_prefix: 55.inputs.filename_prefix
+      image: 32.inputs.image
+      prompt: 45:36.inputs.prompt
+      negative_prompt: 45:36.inputs.negative_prompt
+      seed: 45:21.inputs.noise_seed
+      cfg: 45:21.inputs.cfg
+      steps: 45:26.inputs.steps
+      sampler_name: 45:22.inputs.sampler_name
+      scheduler: 45:26.inputs.scheduler
+      denoise: 45:26.inputs.denoise
+    aliases:
+    - boogu-edit-turbo
+    - boogu_image_edit_turbo
+  utility-birefnet-remove-background:
+    workflow: utility_birefnet_remove_background.json
+    description: 图片去背景（BiRefNet matting）—— 独立工具类，无 prompt，只需 image；输出透明 PNG，尺寸跟随输入图
+    mode: image
+    promptless: true
+    capabilities:
+    - image-to-image
+    output_node: '22'
+    timeout: 120
+    defaults: {}
+    bindings:
+      image: 17.inputs.image
+      filename_prefix: 22.inputs.filename_prefix
+    aliases:
+    - birefnet-remove-bg
+    - utility_birefnet_remove_background
+    - remove-background
+  flux2-klein-image-edit-turbo:
+    workflow: image_flux2_klein_image_edit_turbo.json
+    description: Flux2 Klein 9B Edit Turbo —— 单图编辑 6 步快速版（参考图 + 提示词改写，Qwen3-VL 文本编码），尺寸跟随输入图，输出约 1MP（必须传 image）
+    mode: image
+    capabilities:
+    - image-to-image
+    output_node: '94'
+    timeout: 600
+    defaults:
+      negative_prompt: ''
+      steps: 6
+      cfg: 1
+      sampler_name: euler
+    bindings:
+      filename_prefix: 94.inputs.filename_prefix
+      image: 76.inputs.image
+      prompt: 92:113.inputs.text
+      negative_prompt: 92:87.inputs.text
+      seed: 92:105.inputs.noise_seed
+      cfg: 92:114.inputs.cfg
+      steps: 92:115.inputs.steps
+      sampler_name: 92:102.inputs.sampler_name
+    aliases:
+    - image-flux2-klein-image-edit-turbo   # 旧名，向后兼容
+    - flux2-edit-turbo
+    - image_flux2_klein_image_edit_turbo
+  mage-flow-base:
+    workflow: image_mage_flow_base.json
+    description: MageFlow base —— 30 步文生图
+    mode: image
+    capabilities:
+    - text-to-image
+    output_node: '10'
+    timeout: 300
+    defaults:
+      width: 1024
+      height: 1024
+      steps: 30
+      cfg: 5
+      sampler_name: euler
+      scheduler: simple
+      denoise: 1
+    bindings:
+      filename_prefix: 10.inputs.filename_prefix
+      prompt: 12:5.inputs.prompt
+      negative_prompt: 12:5.inputs.negative_prompt
+      seed: 12:6.inputs.seed
+      steps: 12:6.inputs.steps
+      cfg: 12:6.inputs.cfg
+      sampler_name: 12:6.inputs.sampler_name
+      scheduler: 12:6.inputs.scheduler
+      denoise: 12:6.inputs.denoise
+      width: 12:5.inputs.width
+      height: 12:5.inputs.height
+    aliases:
+    - mageflow
+  mage-flow-turbo:
+    workflow: image_mage_flow_turbo.json
+    description: MageFlow Turbo —— 4 步快速出图
+    mode: image
+    capabilities:
+    - text-to-image
+    output_node: '10'
+    timeout: 300
+    defaults:
+      width: 1024
+      height: 1024
+      steps: 4
+      cfg: 1
+      sampler_name: euler
+      scheduler: simple
+      denoise: 1
+    bindings:
+      filename_prefix: 10.inputs.filename_prefix
+      prompt: 12:5.inputs.prompt
+      negative_prompt: 12:5.inputs.negative_prompt
+      seed: 12:6.inputs.seed
+      steps: 12:6.inputs.steps
+      cfg: 12:6.inputs.cfg
+      sampler_name: 12:6.inputs.sampler_name
+      scheduler: 12:6.inputs.scheduler
+      denoise: 12:6.inputs.denoise
+      width: 12:5.inputs.width
+      height: 12:5.inputs.height
+    aliases:
+    - mageflow-turbo
+
+  # ===================== MiniMax H3 视频系列 =====================
+  # 说明：4 个工作流节点拓扑完全一致（aggregator=136 / output=92）：
+  #   - 提示词文本在 PrimitiveStringMultiline(138).inputs.value
+  #   - 时长在 PrimitiveFloat(132).inputs.value（经 ComfyMathExpression 推导 length）
+  #   - 种子在 RandomNoise(129).inputs.noise_seed
+  #   - steps/scheduler/denoise 在 BasicScheduler(124)；sampler_name 在 KSamplerSelect(123)
+  #   - width/height 在 aggregator(136)；fps 在 CreateVideo(130)
+  #   - 参考资源：6 图(LoadImage 137/139/143/144/145/146)、3 视频(LoadVideo 153/154/155，上游经
+  #     GetVideoComponents 147/148/149 接入 aggregator)、3 音频(LoadAudio 150/151/152)。
+  #     未上传的资源由网关在发送前动态删除对应节点（删 LoadVideo 会级联删其 GetVideoComponents，
+  #     见 references 段与 gateway/pipeline.py 的 _prune_unused_references）。
+  #   - _edit 变体在当前导出模板中与 base 同构（额外节点 142 仅 turbo 有），绑定一致。
+  minimax-h3:
+    workflow: video_minimax_h3.json
+    description: MiniMax H3 (FL2VA) —— 文生视频 / 参考生视频，25 步
+    mode: video
+    capabilities:
+    - text-to-video
+    output_node: '92'
+    timeout: 1800
+    references:
+      aggregator: '136'
+      images:
+      - '137'
+      - '139'
+      - '143'
+      - '144'
+      - '145'
+      - '146'
+      videos:
+      - '153'
+      - '154'
+      - '155'
+      audios:
+      - '150'
+      - '151'
+      - '152'
+    defaults:
+      width: 1344
+      height: 768
+      steps: 25
+      sampler_name: res_multistep
+      scheduler: simple
+      denoise: 1
+      duration: 5
+      fps: 24
+    bindings:
+      filename_prefix: 92.inputs.filename_prefix
+      prompt: 138.inputs.value
+      seed: 129.inputs.noise_seed
+      steps: 124.inputs.steps
+      sampler_name: 123.inputs.sampler_name
+      scheduler: 124.inputs.scheduler
+      denoise: 124.inputs.denoise
+      width: 136.inputs.width
+      height: 136.inputs.height
+      duration: 132.inputs.value
+      fps: 130.inputs.fps
+    aliases:
+    - minimax_h3
+    - minimaxh3
+    - h3
+  minimax-h3-edit:
+    workflow: video_minimax_h3_edit.json
+    description: MiniMax H3 Edit —— 参考 / 图生视频编辑，25 步
+    mode: video
+    capabilities:
+    - text-to-video
+    output_node: '92'
+    timeout: 1800
+    references:
+      aggregator: '136'
+      images:
+      - '137'
+      - '139'
+      - '143'
+      - '144'
+      - '145'
+      - '146'
+      videos:
+      - '153'
+      - '154'
+      - '155'
+      audios:
+      - '150'
+      - '151'
+      - '152'
+    defaults:
+      width: 1344
+      height: 768
+      steps: 25
+      sampler_name: res_multistep
+      scheduler: simple
+      denoise: 1
+      duration: 5
+      fps: 24
+    bindings:
+      filename_prefix: 92.inputs.filename_prefix
+      prompt: 138.inputs.value
+      seed: 129.inputs.noise_seed
+      steps: 124.inputs.steps
+      sampler_name: 123.inputs.sampler_name
+      scheduler: 124.inputs.scheduler
+      denoise: 124.inputs.denoise
+      width: 136.inputs.width
+      height: 136.inputs.height
+      duration: 132.inputs.value
+      fps: 130.inputs.fps
+    aliases:
+    - minimax_h3_edit
+    - minimaxh3edit
+    - h3-edit
+  minimax-h3-turbo:
+    workflow: video_minimax_h3_turbo.json
+    description: MiniMax H3 Turbo —— 8 步快速视频生成
+    mode: video
+    capabilities:
+    - text-to-video
+    output_node: '92'
+    timeout: 1800
+    references:
+      aggregator: '136'
+      images:
+      - '137'
+      - '139'
+      - '143'
+      - '144'
+      - '145'
+      - '146'
+      videos:
+      - '153'
+      - '154'
+      - '155'
+      audios:
+      - '150'
+      - '151'
+      - '152'
+    defaults:
+      width: 1344
+      height: 768
+      steps: 8
+      sampler_name: res_multistep
+      scheduler: simple
+      denoise: 1
+      duration: 5
+      fps: 24
+    bindings:
+      filename_prefix: 92.inputs.filename_prefix
+      prompt: 138.inputs.value
+      seed: 129.inputs.noise_seed
+      steps: 124.inputs.steps
+      sampler_name: 123.inputs.sampler_name
+      scheduler: 124.inputs.scheduler
+      denoise: 124.inputs.denoise
+      width: 136.inputs.width
+      height: 136.inputs.height
+      duration: 132.inputs.value
+      fps: 130.inputs.fps
+    aliases:
+    - minimax_h3_turbo
+    - minimaxh3turbo
+    - h3-turbo
+  minimax-h3-turbo-edit:
+    workflow: video_minimax_h3_turbo_edit.json
+    description: MiniMax H3 Turbo Edit —— 8 步快速参考 / 图生视频编辑
+    mode: video
+    capabilities:
+    - text-to-video
+    output_node: '92'
+    timeout: 1800
+    references:
+      aggregator: '136'
+      images:
+      - '137'
+      - '139'
+      - '143'
+      - '144'
+      - '145'
+      - '146'
+      videos:
+      - '154'
+      - '155'
+      - '156'
+      audios:
+      - '150'
+      - '151'
+      - '152'
+    defaults:
+      width: 1344
+      height: 768
+      steps: 8
+      sampler_name: res_multistep
+      scheduler: simple
+      denoise: 1
+      duration: 5
+      fps: 24
+    bindings:
+      filename_prefix: 92.inputs.filename_prefix
+      prompt: 138.inputs.value
+      seed: 129.inputs.noise_seed
+      steps: 124.inputs.steps
+      sampler_name: 123.inputs.sampler_name
+      scheduler: 124.inputs.scheduler
+      denoise: 124.inputs.denoise
+      width: 136.inputs.width
+      height: 136.inputs.height
+      duration: 132.inputs.value
+      fps: 130.inputs.fps
+    aliases:
+    - minimax_h3_turbo_edit
+    - minimaxh3turboedit
+    - h3-turbo-edit

@@ -1,0 +1,23 @@
+# ---- 本机配置（含端口等本机设置，请用 .env.example 作为模板）----
+.env
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ---- 运行期缓存与测试产物 ----
+.cache/
+test_outputs/
+
+# ---- 本地备份 / 临时文件 ----
+*.7z
+*.bak
+models.tmp.yaml
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

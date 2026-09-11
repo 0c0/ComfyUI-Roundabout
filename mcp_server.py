@@ -1,0 +1,675 @@
+"""ComfyUI-Roundabout —— MCP 网关（Model Context Protocol server）。
+
+在 OpenAI 风格 REST 网关之外，提供一套 **工具化 + 自描述 schema** 的接入层：
+任意支持 MCP 的客户端（WorkBuddy / Claude Desktop / Cursor 等）都能直接
+「对话式」调用本机 ComfyUI 的图像 / 视频生成能力，无需手工拼 HTTP JSON。
+
+复用 gateway/ 的全部业务逻辑（registry 模型注册表、pipeline 生成链路、
+task_store 异步任务表、ComfyClient 后端客户端），本文件只做协议适配。
+
+两种运行模式：
+1) 独立进程（stdio 传输，标准 MCP 通道）：
+       <comfyui-python> mcp_server.py
+    或按 MCP 客户端约定配置为外部命令：
+       {"command": "<comfyui-python>", "args": ["<路径>/mcp_server.py"]}
+2) 嵌入 ComfyUI 进程（streamable-http，与 REST 网关共享 task_store/registry）：
+       由节点 __init__.py 在启动时自动拉起，端口/路径见环境变量
+       MCP_PORT（默认 8189）/ MCP_PATH（默认 /mcp）。客户端连接
+       http://<host>:<port>/mcp 即可，提交/轮询与 REST 网关完全互通。
+
+工具清单：
+    list_models       列出可用模型（模式 / 能力 / 默认参数）
+    generate_image    文生图 / 图生图（同步或异步，异步返回 task 对象）
+    generate_video    文生视频 / 参考生视频（同步或异步，异步返回 task 对象）
+    get_task          查询异步任务状态与产物（含 prompt_id / 工作流快照）
+    cancel_task       取消 ComfyUI 中运行的任务
+    queue_status      队列监控合并视图（ComfyUI 队列 + 网关异步任务）
+    get_workflow      三层查找任务的工作流 JSON（队列 / history / 任务快照）
+    reload            热加载 models.yaml 模型配置
+    health            网关与后端健康状态
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import time
+import uuid
+from pathlib import Path
+from typing import Any
+
+from pydantic import Field
+
+from mcp.server import MCPServer
+from mcp.server.mcpserver.context import Context
+
+# 允许以「脚本直接运行」或「python -m」两种方式定位节点根目录
+_ROOT = Path(__file__).resolve().parent
+import sys  # noqa: E402
+
+# gateway 必须与宿主用同一份，否则 registry / task_store 会被加载两遍，表现为：
+# 热加载 models.yaml 后 MCP 侧看不到新模型、MCP 建的异步任务在 REST 与任务面板里查不到。
+#   - 嵌入 ComfyUI 进程：本模块属于节点包（__package__ 非空），走相对导入，与 __init__.py 共用同一份；
+#   - 直接运行脚本：没有包上下文，把节点根目录挂到 sys.path 后按顶层包导入。
+if __package__:
+    from .gateway.comfy_client import ComfyClient  # noqa: E402
+    from .gateway.config import settings  # noqa: E402
+    from .gateway.errors import APIError  # noqa: E402
+    from .gateway.handlers import (  # noqa: E402
+        _run_video_task,
+        cancel_task as _cancel_task,
+        generate_tracked,
+        generate_video_tracked,
+    )
+    from .gateway.registry import registry  # noqa: E402
+    from .gateway.schemas import ImageGenerationRequest, VideoGenerationRequest  # noqa: E402
+    from .gateway.tasks import task_store  # noqa: E402
+    from .gateway.viewer import view_url  # noqa: E402
+else:
+    if str(_ROOT) not in sys.path:
+        sys.path.insert(0, str(_ROOT))
+    from gateway.comfy_client import ComfyClient  # noqa: E402
+    from gateway.config import settings  # noqa: E402
+    from gateway.errors import APIError  # noqa: E402
+    from gateway.handlers import (  # noqa: E402
+        _run_video_task,
+        cancel_task as _cancel_task,
+        generate_tracked,
+        generate_video_tracked,
+    )
+    from gateway.registry import registry  # noqa: E402
+    from gateway.schemas import ImageGenerationRequest, VideoGenerationRequest  # noqa: E402
+    from gateway.tasks import task_store  # noqa: E402
+    from gateway.viewer import view_url  # noqa: E402
+
+# ------------------------------------------------------------------ 日志
+# MCP stdio 通道上不能打 stdout/stderr（会污染协议帧），统一走 logging 到 stderr。
+# 嵌入 ComfyUI 进程时（_EMBEDDED=1）不重复 basicConfig，复用宿主日志配置。
+log = logging.getLogger("roundabout.mcp")
+if not os.environ.get("ROUNDABOUT_MCP_EMBEDDED"):
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+
+
+def _package_version(default: str = "0.0.0") -> str:
+    """版本号以同目录 pyproject.toml 为唯一事实来源。
+
+    MCP 客户端在 initialize 的 serverInfo 里看到的就是这个号（health 工具也报它），
+    而注册表发布用的是 pyproject 的 version——写死两处必然漂移，所以运行时读一次。
+    tomllib 需 Python 3.11+，ComfyUI 环境未必满足，故回落轻量正则。
+    """
+    toml = _ROOT / "pyproject.toml"
+    try:
+        import tomllib  # Python 3.11+
+
+        with open(toml, "rb") as fh:
+            return tomllib.load(fh)["project"]["version"]
+    except Exception:  # noqa: BLE001 - 缺文件 / 无 tomllib / 结构不符都走下面的正则
+        pass
+    try:
+        import re
+
+        m = re.search(r'^\s*version\s*=\s*"([^"]+)"', toml.read_text(encoding="utf-8"), re.M)
+        if m:
+            return m.group(1)
+    except Exception:  # noqa: BLE001
+        pass
+    return default
+
+
+VERSION = _package_version()
+
+# ------------------------------------------------------------------ 后端客户端
+comfy = ComfyClient(settings.comfy_base_url)
+
+# 加载模型注册表：独立进程必须自行加载；嵌入模式由节点 __init__.py 加载（此处幂等重载无害）
+try:
+    registry.load(
+        settings.models_file,
+        settings.workflows_dir,
+        settings.default_model,
+    )
+except Exception as exc:  # noqa: BLE001
+    log.error("MCP gateway: failed to load models: %s", exc)
+
+
+def _new_request_id() -> str:
+    return uuid.uuid4().hex[:12]
+
+
+def _absolutize_urls(payload: dict[str, Any]) -> dict[str, Any]:
+    """补全产物相对 url（MCP 无 request 上下文，回落 PUBLIC_BASE_URL / comfy_base_url）。
+
+    与 REST 侧 handlers._absolutize 同语义：对 data[].url 及 output.data[].url 中
+    以 "/" 开头的相对路径补成绝对 http 地址，否则客户端拿到 /view?... 无法直接用。
+    """
+    base = settings.public_base_url or settings.comfy_base_url
+
+    def _patch(items):
+        for item in items or []:
+            url = item.get("url")
+            if url and isinstance(url, str) and url.startswith("/"):
+                item["url"] = base + url
+
+    _patch(payload.get("data"))
+    out = payload.get("output")
+    if isinstance(out, dict):
+        _patch(out.get("data"))
+    return payload
+
+
+# ------------------------------------------------------------------ 工具
+mcp = MCPServer(name="comfyui-roundabout", version=VERSION)
+
+# ---- 工具 1：list_models --------------------------------------------------
+@mcp.tool(name="list_models", description="列出网关可用模型及其能力、模式、默认参数。")
+async def list_models() -> list[dict[str, Any]]:
+    models = []
+    for s in registry.all():
+        models.append({
+            "name": s.name,
+            "mode": s.mode,
+            "capabilities": sorted(s.capabilities),
+            "description": s.description,
+            "defaults": dict(s.defaults or {}),
+            "aliases": list(s.aliases or []),
+        })
+    return models
+
+
+# ---- 工具 2：generate_image ----------------------------------------------
+@mcp.tool(
+    name="generate_image",
+    description=(
+        "生成图像（文生图为主）。model 不传则用默认；支持 negative_prompt / seed / "
+        "size / steps / cfg 等精调参数；response_format=path 返回磁盘绝对路径。"
+        "返回 OpenAI 风格响应（created/data/seed 回显）。"
+        "【编辑已有图片不要用本工具】改图/去背景请用专门的 edit_image / remove_background 工具。"
+    ),
+)
+async def generate_image(
+    prompt: str,
+    model: str = Field(
+        default="",
+        description=(
+            "模型选择（不传=默认 z-image-turbo）。用途：z-image-turbo=8 步快速文生图（日常首选）；"
+            "z-image=30 步高质量；boogu-image-turbo / boogu-image-base-4step=4 步极速预览；"
+            "boogu-image-base=30 步高质量备选；mage-flow-base / mage-flow-turbo=MageFlow 备选。"
+            "编辑已有图片请用 edit_image 工具，去背景用 remove_background 工具。"
+        ),
+    ),
+    n: int = 1,
+    size: str = "",
+    quality: str = "",
+    response_format: str = "",
+    negative_prompt: str = "",
+    seed: int | None = None,
+    steps: int | None = None,
+    cfg: float | None = None,
+    image: str = "",
+    mask: str = "",
+    workflow_overrides: str = "",  # JSON 字符串，形如 {"3.inputs.cfg": 4.5}
+    mode: str = "",
+    ctx: Context = None,  # type: ignore[assignment]  # MCP SDK 按注解自动注入
+) -> dict[str, Any]:
+    req = ImageGenerationRequest(
+        prompt=prompt,
+        model=model or None,
+        n=n,
+        size=size or None,
+        quality=quality or None,
+        response_format=response_format or None,  # type: ignore[arg-type]
+        negative_prompt=negative_prompt or None,
+        seed=seed,
+        steps=steps,
+        cfg=cfg,
+        image=image or None,
+        mask=mask or None,
+        workflow_overrides=_parse_json_or_none(workflow_overrides),
+        mode=mode or None,
+    )
+    # 视频模型打到图片工具 → 自动转视频链路（与 REST 端点行为一致）
+    spec = registry.resolve(req.model)
+    if spec.is_video:
+        vreq = VideoGenerationRequest.model_validate(req.model_dump(exclude_none=True))
+        return await _handle_video(vreq, ctx)
+    result = await generate_tracked(req)
+    return _absolutize_urls(result.model_dump(exclude_none=True))
+
+
+# ---- 工具 3：edit_image ---------------------------------------------------
+@mcp.tool(
+    name="edit_image",
+    description=(
+        "编辑已有图片（提示词驱动的图像编辑，独立工具）。prompt 描述要改什么，"
+        "image 传待编辑的图（本地绝对路径 / http(s) URL / dataURL / base64 / 相对 ComfyUI input 的路径）。"
+        "model 可选：默认 flux2-klein-image-edit-turbo（语义改写首选：换背景/换材质/增删物体，指令跟随好）；"
+        "改写/添加图内文字传 model='boogu-image-edit-turbo'（快）或 'boogu-image-edit'（高质量）。"
+        "尺寸跟随输入图（输出约 1MP，size 不生效）。response_format=url/path/b64_json；"
+        "返回 OpenAI 风格响应。只做文生图请用 generate_image。"
+    ),
+)
+async def edit_image(
+    prompt: str,
+    image: str,
+    model: str = "",
+    n: int = 1,
+    negative_prompt: str = "",
+    seed: int | None = None,
+    response_format: str = "",
+    filename_prefix: str = "",
+    mask: str = "",
+    workflow_overrides: str = "",  # JSON 字符串，形如 {"3.inputs.cfg": 4.5}
+) -> dict[str, Any]:
+    req = ImageGenerationRequest(
+        prompt=prompt,
+        # 不传 model 时不要落回全局默认（那是文生图模型，会被下面的校验拒掉）：
+        # 编辑工具自己的默认 = 语义改写首选的 flux2 klein
+        model=model or "flux2-klein-image-edit-turbo",
+        n=n,
+        negative_prompt=negative_prompt or None,
+        seed=seed,
+        response_format=response_format or None,  # type: ignore[arg-type]
+        filename_prefix=filename_prefix or None,
+        image=image or None,
+        mask=mask or None,
+        workflow_overrides=_parse_json_or_none(workflow_overrides),
+    )
+    spec = registry.resolve(req.model)
+    if spec.is_video or not spec.supports_img2img:
+        alts = [s.name for s in registry.all() if s.supports_img2img and not s.is_video]
+        raise APIError(
+            f"Model `{spec.name}` is not an image-edit model. "
+            f"Edit-capable models: {', '.join(alts)}.",
+            param="model",
+        )
+    result = await generate_tracked(req)
+    return _absolutize_urls(result.model_dump(exclude_none=True))
+
+
+# ---- 工具 4：remove_background --------------------------------------------
+@mcp.tool(
+    name="remove_background",
+    description=(
+        "图片去背景（BiRefNet 高精度抠图，独立工具，无需提示词）。"
+        "image 支持：本地绝对路径 / http(s) URL / dataURL / base64 / 相对 ComfyUI input 目录的路径。"
+        "输出透明背景 PNG；response_format=url 返回可访问链接，path 返回磁盘绝对路径，b64_json 返回 base64。"
+        "返回 OpenAI 风格响应（created/data/usage）。"
+    ),
+)
+async def remove_background(
+    image: str,
+    response_format: str = "url",
+    filename_prefix: str = "",
+) -> dict[str, Any]:
+    req = ImageGenerationRequest(
+        model="utility-birefnet-remove-background",
+        response_format=response_format or None,  # type: ignore[arg-type]
+        filename_prefix=filename_prefix or None,
+        image=image or None,
+    )
+    result = await generate_tracked(req)
+    return _absolutize_urls(result.model_dump(exclude_none=True))
+
+
+# ---- 工具 5：generate_video ----------------------------------------------
+@mcp.tool(
+    name="generate_video",
+    description=(
+        "生成视频（文生视频 / 参考生视频）。model 默认 minimax-h3；支持 duration(1-15s) / "
+        "fps / size(如 480p-16:9 / 720p-16:9) / seed / reference_images(参考图，最多 6 张，"
+        "支持 base64/URL/本地路径) / reference_videos / reference_audios。"
+        "默认同步等待（长任务建议 background=pending 异步，再轮询 get_task）。"
+    ),
+)
+async def generate_video_tool(
+    prompt: str,
+    model: str = Field(
+        default="minimax-h3",
+        description=(
+            "模型选择（MiniMax H3 系列）：minimax-h3=25 步高质量（默认）；"
+            "minimax-h3-turbo=8 步快速；minimax-h3-edit / minimax-h3-turbo-edit=参考/编辑变体"
+            "（配合 reference_images/videos/audios 使用，最多 6 图 + 3 视频 + 3 音频）。"
+        ),
+    ),
+    duration: float | None = None,
+    fps: int | None = None,
+    size: str = "",
+    seed: int | None = None,
+    negative_prompt: str = "",
+    reference_images: list[str] | None = None,
+    reference_videos: list[str] | None = None,
+    reference_audios: list[str] | None = None,
+    background: str = "",  # "pending" 触发异步
+    response_format: str = "",
+    ctx: Context = None,  # type: ignore[assignment]  # MCP SDK 按注解自动注入
+) -> dict[str, Any]:
+    req = VideoGenerationRequest(
+        prompt=prompt,
+        model=model or None,
+        duration=duration,
+        fps=fps,
+        size=size or None,
+        seed=seed,
+        negative_prompt=negative_prompt or None,
+        reference_images=reference_images,
+        reference_videos=reference_videos,
+        reference_audios=reference_audios,
+        background=background or None,
+        response_format=response_format or None,  # type: ignore[arg-type]
+    )
+    return await _handle_video(req, ctx)
+
+
+# ---- 工具 6：get_task -----------------------------------------------------
+@mcp.tool(name="get_task", description="查询异步生成任务的状态与产物（含 prompt_id 与工作流快照标记）。")
+async def get_task(task_id: str) -> dict[str, Any]:
+    task = task_store.get(task_id)
+    if task is None:
+        raise APIError("Task not found.", status_code=404, code="task_not_found")
+    return {
+        "id": task.id,
+        "status": _openai_status(task.status),
+        "model": task.model,
+        "prompt_id": task.prompt_id,
+        "has_workflow": task.workflow is not None,
+        "created_at": int(task.created_at),
+        "output": _absolutize_urls(task.result) if task.result else None,
+        "error": {"message": task.error, "code": task.code} if task.error else None,
+    }
+
+
+# ---- 工具 7：cancel_task --------------------------------------------------
+@mcp.tool(
+    name="cancel_task",
+    description=(
+        "取消任务：传 task_id 取消指定异步任务（pending 的从 ComfyUI 队列移除，running 的中断执行，"
+        "并标记本地任务为 cancelled）；不传 task_id 则中断 ComfyUI 当前正在执行的任务。"
+    ),
+)
+async def cancel_task(task_id: str = "") -> dict[str, Any]:
+    if task_id:
+        return await _cancel_task(task_id)
+    await comfy.interrupt()
+    return {"ok": True, "message": "Interrupt sent to ComfyUI."}
+
+
+# ---- 工具 8：queue_status -------------------------------------------------
+@mcp.tool(name="queue_status", description="队列监控：ComfyUI 执行队列（running/pending）+ 网关异步任务表。")
+async def queue_status() -> dict[str, Any]:
+    # admin.queue_status 是 aiohttp handler，复用其内部逻辑不便，直接自组
+    try:
+        info = await comfy.queue()
+    except APIError as exc:
+        return {"comfy_reachable": False, "comfy_error": exc.message, "tasks": [_task_summary(t) for t in task_store.snapshot()]}
+    now = time.time()
+    return {
+        "comfy_reachable": True,
+        "running": [_comfy_item(x, now) for x in info.get("queue_running") or []],
+        "pending": [_comfy_item(x, now) for x in info.get("queue_pending") or []],
+        "running_count": len(info.get("queue_running") or []),
+        "pending_count": len(info.get("queue_pending") or []),
+        "tasks": [_task_summary(t) for t in task_store.snapshot()],
+    }
+
+
+# ---- 工具 9：get_workflow ------------------------------------------------
+@mcp.tool(name="get_workflow", description="三层查找任务的工作流 JSON：ComfyUI 队列 → history → 网关任务快照。")
+async def get_workflow(prompt_id: str) -> dict[str, Any]:
+    info = await comfy.queue()
+    for key in ("queue_running", "queue_pending"):
+        for item in info.get(key) or []:
+            if isinstance(item, (list, tuple)) and len(item) > 2 and item[1] == prompt_id:
+                return {"prompt_id": prompt_id, "status": "running" if key == "queue_running" else "pending",
+                        "workflow": item[2] if isinstance(item[2], dict) else None, "source": "queue"}
+    entry = await comfy.history(prompt_id)
+    if entry:
+        p = entry.get("prompt")
+        wf = p[2] if isinstance(p, (list, tuple)) and len(p) > 2 else None
+        if isinstance(wf, dict):
+            return {"prompt_id": prompt_id, "status": (entry.get("status") or {}).get("status_str", "unknown"),
+                    "workflow": wf, "source": "history"}
+    task = task_store.get(prompt_id)
+    if task is not None and task.workflow is not None:
+        return {"prompt_id": prompt_id, "status": task.status, "workflow": task.workflow, "source": "task"}
+    raise APIError(f"Prompt/task `{prompt_id}` not found in queue, history or task store.",
+                   status_code=404, code="prompt_not_in_queue")
+
+
+# ---- 工具 10：reload --------------------------------------------------------
+@mcp.tool(name="reload", description="热加载 models.yaml 模型配置（无需重启 ComfyUI）。")
+async def reload() -> dict[str, Any]:
+    registry.load(settings.models_file, settings.workflows_dir, settings.default_model)
+    return {"ok": True, "models": [s.name for s in registry.all()]}
+
+
+# ---- 工具 11：health --------------------------------------------------------
+@mcp.tool(name="health", description="网关与 ComfyUI 后端健康状态。")
+async def health() -> dict[str, Any]:
+    try:
+        r = await comfy._request("GET", "/system_stats")
+        comfy_ok = r.status == 200
+    except Exception:  # noqa: BLE001
+        comfy_ok = False
+    return {
+        "gateway": "ok",
+        "comfy_reachable": comfy_ok,
+        "models": len(registry.all()),
+        "version": VERSION,
+    }
+
+
+# ---- 工具 12：get_view_url -------------------------------------------------
+@mcp.tool(
+    name="get_view_url",
+    description=(
+        "返回 Roundabout 可视化页面的地址，浏览器直接打开即可使用，无需命令行。"
+        "页面内容：浏览 ComfyUI input/output 目录里的图片/视频/音频（缩略图、大图预览、"
+        "视频播放），以及异步生成任务的实时进度（排队中/执行中/已完成/失败，含耗时与产物预览）。"
+        "当用户问「生成的东西在哪看」「给我一个查看页面」「有没有界面」「任务进度怎么看」"
+        "或想浏览素材目录时，调用本工具并把 url 原样给用户。"
+    ),
+)
+async def get_view_url() -> dict[str, Any]:
+    url = view_url()
+    payload: dict[str, Any] = {"url": url}
+    if settings.auth_enabled and settings.api_keys:
+        # 浏览器无法带自定义头，鉴权开启时把 key 拼进查询串，否则页面会 401。
+        payload["url"] = f"{url}?key={settings.api_keys[0]}"
+        payload["auth_required"] = True
+    return payload
+
+
+# ------------------------------------------------------------------ 内部辅助
+async def _run_video_task_and_notify(
+    ctx: Context, task_id: str, req: VideoGenerationRequest, request_id: str
+) -> None:
+    """异步视频任务执行 + 完成后向提交客户端推送标准 notification（替代轮询）。
+
+    走 MCP 标准 notifications/message（LoggingMessageNotification，客户端必处理），
+    data 里带 task_id / status / url 等结构化信息。客户端保持 GET SSE 连接即可收到。
+    """
+    try:
+        await _run_video_task(task_id, req, request_id)
+    finally:
+        task = task_store.get(task_id)
+        if task is None:
+            return
+        payload: dict[str, Any] = {
+            "task_id": task_id,
+            "status": task.status,
+            "model": task.model,
+            "prompt_id": task.prompt_id,
+        }
+        if task.result:
+            items = task.result.get("data") or []
+            if items and items[0].get("url"):
+                payload["url"] = _absolutize_urls({"data": items})["data"][0]["url"]
+        if task.error:
+            payload["error"] = task.error
+        try:
+            from mcp_types import LoggingMessageNotification, LoggingMessageNotificationParams
+
+            notif = LoggingMessageNotification(
+                params=LoggingMessageNotificationParams(
+                    level="info", logger="roundabout.mcp", data=payload
+                )
+            )
+            await ctx.session.send_notification(notif)
+            log.info("MCP gateway: task %s completion notification sent (status=%s)", task_id, task.status)
+        except Exception as exc:  # noqa: BLE001 - session 可能已断开，静默降级
+            log.debug("MCP gateway: task %s notification failed (session closed?): %s", task_id, exc)
+
+
+async def _handle_video(req: VideoGenerationRequest, ctx: Context | None = None) -> dict[str, Any]:
+    """视频生成统一入口：异步（background=pending）或同步。"""
+    if req.is_async:
+        task_id = uuid.uuid4().hex
+        request_id = _new_request_id()
+        task_store.create(task_id, model=req.model, request_id=request_id)
+        if ctx is not None:
+            # 异步任务完成时向客户端推送 notification（MCP 原生回调，替代 get_task 轮询）
+            asyncio.create_task(_run_video_task_and_notify(ctx, task_id, req, request_id))
+        else:
+            asyncio.create_task(_run_video_task(task_id, req, request_id))
+        return _task_payload(task_id, req.model, "pending")
+    # 同步：直接等完（MCP 客户端通常可接受较长超时；长视频建议用 background=pending 异步）
+    result = await generate_video_tracked(req)
+    return _absolutize_urls(result.model_dump(exclude_none=True))
+
+
+def _task_payload(task_id: str, model: str | None, status: str) -> dict[str, Any]:
+    return {
+        "id": task_id,
+        "object": "image_generation.task",
+        "status": status,
+        "created_at": int(time.time()),
+        "model": model,
+    }
+
+
+def _openai_status(s: str) -> str:
+    return {"queued": "pending", "processing": "in_progress", "succeeded": "completed", "failed": "failed"}.get(s, s)
+
+
+def _task_summary(t) -> dict[str, Any]:
+    return {
+        "id": t.id,
+        "status": t.status,
+        "code": t.code,
+        "model": t.model,
+        "prompt_id": t.prompt_id,
+        "has_workflow": t.workflow is not None,
+        "created": t.created_at,
+        "elapsed": round(time.time() - t.created_at, 1),
+    }
+
+
+def _comfy_item(item, now: float) -> dict[str, Any]:
+    if not isinstance(item, (list, tuple)) or len(item) < 2:
+        return {}
+    prompt_id = item[1]
+    extra = item[3] if len(item) > 3 and isinstance(item[3], dict) else {}
+    created = (extra.get("create_time") or 0) / 1000.0
+    return {
+        "prompt_id": prompt_id,
+        "created": created or None,
+        "elapsed": round(now - created, 1) if created else None,
+        "node_count": len(item[2]) if len(item) > 2 and isinstance(item[2], dict) else None,
+    }
+
+
+def _parse_json_or_none(s: str) -> dict[str, Any] | None:
+    if not s:
+        return None
+    try:
+        v = json.loads(s)
+        return v if isinstance(v, dict) else None
+    except json.JSONDecodeError:
+        return None
+
+
+# ------------------------------------------------------------------ 入口
+def main() -> None:
+    # MCPServer.run 内部用 anyio 管理事件循环（stdio 传输），不要在外面再包 asyncio.run
+    try:
+        mcp.run(transport="stdio")
+    except KeyboardInterrupt:
+        pass
+
+
+# ------------------------------------------------------------------ 嵌入 ComfyUI 进程
+async def serve_embedded(host: str = "127.0.0.1", port: int = 8189, path: str = "/mcp") -> None:
+    """在 ComfyUI 进程内以 streamable-http 提供 MCP 端点。
+
+    与 REST 网关同进程：registry / task_store / ComfyClient 全部共享，
+    通过 MCP 提交的异步任务可在 REST 队列监控中看到，反之亦然。
+    由节点 __init__.py 在启动事件循环中 create_task 调用。
+    """
+    import uvicorn
+
+    starlette_app = mcp.streamable_http_app(streamable_http_path=path, host=host)
+    config = uvicorn.Config(starlette_app, host=host, port=port, log_level="warning")
+    server = uvicorn.Server(config)
+    await server.serve()
+
+
+def start_embedded_task(host: str = "127.0.0.1", port: int = 8189, path: str = "/mcp") -> None:
+    """在运行中的事件循环里调度 MCP streamable-http server（嵌入模式入口）。"""
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    loop.create_task(serve_embedded(host=host, port=port, path=path))
+    log.info("MCP gateway: streamable-http serving on http://%s:%s%s (embedded)", host, port, path)
+
+
+# ------------------------------------------------------------------ 与 ComfyUI 同端口（aiohttp 原生代理）
+def register_share_port_proxy(aiohttp_app, backend_url: str, path: str = "/mcp") -> None:
+    """把内部 uvicorn MCP 后端通过 aiohttp 原生代理暴露到 ComfyUI 同一端口。
+
+    背景：MCP SDK 的 streamable-http 传输是 Starlette（ASGI）实现的，而 ComfyUI
+    的网关是 aiohttp——两套服务器框架无法直接共端口；`aiohttp-asgi` 桥接在
+    aiohttp 3.13 下流式响应（SSE）会静默失败（prepare 成功但字节不落 socket）。
+    因此采用「回环 uvicorn 后端 + aiohttp 原生代理」：客户端只连 ComfyUI 端口
+    （如 http://<host>:8188/mcp），本代理把请求转发到 127.0.0.1:<MCP_PORT>/mcp；
+    aiohttp 原生 StreamResponse 的 SSE 流式是可靠的（见节点内验证）。
+
+    POST / GET(SSE) / DELETE 全部按原样转发，响应头/流式体原样回传。
+    """
+    from aiohttp import ClientSession, web
+
+    async def _proxy(request: web.Request) -> web.StreamResponse:
+        target = backend_url.rstrip("/") + request.path
+        headers = {
+            k: v
+            for k, v in request.headers.items()
+            if k.lower() not in ("host", "content-length", "connection")
+        }
+        data = await request.read()
+        async with ClientSession() as session:
+            async with session.request(
+                request.method, target, params=request.query, headers=headers, data=data or None
+            ) as upstream:
+                resp = web.StreamResponse(status=upstream.status)
+                clen = upstream.headers.get("Content-Length")
+                for k, v in upstream.headers.items():
+                    if k.lower() in ("transfer-encoding", "connection"):
+                        continue
+                    resp.headers[k] = v
+                if not clen:
+                    resp.enable_chunked_encoding()
+                await resp.prepare(request)
+                async for chunk in upstream.content.iter_any():
+                    await resp.write(chunk)
+                await resp.write_eof()
+                return resp
+
+    aiohttp_app.router.add_route("*", path, _proxy)
+    if not path.endswith("/"):
+        aiohttp_app.router.add_route("*", path + "/{tail:.*}", _proxy)
+    log.info("MCP gateway: shared-port proxy registered at %s -> %s", path, backend_url)
+
+
+if __name__ == "__main__":
+    main()
