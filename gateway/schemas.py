@@ -84,8 +84,8 @@ class VideoGenerationRequest(BaseModel):
     size: str | None = Field(
         None,
         description=(
-            '分辨率预设键 `<tier>p-<ratio>` 或 `<ratio>@<tier>p`，tier∈{480p,720p}，'
-            'ratio∈{1:1,3:4,4:3,16:9,9:16}（如 "720p-16:9" / "9:16@480p"）；'
+            '分辨率预设键 `<tier>p-<ratio>` 或 `<ratio>@<tier>p`，tier∈{480p,720p,768p,1080p}，'
+            'ratio∈{1:1,3:4,4:3,16:9,9:16}（如 "720p-16:9" / "1080p-16:9" / "9:16@480p"）；'
             '也可直接写 WxH（如 "1280x720"）。auto/None 用模型默认。'
         ),
     )

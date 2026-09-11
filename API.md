@@ -244,7 +244,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 |---|---|---|
 | `prompt` | string | 正向提示词（必填） |
 | `model` | string? | 默认 `minimax-h3`；视频模型 |
-| `size` | string? | `<tier>p-<ratio>` 或 `<ratio>@<tier>`，tier∈{`480p`,`720p`}，ratio∈{`1:1`,`3:4`,`4:3`,`16:9`,`9:16`}；或直接 `WxH`；空=模型默认 |
+| `size` | string? | `<tier>p-<ratio>` 或 `<ratio>@<tier>`，tier∈{`480p`,`720p`,`768p`,`1080p`}，ratio∈{`1:1`,`3:4`,`4:3`,`16:9`,`9:16`}；或直接 `WxH`；空=模型默认 |
 | `duration` | float? | 时长 1–15 秒 |
 | `fps` | int? | 帧率 |
 | `num_frames` | int? | 总帧数（部分工作流用帧数而非时长） |

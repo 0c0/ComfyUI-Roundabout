@@ -175,6 +175,8 @@ curl -X POST http://127.0.0.1:8188/v1/videos/generations \
 curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 ```
 
+`size` 支持档位预设 `<tier>p-<ratio>`：tier ∈ `480p` / `720p` / `768p` / `1080p`，ratio ∈ `1:1` / `3:4` / `4:3` / `16:9` / `9:16`（如 `768p-16:9` = 1360×768、`1080p-16:9` = 1920×1088）；也接受反向写法 `<ratio>@<tier>p`（如 `9:16@768p`）与直接 `WxH`。不传或 `auto` 用模型默认。
+
 ### 3. MCP（给 agent 用）
 
 **MCP 默认启用**——装好依赖、重启 ComfyUI，端点就在 `http://<comfyui>:8188/mcp`，无需任何配置。

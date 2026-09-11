@@ -320,7 +320,7 @@ async def remove_background(
     name="generate_video",
     description=(
         "生成视频（文生视频 / 参考生视频）。model 默认 minimax-h3；支持 duration(1-15s) / "
-        "fps / size(如 480p-16:9 / 720p-16:9) / seed / reference_images(参考图，最多 6 张，"
+        "fps / size(如 720p-16:9 / 768p-16:9 / 1080p-16:9) / seed / reference_images(参考图，最多 6 张，"
         "支持 base64/URL/本地路径) / reference_videos / reference_audios。"
         "默认同步等待（长任务建议 background=pending 异步，再轮询 get_task）。"
     ),

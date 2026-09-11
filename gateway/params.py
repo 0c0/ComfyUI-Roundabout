@@ -90,7 +90,8 @@ def _round8(v: int) -> int:
 # 预设键换算成具体 width/height，所有维度对齐到 16 的倍数（扩散视频模型隐空间约束）。
 #
 # 约定：「p」指该档位的基准边——横向比例(16:9/4:3/1:1)取 height=档位，纵向比例(9:16/3:4)
-# 取 width=档位。例如 480p-16:9 = 848×480，720p-9:16 = 720×1280。
+# 取 width=档位。例如 480p-16:9 = 848×480，720p-9:16 = 720×1280，1080p-16:9 = 1920×1088。
+# 档位：480 / 720 / 768 / 1080。基准边不是 16 倍数时（1080）就近上取，保证所有维度都对齐。
 VIDEO_RES_PRESETS: dict[int, dict[str, tuple[int, int]]] = {
     480: {
         "1:1": (480, 480),
@@ -106,12 +107,28 @@ VIDEO_RES_PRESETS: dict[int, dict[str, tuple[int, int]]] = {
         "16:9": (1280, 720),
         "9:16": (720, 1280),
     },
+    768: {
+        "1:1": (768, 768),
+        "4:3": (1024, 768),
+        "3:4": (768, 1024),
+        "16:9": (1360, 768),
+        "9:16": (768, 1360),
+    },
+    1080: {
+        # 1080 不是 16 的倍数（1080 / 16 = 67.5），就近上取到 1088 = 16×68 = 32×34，
+        # 于是 16:9 落成标准的 1920×1088（比标称高 8 px，换来所有维度都满足扩散对齐约束）。
+        "1:1": (1088, 1088),
+        "4:3": (1440, 1088),
+        "3:4": (1088, 1440),
+        "16:9": (1920, 1088),
+        "9:16": (1088, 1920),
+    },
 }
-_RES_TIERS = {480, 720}
+_RES_TIERS = {480, 720, 768, 1080}
 _RES_RATIOS = {"1:1", "3:4", "4:3", "16:9", "9:16"}
 _RES_PRESET_RE = re.compile(
-    r"^(?P<tier>480|720)p[-_](?P<ratio>[0-9]+:[0-9]+)$"
-    r"|^(?P<ratio2>[0-9]+:[0-9]+)[-_@](?P<tier2>480|720)p$"
+    r"^(?P<tier>[0-9]+)p[-_](?P<ratio>[0-9]+:[0-9]+)$"
+    r"|^(?P<ratio2>[0-9]+:[0-9]+)[-_@](?P<tier2>[0-9]+)p$"
 )
 
 
@@ -132,7 +149,8 @@ def resolve_video_size(size: str | None, spec: ModelSpec) -> tuple[int | None, i
         if table is None or ratio not in table:
             raise APIError(
                 f"Unsupported resolution preset `{size}`. "
-                f"Tiers: 480p, 720p. Ratios: {', '.join(sorted(_RES_RATIOS))}.",
+                f"Tiers: {', '.join(f'{t}p' for t in sorted(_RES_TIERS))}. "
+                f"Ratios: {', '.join(sorted(_RES_RATIOS))}.",
                 param="size",
             )
         return table[ratio]
