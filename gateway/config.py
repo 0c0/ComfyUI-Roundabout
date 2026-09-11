@@ -231,6 +231,12 @@ class Settings:
     # true（默认）：MCP 端点通过 aiohttp 原生代理挂到 ComfyUI 同一端口（如 8188/mcp），
     # 内部 uvicorn 后端只绑定 127.0.0.1 回环；false：客户端直连 MCP_HOST:MCP_PORT。
     mcp_share_port: bool = field(default_factory=lambda: _env_bool("MCP_SHARE_PORT", True))
+    # false（默认）：标准 MCP streamable-http——会话存于进程内存，ComfyUI 重启后旧
+    #   Mcp-Session-Id 全部失效，客户端需重新 initialize（报「unknown or expired session ID」）。
+    # true：无状态模式，每个请求独立处理、不跟踪会话，agent 不再怕 ComfyUI 重启；
+    #   代价是「异步任务完成通知」没有推送通道（通知挂在会话上），客户端需改为轮询
+    #   GET /v1/videos/tasks/{id}。SDK 直接支持（stateless_http=True），无自研逻辑。
+    mcp_stateless: bool = field(default_factory=lambda: _env_bool("MCP_STATELESS", False))
 
     @property
     def comfy_port(self) -> int:

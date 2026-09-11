@@ -292,6 +292,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | `MCP_SHARE_PORT` | `true` | MCP 挂到 ComfyUI 同端口（`/mcp`）；`false` 则用 `MCP_PORT` 独立端口 |
 | `MCP_PORT` | `0` | 内部回环后端端口；留空/`0` = 系统分配空闲端口（实际端口见启动日志） |
 | `MCP_PORT_MAP` | 空 | 固定端口映射，按「ComfyUI 端口 → Roundabout 端口」成对写：`[8188,888],[8189,999]`。同机多开时按各实例的 `--port` 取各自端口；未命中回落系统分配；设了 `MCP_PORT` 则以其为准 |
+| `MCP_STATELESS` | `false` | 无状态 MCP：请求独立处理、不跟踪会话，**ComfyUI 随便重启 agent 都不用重连**；代价是异步任务完成通知无推送，客户端改为轮询任务状态 |
 | `DEFAULT_MODEL` | `models.yaml` 内值 | 默认模型（优先级高于 YAML） |
 | `OPENAI_GATEWAY_API_KEYS` | 空 | 填了才启用鉴权（逗号分隔多 key） |
 | `PUBLIC_BASE_URL` | 空 | 产物 `url` 绝对化基准，**远程部署必填** |
@@ -346,6 +347,7 @@ ComfyUI-Roundabout/
 # 离线自测（不需要 ComfyUI 在跑，全部用系统分配的临时端口）
 <ComfyUI>/python/python.exe test_mcp_proxy_disconnect.py    # /mcp 代理的断开与不可达兜底
 <ComfyUI>/python/python.exe test_aiohttp_error_noise.py     # Error handling request 降噪
+<ComfyUI>/python/python.exe test_mcp_stateless.py           # MCP_STATELESS 开关（重启无感）
 <ComfyUI>/python/python.exe test_mcp_import_identity.py
 <ComfyUI>/python/python.exe test_port_map.py
 <ComfyUI>/python/python.exe test_video_size.py

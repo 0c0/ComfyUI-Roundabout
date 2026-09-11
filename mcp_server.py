@@ -512,6 +512,15 @@ async def _run_video_task_and_notify(
                 payload["url"] = _absolutize_urls({"data": items})["data"][0]["url"]
         if task.error:
             payload["error"] = task.error
+        if settings.mcp_stateless:
+            # 无状态模式（MCP_STATELESS=true）下没有常驻会话/GET SSE 通道可推，
+            # 通知发不出去——诚实记录并给出轮询替代方案，别打出误导性的「sent」。
+            log.info(
+                "MCP gateway: task %s finished (status=%s); stateless mode has no push "
+                "channel, poll GET /v1/videos/tasks/%s",
+                task_id, task.status, task_id,
+            )
+            return
         try:
             from mcp_types import LoggingMessageNotification, LoggingMessageNotificationParams
 
@@ -637,6 +646,7 @@ async def serve_embedded(
     path: str = "/mcp",
     on_ready=None,
     fallback_auto: bool = True,
+    stateless: bool = False,
 ) -> None:
     """在 ComfyUI 进程内以 streamable-http 提供 MCP 端点。
 
@@ -675,7 +685,9 @@ async def serve_embedded(
             log.warning("MCP gateway: on_ready callback failed: %s", exc)
 
     async def _serve_once(bind_port: int) -> None:
-        starlette_app = mcp.streamable_http_app(streamable_http_path=path, host=host)
+        starlette_app = mcp.streamable_http_app(
+            streamable_http_path=path, host=host, stateless_http=stateless
+        )
         config = uvicorn.Config(starlette_app, host=host, port=bind_port, log_level="warning")
         server = uvicorn.Server(config)
         watcher = (

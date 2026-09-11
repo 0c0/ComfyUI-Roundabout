@@ -164,13 +164,15 @@ def _maybe_start_embedded_mcp() -> None:
             if proxy_target is not None:
                 proxy_target.url = f"http://127.0.0.1:{actual_port}"
                 log.info(
-                    "MCP gateway: embedded streamable-http shared on ComfyUI port (internal backend %s%s)",
+                    "MCP gateway: embedded streamable-http shared on ComfyUI port (internal backend %s%s%s)",
                     proxy_target.url, settings.mcp_path,
+                    "; stateless" if settings.mcp_stateless else "",
                 )
             else:
                 log.info(
-                    "MCP gateway: embedded streamable-http on http://%s:%s%s",
+                    "MCP gateway: embedded streamable-http on http://%s:%s%s%s",
                     settings.mcp_host, actual_port, settings.mcp_path,
+                    "; stateless" if settings.mcp_stateless else "",
                 )
 
         loop.create_task(
@@ -181,6 +183,9 @@ def _maybe_start_embedded_mcp() -> None:
                 on_ready=_on_backend_ready,
                 # 配好的映射端口被别的程序占了也别让端点失效：退回系统分配。
                 fallback_auto=True,
+                # MCP_STATELESS=true：无会话模式，agent 不怕 ComfyUI 重启；
+                # 代价是异步任务完成通知无推送通道，客户端改为轮询任务状态。
+                stateless=settings.mcp_stateless,
             )
         )
     except ModuleNotFoundError as exc:
