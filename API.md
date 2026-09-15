@@ -101,6 +101,7 @@ python\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-Roundabout\requ
 | `MCP_HOST` | `127.0.0.1` | `MCP_SHARE_PORT=false` 时的绑定地址 |
 | `MCP_STATELESS` | `true` | **无状态模式（默认）**：每个 MCP 请求独立处理、不跟踪会话，ComfyUI 重启后 agent 无需重新 initialize（根治 `unknown or expired session ID`）。设成 `false` 即为标准有状态 streamable-http，那是唯一能拿到「异步任务完成通知」推送的模式（通知挂在会话上）——代价是 ComfyUI 一重启旧会话全失效，客户端没重新握手前所有调用都报错。两种模式都由 SDK 原生 `stateless_http` 支持，无自研逻辑 |
 | `ROUNDABOUT_RAW_AIOHTTP_LOGS` | 空 | 设 `true` 关闭 aiohttp「客户端断开」日志降噪（见 §10 排障），恢复 aiohttp 原始 ERROR |
+| `ROUNDABOUT_RAW_MCP_LOGS` | 空 | 设 `true` 关闭 MCP 日志降噪：无状态模式下 SDK 每个请求收尾都打一条 `[INFO] Terminating session: None`（agent 连续调工具即刷屏），默认丢弃 |
 | `ROUNDABOUT_VRAM_GB` | 空 | 手动钉住显存档位（GiB），用于 `vram_adaptive: true` 的模型（如 `minimax-h3-self-lift`）；不填则启动时自动探测，探测不到就不覆盖工作流自带的分块参数 |
 | `COMFY_BASE_URL` | 自动取 ComfyUI `--listen/--port` | 覆盖后端指向（指向另一个 ComfyUI 实例） |
 | `COMFY_HTTP_TIMEOUT` | `30` | 后端请求超时（秒） |

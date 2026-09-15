@@ -15,7 +15,10 @@ import logging
 from server import PromptServer
 
 from .gateway.config import settings
-from .gateway.log_filters import install_aiohttp_disconnect_noise_filter
+from .gateway.log_filters import (
+    install_aiohttp_disconnect_noise_filter,
+    install_mcp_stateless_terminate_noise_filter,
+)
 from .gateway.registry import registry
 from .gateway.routes import register_routes
 
@@ -56,6 +59,11 @@ _install_log_tag()
 # 「[ERROR] Error handling request from <ip>」+ 整段 traceback。这里把它降级为 DEBUG，
 # 真的异常（非连接类）一律照旧报 ERROR。细节见 gateway/log_filters.py。
 install_aiohttp_disconnect_noise_filter()
+
+# 无状态模式下 MCP SDK 每个请求收尾都会 terminate 一个「不存在的会话」，并打一条
+# 「[INFO] Terminating session: None」——agent 连续调工具即刷屏。这里只丢 session id 为
+# None 的那条，真实会话的终止事件保留。细节见 gateway/log_filters.py。
+install_mcp_stateless_terminate_noise_filter()
 
 # 前端扩展目录：web/ 下的 .js 会被 ComfyUI 以 /extensions/ComfyUI-Roundabout/ 路径
 # 静态托管，并自动加载（见 server.py 的 get_extensions 路由）。

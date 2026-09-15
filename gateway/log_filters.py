@@ -43,6 +43,23 @@ aiohttp 的 `web_protocol.RequestHandler._handle_request` 捕获 handler 抛出�
 `log_debug("Ignored premature client disconnection")`。
 
 设 `ROUNDABOUT_RAW_AIOHTTP_LOGS=true` 可关闭本过滤器，恢复 aiohttp 原始日志。
+
+---
+
+**另一条噪音：无状态模式下的「Terminating session: None」**
+
+MCP SDK 的 `StreamableHTTPSessionManager._handle_stateless_request` 在**每个请求**结束时都
+收尾调用 `http_transport.terminate()`（streamable_http_manager.py），而 `terminate()` 里硬写了
+一条 `logger.info(f"Terminating session: {self.mcp_session_id}")`（streamable_http.py）——
+无状态模式下 `mcp_session_id` 恒为 `None`，于是每来一个 MCP 请求就刷一行
+
+    [INFO] Terminating session: None
+
+agent 连续调工具时就是刷屏。这行信息量为零（没有会话可终止），但**有**真实 session id 的
+终止事件（有状态模式的 DELETE / 空闲超时）是有用的，不能整条 INFO 屏蔽掉，所以只丢
+`None` 那一种。
+
+设 `ROUNDABOUT_RAW_MCP_LOGS=true` 可关闭本过滤器。
 """
 
 from __future__ import annotations
@@ -119,4 +136,39 @@ def install_aiohttp_disconnect_noise_filter() -> bool:
     logger = logging.getLogger(AIOHTTP_SERVER_LOGGER)
     if not any(isinstance(f, AiohttpDisconnectNoiseFilter) for f in logger.filters):
         logger.addFilter(AiohttpDisconnectNoiseFilter())
+    return True
+
+
+MCP_STREAMABLE_LOGGER = "mcp.server.streamable_http"
+_TERMINATE_PREFIX = "Terminating session: "
+_NO_SESSION = "None"
+
+
+class McpStatelessTerminateNoiseFilter(logging.Filter):
+    """丢掉无状态模式下 SDK 每个请求都打的「Terminating session: None」。
+
+    只按消息内容判定：真实 session id 的终止（有状态模式）原样放行。
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name != MCP_STREAMABLE_LOGGER:
+            return True
+        if record.levelno != logging.INFO:
+            return True
+        try:
+            message = record.getMessage()
+        except Exception:  # noqa: BLE001 - 拿不到原始消息就别动它
+            return True
+        if not message.startswith(_TERMINATE_PREFIX):
+            return True
+        return message[len(_TERMINATE_PREFIX):].strip() != _NO_SESSION
+
+
+def install_mcp_stateless_terminate_noise_filter() -> bool:
+    """给 mcp.server.streamable_http logger 装上降噪过滤器（幂等）。返回是否已生效。"""
+    if os.getenv("ROUNDABOUT_RAW_MCP_LOGS", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return False
+    logger = logging.getLogger(MCP_STREAMABLE_LOGGER)
+    if not any(isinstance(f, McpStatelessTerminateNoiseFilter) for f in logger.filters):
+        logger.addFilter(McpStatelessTerminateNoiseFilter())
     return True
