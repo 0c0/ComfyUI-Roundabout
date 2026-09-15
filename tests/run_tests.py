@@ -6,10 +6,10 @@
 情况下跑掉一张 z-image-turbo 512x512 和一次 BiRefNet 去背景。所以把那批用例写进
 GPU_TESTS 名单，默认跳过；要跑就显式 `--all`。
 
-    python run_tests.py                 # 全量离线自测（跳过 GPU 用例）
-    python run_tests.py --all           # 连 GPU / 依赖实跑 ComfyUI 的用例一起
-    python run_tests.py --list          # 只列不跑
-    python run_tests.py test_vram_adaptive.py test_save_prefix.py   # 指定文件
+    python tests/run_tests.py                 # 全量离线自测（跳过 GPU 用例）
+    python tests/run_tests.py --all           # 连 GPU / 依赖实跑 ComfyUI 的用例一起
+    python tests/run_tests.py --list          # 只列不跑
+    python tests/run_tests.py test_vram_adaptive.py test_save_prefix.py   # 指定文件
 """
 from __future__ import annotations
 
@@ -19,7 +19,8 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+TESTS = Path(__file__).resolve().parent          # 本文件所在（tests/）
+ROOT = TESTS.parent                              # 节点目录，子进程在此 cwd 下跑
 
 # 名字里含这些片段的用例一律不打真实 ComfyUI（真出图/真去背景）
 GPU_NAME_HINTS = ("e2e",)
@@ -46,7 +47,9 @@ def collect(explicit: list[str]) -> tuple[list[Path], list[tuple[Path, str]]]:
         targets: list[Path] = []
         for item in explicit:
             p = Path(item)
-            p = p if p.is_absolute() else ROOT / p
+            if not p.is_absolute():
+                # 先按 tests/ 下的文件名找，找不到再退回节点目录
+                p = (TESTS / item) if (TESTS / item).exists() else (ROOT / item)
             if not p.exists():
                 raise SystemExit(f"找不到测试文件：{item}")
             targets.append(p)
@@ -54,7 +57,7 @@ def collect(explicit: list[str]) -> tuple[list[Path], list[tuple[Path, str]]]:
 
     run: list[Path] = []
     skipped: list[tuple[Path, str]] = []
-    for path in sorted(ROOT.glob("test_*.py")):
+    for path in sorted(TESTS.glob("test_*.py")):
         reason = is_gpu(path)
         if reason:
             skipped.append((path, reason))

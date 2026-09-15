@@ -12,7 +12,7 @@
   [5] 参考槽裁剪：0 / 部分 / 满配三类组合，无悬空连线、无不可达孤儿
   [6] 不影响同族其它模型
 
-自测：python test_ref2va_self_lift.py
+自测：python tests/test_ref2va_self_lift.py
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ import os
 import sys
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent.parent
 ROOT = HERE.parent.parent  # <ComfyUI>
 for _p in (str(ROOT), str(HERE)):
     if _p not in sys.path:

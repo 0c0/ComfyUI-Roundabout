@@ -16,7 +16,7 @@
   [4] registry 端到端：真实 models.yaml + 临时档位表 → 默认值落位、优先级、不外溢
   [5] LoadImage 插拔：传 0 / 1 / 2 张时节点与 aggregator 输入键的增删
 
-自测：python test_vram_adaptive.py
+自测：python tests/test_vram_adaptive.py
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent.parent
 ROOT = HERE.parent.parent  # <ComfyUI>
 for _p in (str(ROOT), str(HERE)):
     if _p not in sys.path:

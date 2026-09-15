@@ -4,14 +4,14 @@
 ComfyUI 默认的 `video/ComfyUI`，产出散在两个目录里——没有任何测试盯着这条约定，
 所以漂了很久才被发现。这里把约定固定下来。
 
-    python test_save_prefix.py
+    python tests/test_save_prefix.py
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from gateway.pipeline import build_video_values  # noqa: E402

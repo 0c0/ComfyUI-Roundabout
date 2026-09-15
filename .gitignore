@@ -9,7 +9,7 @@ venv/
 
 # ---- 运行期缓存与测试产物 ----
 .cache/
-test_outputs/
+tests/test_outputs/
 
 # ---- 本地备份 / 临时文件 ----
 *.7z

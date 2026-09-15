@@ -11,8 +11,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-# 从本文件位置反推目录，不写死安装路径：<ComfyUI>/custom_nodes/ComfyUI-Roundabout/test_e2e_sync_generation.py
-NODE = Path(__file__).resolve().parent   # 节点目录
+# 从本文件位置反推目录，不写死安装路径：<ComfyUI>/custom_nodes/ComfyUI-Roundabout/tests/test_e2e_sync_generation.py
+NODE = Path(__file__).resolve().parent.parent   # 节点目录
 ROOT = NODE.parent.parent                # ComfyUI 根目录（custom_nodes 的上一级）
 for p in (str(NODE), str(ROOT)):
     if p not in sys.path:

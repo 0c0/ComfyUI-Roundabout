@@ -376,7 +376,7 @@ def build_video_values(
     优先级：显式入参 > 预设档 > 模型 defaults（defaults 再叠加显存档位，见 registry._build）。
 
     单独抽成纯函数（无 IO），是为了让回归测试能**直接调用真实组装路径**——在测试里复刻一份
-    顺序曾经导致过假绿（分档参数那次）。改这里的顺序时，test_motion_presets.py 会跟着生效。
+    顺序曾经导致过假绿（分档参数那次）。改这里的顺序时，tests/test_motion_presets.py 会跟着生效。
     """
     width, height = resolve_video_size(req.size, spec)
     values: dict[str, Any] = {

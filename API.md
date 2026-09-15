@@ -520,7 +520,7 @@ call generate_video(prompt="a cat walking in rain", model="minimax-h3-turbo",
 | MCP 握手成功但工具列表为空 | 后端 uvicorn 未起来（上一行日志） | 同上；确认启动日志出现 `MCP gateway: embedded streamable-http shared on ComfyUI port` |
 | 访问远程 IP 不通（如 `:20003`）但本机 `127.0.0.1` 正常 | ComfyUI 未加 `--listen 0.0.0.0`，或反代未放行 SSE（`text/event-stream`）长连接 | 启动加 `--listen 0.0.0.0`；反代关闭缓冲、放行 `Accept: text/event-stream` |
 | 生成后 `url` 是相对路径 | 未设 `PUBLIC_BASE_URL` 且请求 host 不可达客户端 | 设 `PUBLIC_BASE_URL=http://<对外地址>` |
-| MCP `list_models` 看不到刚加的模型 / 新改的 `models.yaml` | 旧版 `mcp_server.py` 用绝对导入 `gateway.*`，与节点侧相对导入形成**两份 registry** | 升级代码后重启（已修，见 `test_mcp_import_identity.py`）；平时加模型后 `POST /admin/reload` 即可 |
+| MCP `list_models` 看不到刚加的模型 / 新改的 `models.yaml` | 旧版 `mcp_server.py` 用绝对导入 `gateway.*`，与节点侧相对导入形成**两份 registry** | 升级代码后重启（已修，见 `tests/test_mcp_import_identity.py`）；平时加模型后 `POST /admin/reload` 即可 |
 | MCP 创建的异步任务在 `/v1/videos/tasks/{id}` 或任务面板里查不到 | 同上（`task_store` 也是两份） | 同上 |
 | 视图页看不到刚生成的产物 | 页面每 4 秒探测一次；或标签页在后台（暂停探测）；或产物落在 input/output 之外 | 手动点「刷新」；确认产物目录是 ComfyUI 的 output |
 | 任务面板一直空 | 后端未重启（旧代码只在异步视频时记任务）；或标签页后台 | `handlers.py` / `tasks.py` / `viewer.py` 改动需重启 ComfyUI |

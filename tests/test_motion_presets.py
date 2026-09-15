@@ -4,14 +4,14 @@
 不在测试里复刻顺序。早期 test_vram_adaptive.py 因为自己把参数递进 values、绕开了真实路径，
 出现过「51 项全绿但线上一个都没生效」的假绿，这里刻意避免重蹈覆辙。
 
-    python test_motion_presets.py
+    python tests/test_motion_presets.py
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from gateway.errors import APIError  # noqa: E402

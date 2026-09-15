@@ -14,7 +14,7 @@
   [3] 接线：serve_embedded 签名收 stateless；__init__.py 把 settings.mcp_stateless
       传进去；无状态时长任务完成通知不再打「sent」（没有推送通道，只留轮询提示）。
 
-自测：python test_mcp_stateless.py
+自测：python tests/test_mcp_stateless.py
 """
 from __future__ import annotations
 
@@ -26,7 +26,10 @@ import threading
 import time
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent.parent
+# 本文件在 tests/ 下，脚本目录不再等于节点目录；`import mcp_server` 需要节点目录在 sys.path 上
+if str(HERE) not in sys.path:
+    sys.path.insert(0, str(HERE))
 PKG = "ComfyUI_Roundabout"
 
 results: list[tuple[bool, str, str]] = []

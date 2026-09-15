@@ -5,7 +5,7 @@ output_node / description / aliases，而 references（参考槽拓扑）、vram
 promptless（无提示词工具流）与各类 *_presets 它不认识。若 PUT 按 payload 从零重建，
 用户在 /settings 里点一次保存，这些配置就无声消失。本测试锁住「以磁盘条目为基底合并」的语义。
 
-    python test_admin_structured_merge.py
+    python tests/test_admin_structured_merge.py
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from gateway.admin import _MODEL_ENTRY_KEYS, merge_model_entry  # noqa: E402

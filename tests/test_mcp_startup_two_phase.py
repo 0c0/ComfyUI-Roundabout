@@ -34,7 +34,7 @@ import types
 from pathlib import Path
 
 # 从本文件位置反推，不写死安装路径
-NODE = Path(__file__).resolve().parent
+NODE = Path(__file__).resolve().parent.parent
 ROOT = NODE.parent.parent
 for p in (str(ROOT), str(NODE)):
     if p not in sys.path:

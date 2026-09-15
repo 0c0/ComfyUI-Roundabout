@@ -13,7 +13,7 @@
   [4] legacy timeout>0 + 一直在队列跑 → 仍按 grace 上限抛 JobTimeout（开关关闭时行为不变）
   [5] legacy timeout>0 + 任务完成 → 返回 history 条目
 
-自测：python test_wait_no_time_limit.py
+自测：python tests/test_wait_no_time_limit.py
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ import sys
 import types
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+HERE = Path(__file__).resolve().parent.parent
 PKG = "ComfyUI_Roundabout"
 
 results: list[tuple[bool, str, str]] = []

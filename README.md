@@ -347,7 +347,7 @@ SelfLift 那两支有个经验值：**文戏的总步数要调低、过渡步跟
 | 不传 | 6 | 5 | 等同 `story` |
 
 - 默认档由 `defaults.motion: story` 声明——只写档名、不重复抄数值，改档表即改默认，两处不会漂移。
-- 工作流模板里的 `steps` / `transition_step` 字面值也同步成默认档的 6 / 5（在画布上手跑就是文戏档）；`test_motion_presets.py` 会断言「档表 = `defaults` = 模板」三者一致。
+- 工作流模板里的 `steps` / `transition_step` 字面值也同步成默认档的 6 / 5（在画布上手跑就是文戏档）；`tests/test_motion_presets.py` 会断言「档表 = `defaults` = 模板」三者一致。
 - 档位表写在 `models.yaml` 的 `motion_presets` 里，改档不用动代码；别的模型想加同款机制，照样声明一份即可。
 - 要精调时直接传底层参数，**显式入参优先于命名档**：`{"motion": "story", "steps": 9}` → 9 / 5。
 - 仅 `minimax-h3-self-lift` 与 `-self-lift-edit` 支持（只有 `SelfLiftH3Sampler` 有「过渡步」这个概念）。给别的模型传 `motion` 会直接报错并提示不支持，不会静默忽略。
@@ -407,7 +407,7 @@ ComfyUI-Roundabout/
 ├── models.yaml            # 模型注册表
 ├── pyproject.toml         # 节点包元数据（供 ComfyUI-Manager 等抓取识别）
 ├── requirements.txt       # mcp + uvicorn（MCP 默认启用故默认需要；关掉 MCP 可不装）
-├── test_*.py / test_*.cjs # 测试（分发时由 .comfyignore 排除）
+├── tests/                 # 回归测试（run_tests.py 为入口；分发时由 .comfyignore 排除）
 ├── WORKFLOWS.md           # 接入自己的工作流
 └── API.md                 # 完整接口文档
 ```
@@ -417,21 +417,21 @@ ComfyUI-Roundabout/
 ## 测试
 
 ```bash
-<ComfyUI>/python/python.exe run_tests.py                # 全量离线自测（默认跳过会驱动 ComfyUI 的用例）
-<ComfyUI>/python/python.exe run_tests.py --list         # 只列出将执行 / 跳过的文件
-<ComfyUI>/python/python.exe run_tests.py test_vram_adaptive.py   # 跑单个文件
-<ComfyUI>/python/python.exe run_tests.py --all          # 连 GPU 用例一起（会真出图、真去背景）
-node test_view_frontend.cjs                             # 前端 jsdom（需 node + jsdom）
+<ComfyUI>/python/python.exe tests/run_tests.py                # 全量离线自测（默认跳过会驱动 ComfyUI 的用例）
+<ComfyUI>/python/python.exe tests/run_tests.py --list         # 只列出将执行 / 跳过的文件
+<ComfyUI>/python/python.exe tests/run_tests.py test_vram_adaptive.py   # 跑单个文件
+<ComfyUI>/python/python.exe tests/run_tests.py --all          # 连 GPU 用例一起（会真出图、真去背景）
+node tests/test_view_frontend.cjs                             # 前端 jsdom（需 node + jsdom）
 ```
 
-**用例分两类**，别用 `for f in test_*.py` 一把梭——那会把下面两个也扫进去，它们会**真的占用 GPU 并落产物**：
+**用例分两类**，别用 `for f in tests/test_*.py` 一把梭——那会把下面两个也扫进去，它们会**真的占用 GPU 并落产物**：
 
 | 用例 | 行为 |
 |---|---|
 | `test_e2e_sync_generation.py` | 真提交一次生图（z-image-turbo 512x512，约 10–30s GPU） |
 | `test_removebg_e2e.py` | 真跑 BiRefNet 去背景 |
 
-`run_tests.py` 默认跳过它们（名字含 `e2e`，或列在脚本顶部的 `GPU_TESTS` 里），要跑得显式加 `--all`。
+`tests/run_tests.py` 默认跳过它们（名字含 `e2e`，或列在脚本顶部的 `GPU_TESTS` 里），要跑得显式加 `--all`。
 其余用例全部离线、用系统分配的临时端口，不需要 ComfyUI 在跑。
 
 ## 许可

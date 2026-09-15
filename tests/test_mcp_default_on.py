@@ -25,8 +25,8 @@ import sys
 import types
 from pathlib import Path
 
-# 从本文件位置反推目录，不写死安装路径：<ComfyUI>/custom_nodes/ComfyUI-Roundabout/test_mcp_default_on.py
-NODE = Path(__file__).resolve().parent   # 节点目录
+# 从本文件位置反推目录，不写死安装路径：<ComfyUI>/custom_nodes/ComfyUI-Roundabout/tests/test_mcp_default_on.py
+NODE = Path(__file__).resolve().parent.parent   # 节点目录
 ROOT = NODE.parent.parent                # ComfyUI 根目录（custom_nodes 的上一级）
 for p in (str(ROOT), str(NODE)):
     if p not in sys.path:

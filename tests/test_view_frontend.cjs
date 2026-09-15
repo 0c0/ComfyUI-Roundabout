@@ -5,14 +5,16 @@
  * 左下角提示）全是 DOM 状态变化，jsdom + fetch 打桩足够覆盖，还能进 CI。
  *
  * 运行（先装 jsdom 到托管 node 工作区）：
- *   NODE_PATH=<node-workspace>/node_modules node test_view_frontend.cjs
+ *   NODE_PATH=<node-workspace>/node_modules node tests/test_view_frontend.cjs
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
 const { JSDOM, VirtualConsole } = require('jsdom');
 
-const HTML = fs.readFileSync(path.join(__dirname, 'web', 'view.html'), 'utf8');
+// tests/ 的上一级才是节点目录
+const NODE = path.join(__dirname, '..');
+const HTML = fs.readFileSync(path.join(NODE, 'web', 'view.html'), 'utf8');
 // 页面里的每页条数按视口高度自适应，量不到布局时退回 DEFAULT_PAGE_SIZE；
 // jsdom 没有排版（所有 getBoundingClientRect 都是 0），所以整份测试走的正是这个兜底值。
 const PAGE_SIZE = 120;
