@@ -324,6 +324,8 @@ async def remove_background(
         "生成视频（文生视频 / 参考生视频）。model 默认 minimax-h3；支持 duration(1-15s) / "
         "fps / size(如 720p-16:9 / 768p-16:9 / 1080p-16:9) / seed / reference_images(参考图，最多 6 张，"
         "支持 base64/URL/本地路径) / reference_videos / reference_audios。"
+        "SelfLift 系列可用 motion=\"story\"（文戏，6 步 / 过渡 5）或 \"fight\"（打戏，8 / 6）一键切档，"
+        "要精调则改传 steps + transition_step。"
         "默认同步等待（长任务建议 background=pending 异步，再轮询 get_task）。"
     ),
 )
@@ -347,6 +349,18 @@ async def generate_video_tool(
     reference_images: list[str] | None = None,
     reference_videos: list[str] | None = None,
     reference_audios: list[str] | None = None,
+    motion: str = Field(
+        default="",
+        description=(
+            "命名运动档（仅 SelfLift 系列）：story=文戏（总步数 6 / 过渡步 5）、"
+            "fight=打戏（8 / 6）。不传则用模型默认。与 steps / transition_step 同时传时，后者胜出。"
+        ),
+    ),
+    steps: int | None = None,
+    transition_step: int | None = Field(
+        default=None,
+        description="SelfLift 过渡步（低分辨率切到高分辨率的步位），需小于 steps；仅 SelfLift 系列有效。",
+    ),
     background: str = "",  # "pending" 触发异步
     response_format: str = "",
     ctx: Context = None,  # type: ignore[assignment]  # MCP SDK 按注解自动注入
@@ -362,6 +376,9 @@ async def generate_video_tool(
         reference_images=reference_images,
         reference_videos=reference_videos,
         reference_audios=reference_audios,
+        motion=motion or None,
+        steps=steps,
+        transition_step=transition_step,
         background=background or None,
         response_format=response_format or None,  # type: ignore[arg-type]
     )

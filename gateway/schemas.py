@@ -91,6 +91,14 @@ class VideoGenerationRequest(BaseModel):
     )
     quality: str | None = Field(None, description="low / medium / high / standard / hd / auto")
     style: str | None = Field(None, description="vivid / natural")
+    motion: str | None = Field(
+        None,
+        description=(
+            "命名运动档，一次展开成多组参数（由模型在 models.yaml 的 motion_presets 中声明）。"
+            "SelfLift 系列支持 story=文戏（总步数 6 / 过渡步 5）与 fight=打戏（8 / 6）；"
+            "需要精调时改传 `steps` + `transition_step`。"
+        ),
+    )
     response_format: Literal["b64_json", "url", "file", "path"] | None = Field(None, description="视频默认 url")
     user: str | None = None
 
@@ -98,6 +106,15 @@ class VideoGenerationRequest(BaseModel):
     duration: float | None = Field(None, description="视频时长（秒），允许 1–15")
     fps: int | None = Field(None, description="帧率")
     num_frames: int | None = Field(None, description="总帧数（部分工作流用帧数而非时长）")
+    transition_step: int | None = Field(
+        None,
+        ge=1,
+        le=200,
+        description=(
+            "SelfLift 渐进采样的过渡步：低分辨率阶段结束后，在第几步切到高分辨率。"
+            "必须小于 `steps`。仅 minimax-h3-self-lift / -self-lift-edit 有效。"
+        ),
+    )
 
     # ---------- 扩展字段：ComfyUI 精调 ----------
     negative_prompt: str | None = Field(None, description="反向提示词")

@@ -637,6 +637,17 @@ models:
       head_chunks: 220.inputs.head_chunks
       seq_threshold: 219.inputs.seq_threshold
       highres_tiling: 235.inputs.highres_tiling
+      transition_step: 235.inputs.transition_step
+    # 文戏 / 打戏差的只有「总步数 + 过渡步」两个数，单独传容易配错，打包成命名档：
+    # 请求里写 "motion": "story" / "fight" 即可。显式传 steps / transition_step 仍可覆盖。
+    # 不传 motion 时按 defaults.steps 与模板里的 transition_step 走（等同 fight）。
+    motion_presets:
+      story:
+        steps: 6
+        transition_step: 5
+      fight:
+        steps: 8
+        transition_step: 6
     aliases:
     - minimax_h3_self_lift
     - minimaxh3selflift
@@ -702,6 +713,15 @@ models:
       head_chunks: 220.inputs.head_chunks
       seq_threshold: 219.inputs.seq_threshold
       highres_tiling: 235.inputs.highres_tiling
+      transition_step: 235.inputs.transition_step
+    # 同 self-lift：story=文戏（6 / 5）、fight=打戏（8 / 6）。
+    motion_presets:
+      story:
+        steps: 6
+        transition_step: 5
+      fight:
+        steps: 8
+        transition_step: 6
     aliases:
     - minimax_h3_self_lift_edit
     - minimaxh3selfliftedit

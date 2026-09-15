@@ -169,7 +169,13 @@ def resolve_seed(seed: int | None, index: int = 0) -> int:
 
 
 # ------------------------------------------------------------------ 预设
-def apply_presets(values: dict[str, Any], spec: ModelSpec, quality: str | None, style: str | None) -> dict[str, Any]:
+def apply_presets(
+    values: dict[str, Any],
+    spec: ModelSpec,
+    quality: str | None,
+    style: str | None,
+    motion: str | None = None,
+) -> dict[str, Any]:
     out = dict(values)
 
     if quality:
@@ -182,6 +188,24 @@ def apply_presets(values: dict[str, Any], spec: ModelSpec, quality: str | None, 
             )
         for k, v in (preset or {}).items():
             out[k] = v  # 预设优先级低于显式入参，调用方在后面再覆盖
+
+    if motion:
+        key = motion.strip().lower()
+        preset = spec.motion_presets.get(key) or spec.motion_presets.get(motion)
+        if preset is None:
+            supported = ", ".join(spec.motion_presets)
+            if supported:
+                raise APIError(
+                    f"Unsupported `motion` {motion!r} for model `{spec.name}`. Supported: {supported}.",
+                    param="motion",
+                )
+            raise APIError(
+                f"Model `{spec.name}` has no `motion` presets. "
+                "Set the underlying params (e.g. `steps` / `transition_step`) directly instead.",
+                param="motion",
+            )
+        for k, v in preset.items():
+            out[k] = v
 
     if style:
         preset = spec.style_presets.get(style) or spec.style_presets.get(style.lower()) or {}

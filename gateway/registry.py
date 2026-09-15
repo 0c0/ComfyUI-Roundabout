@@ -46,6 +46,8 @@ KNOWN_PARAMS = {
     "duration",
     "fps",
     "num_frames",
+    # SelfLift 渐进采样：总步数复用 steps，这里是「低分辨率 → 高分辨率」的过渡步
+    "transition_step",
     # ---- 低显存分块（按显卡档位自动填默认值，见 gateway/vram.py）----
     "chunks",
     "head_chunks",
@@ -70,6 +72,9 @@ class ModelSpec:
     mode: str = "image"  # "image" | "video"
     quality_presets: dict[str, dict[str, Any]] = field(default_factory=dict)
     style_presets: dict[str, dict[str, Any]] = field(default_factory=dict)
+    # 命名运动档（如 story=文戏 / fight=打戏）：请求传一个词，展开成多组参数注入节点。
+    # 适合「总步数 + 过渡步」这类必须成对调整、单独调容易配错的参数。未声明的模型传了报错。
+    motion_presets: dict[str, dict[str, Any]] = field(default_factory=dict)
     size_choices: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
     timeout: float | None = None
@@ -273,6 +278,7 @@ class Registry:
                 mode=mode,
                 quality_presets=cfg.get("quality_presets") or shared_defaults.get("quality_presets") or {},
                 style_presets=cfg.get("style_presets") or shared_defaults.get("style_presets") or {},
+                motion_presets=cfg.get("motion_presets") or shared_defaults.get("motion_presets") or {},
                 size_choices=[str(s) for s in (cfg.get("sizes") or [])],
                 aliases=[str(a) for a in (cfg.get("aliases") or [])],
                 timeout=float(cfg["timeout"]) if cfg.get("timeout") else None,

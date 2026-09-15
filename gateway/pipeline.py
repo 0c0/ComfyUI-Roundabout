@@ -364,6 +364,63 @@ async def generate(
     return ImageResponse(created=int(time.time()), data=data, seed=seed_field)  # type: ignore[arg-type]
 
 
+def build_video_values(
+    req: VideoGenerationRequest,
+    spec: ModelSpec,
+    prompt_in: str | None,
+    neg_in: str | None,
+    uploaded: str | None = None,
+) -> dict[str, Any]:
+    """组装视频请求的语义参数：白名单 → 预设（quality / style / motion 命名档）→ 显式入参 → 模型默认。
+
+    优先级：显式入参 > 预设档 > 模型 defaults（defaults 再叠加显存档位，见 registry._build）。
+
+    单独抽成纯函数（无 IO），是为了让回归测试能**直接调用真实组装路径**——在测试里复刻一份
+    顺序曾经导致过假绿（分档参数那次）。改这里的顺序时，test_motion_presets.py 会跟着生效。
+    """
+    width, height = resolve_video_size(req.size, spec)
+    values: dict[str, Any] = {
+        "prompt": prompt_in,
+        "negative_prompt": neg_in,
+        "width": width,
+        "height": height,
+        "steps": req.steps,
+        "cfg": req.cfg,
+        "sampler_name": req.sampler_name,
+        "scheduler": req.scheduler,
+        "denoise": req.denoise,
+        "image": uploaded,
+        "duration": req.duration,
+        "fps": req.fps,
+        "num_frames": req.num_frames,
+        "transition_step": req.transition_step,
+        "filename_prefix": req.filename_prefix,  # 透传：None 时回落模板默认前缀
+    }
+    values = apply_presets(values, spec, req.quality, req.style, req.motion)
+    for key in ("steps", "cfg", "sampler_name", "scheduler", "denoise", "duration", "fps", "num_frames", "transition_step"):
+        explicit = getattr(req, key, None)
+        if explicit is not None:
+            values[key] = explicit
+        elif values.get(key) is None:
+            values[key] = spec.defaults.get(key)
+    if values.get("width") is None:
+        values["width"] = spec.defaults.get("width")
+    if values.get("height") is None:
+        values["height"] = spec.defaults.get("height")
+
+    # SelfLift 内部要求 1 <= transition_step <= steps-1（nodes.py `_validate_schedule`），
+    # 违规要等 ComfyUI 跑到采样阶段才抛错。这里提前拦下，省掉一次白排队。
+    if spec.binds("transition_step"):
+        ts, st = values.get("transition_step"), values.get("steps")
+        if ts is not None and st is not None and not 1 <= ts <= st - 1:
+            raise APIError(
+                f"`transition_step` ({ts}) 必须满足 1 <= transition_step <= steps-1 ({st - 1})。"
+                f"当前 steps={st}。",
+                param="transition_step",
+            )
+    return values
+
+
 async def generate_video(
     req: VideoGenerationRequest,
     client: ComfyClient,
@@ -432,34 +489,7 @@ async def generate_video(
         uploaded = await client.upload_image(images[0], f"hermes_{request_id}_src.{ext}")
 
     # ---- 3. 组装语义参数 ----
-    width, height = resolve_video_size(req.size, spec)
-    values: dict[str, Any] = {
-        "prompt": prompt_in,
-        "negative_prompt": neg_in,
-        "width": width,
-        "height": height,
-        "steps": req.steps,
-        "cfg": req.cfg,
-        "sampler_name": req.sampler_name,
-        "scheduler": req.scheduler,
-        "denoise": req.denoise,
-        "image": uploaded,
-        "duration": req.duration,
-        "fps": req.fps,
-        "num_frames": req.num_frames,
-        "filename_prefix": req.filename_prefix,  # 透传：None 时回落模板默认前缀
-    }
-    values = apply_presets(values, spec, req.quality, req.style)
-    for key in ("steps", "cfg", "sampler_name", "scheduler", "denoise", "duration", "fps", "num_frames"):
-        explicit = getattr(req, key, None)
-        if explicit is not None:
-            values[key] = explicit
-        elif values.get(key) is None:
-            values[key] = spec.defaults.get(key)
-    if values.get("width") is None:
-        values["width"] = spec.defaults.get("width")
-    if values.get("height") is None:
-        values["height"] = spec.defaults.get("height")
+    values = build_video_values(req, spec, prompt_in, neg_in, uploaded)
 
     # JOB_TIMEOUT=0（或不传正 timeout）→ 无限等待，仅由 ComfyUI 任务状态判定健康；
     # 否则沿用「模型自身 timeout 优先、回落全局 JOB_TIMEOUT」的旧逻辑（向后兼容）。

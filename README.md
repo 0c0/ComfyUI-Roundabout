@@ -238,7 +238,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
 | 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3 25 步，支持 6 图 + 3 视频 + 3 音频参考 |
 | 视频 | `minimax-h3-turbo` / `minimax-h3-turbo-edit` | 8 步快速版 |
-| 视频 | `minimax-h3-self-lift` | SelfLift 渐进采样（低分辨率 NFE + 高分辨率 NFE）；文生 / 首尾帧生视频靠 `reference_images` 插拔；分块参数按本机显存自动分档 |
+| 视频 | `minimax-h3-self-lift` | SelfLift 渐进采样（低分辨率 NFE + 高分辨率 NFE）；文生 / 首尾帧生视频靠 `reference_images` 插拔；分块参数按本机显存自动分档；`motion=story/fight` 一键切文戏 / 打戏步数档 |
 | 视频 | `minimax-h3-self-lift-edit` | 同上，改用 Ref2VA 权重，参考槽保留全套 6 图 + 3 视频 + 3 音频 |
 
 - 编辑类模型**必须传 `image`**；输出尺寸跟随输入图（工作流内缩放到 1MP），`size` 不生效。
@@ -331,6 +331,39 @@ models:
 - 优先级：**档位值 < 模型自己写的 `defaults` < 请求参数**（请求里传 `chunks` 等可按单次任务覆盖）。
 - 探测不到显存（纯 CPU / 无 torch）时不覆盖，行为与不声明 `vram_adaptive` 一致。
 - 档位表在 YAML 里，改档位不用动代码；`ROUNDABOUT_VRAM_GB` 可手动钉住。
+
+### 按剧情节奏切档（`motion_presets`）
+
+SelfLift 那两支有个经验值：**文戏的总步数要调低、过渡步跟着调低；打戏两个都调高**——两个数必须成对改，只动一个容易出问题。于是把它们打包成命名档，请求里写一个词就行：
+
+```json
+{"model": "minimax-h3-self-lift", "prompt": "...", "duration": 5, "motion": "story"}
+```
+
+| `motion` | 总步数（`124.steps`） | 过渡步（`235.transition_step`） | 适用 |
+|---|---|---|---|
+| `story` | 6 | 5 | 文戏：对话、静态、慢动作 |
+| `fight` | 8 | 6 | 打戏：奔跑、追逐、快节奏 |
+| 不传 | 模型 `defaults`（8） | 模板原值（6） | 等同 `fight` |
+
+- 档位表写在 `models.yaml` 的 `motion_presets` 里，改档不用动代码；别的模型想加同款机制，照样声明一份即可。
+- 要精调时直接传底层参数，**显式入参优先于命名档**：`{"motion": "story", "steps": 9}` → 9 / 5。
+- 仅 `minimax-h3-self-lift` 与 `-self-lift-edit` 支持（只有 `SelfLiftH3Sampler` 有「过渡步」这个概念）。给别的模型传 `motion` 会直接报错并提示不支持，不会静默忽略。
+- 不想记节点号又不想加档位时，也可以直接点名改节点：`workflow_overrides: {"124.inputs.steps": 6, "235.inputs.transition_step": 5}`。
+
+```yaml
+models:
+  minimax-h3-self-lift:
+    motion_presets:
+      story:
+        steps: 6
+        transition_step: 5
+      fight:
+        steps: 8
+        transition_step: 6
+    bindings:
+      transition_step: 235.inputs.transition_step
+```
 
 ### 同机跑多个 ComfyUI 实例
 

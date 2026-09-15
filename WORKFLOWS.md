@@ -51,6 +51,7 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 | `duration` / `num_frames` | 你自己链路里的时长/帧数节点 |
 | `chunks` / `head_chunks` / `seq_threshold` | `MiniMaxChunkFeedForward.chunks` / `.seq_threshold`、`MiniMaxLowVRAMAttention.head_chunks`（KJNodes） |
 | `highres_tiling` | `SelfLiftH3Sampler.highres_tiling`（comfyui-SelfLift） |
+| `transition_step` | `SelfLiftH3Sampler.transition_step`（comfyui-SelfLift）—— 总步数仍走 `steps`（`BasicScheduler.steps`） |
 
 ### 写映射的三条铁律
 
@@ -249,6 +250,34 @@ models:
 - **优先级**：档位值 < 模型自己的 `defaults` < 请求参数。想固定某个值，就写进该模型的 `defaults`（如 `chunks: 3`），请求里仍可按次覆盖。
 - **探测不到显存**（纯 CPU / 无 torch）时不覆盖，行为等同没开这个开关；`ROUNDABOUT_VRAM_GB=24` 可手动钉住。
 - 档位表在 YAML 里，**改参数不用动代码**；本机命中哪一档见启动日志 `model ... 显存 X GiB -> 分块档位 {...}`。
+
+---
+
+## 按叙事节奏切参数档：`motion_presets`
+
+有些参数**必须成对调整**，只改一个反而更糟。SelfLift 的「总步数 + 过渡步」就是典型：文戏 6 / 5、打戏 8 / 6。与其每次记两个数字，不如打包成命名档，请求里写一个词即可：
+
+```json
+{"model": "minimax-h3-self-lift", "prompt": "...", "duration": 5, "motion": "story"}
+```
+
+```yaml
+models:
+  minimax-h3-self-lift:
+    motion_presets:
+      story:                  # 文戏：对话、静态、慢动作
+        steps: 6
+        transition_step: 5
+      fight:                  # 打戏：奔跑、追逐、快节奏
+        steps: 8
+        transition_step: 6
+    bindings:
+      transition_step: 235.inputs.transition_step   # 档位值靠 bindings 才注得进节点
+```
+
+- 档里的键就是普通参数名，**必须先在 `bindings` 里绑好**，否则档位值算得出来却写不到节点上。
+- **优先级**：命名档 < 同请求里的显式参数。`{"motion": "story", "steps": 9}` 得到 9 / 5，方便在档位基础上微调。
+- 未声明 `motion_presets` 的模型收到 `motion` 会**报错并列出可用值**，不会静默忽略——档名拼错能立刻发现。
 
 ---
 
