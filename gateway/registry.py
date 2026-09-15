@@ -20,6 +20,7 @@ from typing import Any
 import yaml
 
 from .errors import APIError, ModelNotFound
+from . import vram
 
 log = logging.getLogger("roundabout.registry")
 
@@ -45,6 +46,11 @@ KNOWN_PARAMS = {
     "duration",
     "fps",
     "num_frames",
+    # ---- 低显存分块（按显卡档位自动填默认值，见 gateway/vram.py）----
+    "chunks",
+    "head_chunks",
+    "seq_threshold",
+    "highres_tiling",
 }
 
 CAP_TXT2IMG = "text-to-image"
@@ -73,6 +79,10 @@ class ModelSpec:
     # 工具类工作流（去背景等）没有提示词概念：声明后可不绑 prompt，
     # 且 pipeline 不会再要求请求带 prompt。
     promptless: bool = False
+    # 按本机显存档位自动填默认值（大模型分块：chunks / head_chunks / seq_threshold /
+    # highres_tiling）。档位表来自 `params.vram_tiers`，本机命中哪一档记在 vram_tier。
+    vram_adaptive: bool = False
+    vram_tier: dict[str, Any] = field(default_factory=dict)
 
     @property
     def supports_batch(self) -> bool:
@@ -183,6 +193,8 @@ class Registry:
         if not isinstance(raw, dict):
             raise RuntimeError("models.yaml top-level must be a mapping")
         shared_defaults: dict[str, Any] = raw.get("defaults") or {}
+        # 低显存分块档位表（按本机显存挑一档，见 gateway/vram.py）
+        vram_tiers = vram.normalize_tiers(shared_defaults.get("vram_tiers"))
         entries: dict[str, Any] = raw.get("models") or {}
         if not entries:
             raise RuntimeError("no models defined in config")
@@ -214,7 +226,28 @@ class Registry:
                 )
 
             bindings = _normalize_bindings(name, cfg.get("bindings") or {})
-            merged_defaults = {**(shared_defaults.get("params") or {}), **(cfg.get("defaults") or {})}
+            # 显存分档：档位值作为默认值的地基，模型自己写的 defaults 覆盖它。
+            # 探测不到显存时 tier 为空，行为等同不做自适应。
+            tier: dict[str, Any] = {}
+            if cfg.get("vram_adaptive"):
+                tier = vram.select_tier(vram.total_vram_gb(), vram_tiers)
+                if not tier:
+                    log.warning(
+                        "model `%s`: vram_adaptive 已开启，但本机显存探测不到 / 档位表为空，"
+                        "沿用工作流自带的参数",
+                        name,
+                    )
+                else:
+                    log.info(
+                        "model `%s`: 显存 %.1f GiB -> 分块档位 %s",
+                        name, vram.total_vram_gb() or 0.0,
+                        {k: v for k, v in tier.items() if k in KNOWN_PARAMS},
+                    )
+            merged_defaults = {
+                **(shared_defaults.get("params") or {}),
+                **tier,
+                **(cfg.get("defaults") or {}),
+            }
 
             caps = set(cfg.get("capabilities") or [CAP_TXT2IMG])
             if "image" in bindings:
@@ -246,6 +279,8 @@ class Registry:
                 mode_choices=[str(a) for a in (cfg.get("mode_choices") or [])],
                 references=ref,
                 promptless=bool(cfg.get("promptless")),
+                vram_adaptive=bool(cfg.get("vram_adaptive")),
+                vram_tier=tier,
             )
             _validate_bindings(spec)
             _validate_references(spec)

@@ -238,6 +238,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
 | 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3 25 步，支持 6 图 + 3 视频 + 3 音频参考 |
 | 视频 | `minimax-h3-turbo` / `minimax-h3-turbo-edit` | 8 步快速版 |
+| 视频 | `minimax-h3-self-lift` | SelfLift 渐进采样（低分辨率 NFE + 高分辨率 NFE）；文生 / 首尾帧生视频靠 `reference_images` 插拔；分块参数按本机显存自动分档 |
 
 - 编辑类模型**必须传 `image`**；输出尺寸跟随输入图（工作流内缩放到 1MP），`size` 不生效。
 - 给文生图模型传 `image` 会被拒绝，错误信息里会列出所有支持输入图的模型名。
@@ -247,7 +248,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 
 ## 权重清单（内置工作流的全部依赖）
 
-**本仓库不包含任何权重文件**（体积与许可原因）。内置工作流引用的 24 个文件如下，放到 ComfyUI 对应目录即可；缺文件时报错是 `value not in list: <字段>: <文件名>`。
+**本仓库不包含任何权重文件**（体积与许可原因）。内置工作流引用的 25 个文件如下，放到 ComfyUI 对应目录即可；缺文件时报错是 `value not in list: <字段>: <文件名>`。
 
 | 工作流 | 需要的权重 → 目标目录 |
 |---|---|
@@ -259,8 +260,10 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | `utility-birefnet-remove-background` | `background_removal/` `birefnet.safetensors` |
 | `minimax-h3` / `minimax-h3-edit` | `diffusion_models/` `minimax_h3_fl2va_int8_convrot.safetensors`、`minimax_h3_ref2va_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` · `vae/` `minimax_h3_video_vae_fp16.safetensors`、`minimax_h3_audio_vae_fp32.safetensors` |
 | `minimax-h3-turbo` / `minimax-h3-turbo-edit` | 同上，另需 `loras/` `MiniMax-H3-FL2VA-Acc-8Step.safetensors` 或 `MiniMax-H3-Ref2VA-Acc-8Step.safetensors` |
+| `minimax-h3-self-lift` | 同上，另需 `loras/` `minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy.safetensors` · `upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors` |
 
-> 这些工作流用到的节点**全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；但 ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` 等节点。
+> 这些工作流用到的节点**除 `minimax-h3-self-lift` 外全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` 等节点。
+> `minimax-h3-self-lift` 额外依赖两个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3Sampler`）与 `ComfyUI-KJNodes`（`MiniMaxChunkFeedForward` / `MiniMaxLowVRAMAttention`）。
 > 上述权重多为 `int8_convrot` 量化版，只在你已具备同名权重的机器上开箱即用；换成自己的模型时，同步改工作流 JSON 里的文件名即可。
 
 ---
@@ -298,6 +301,34 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | `PUBLIC_BASE_URL` | 空 | 产物 `url` 绝对化基准，**远程部署必填** |
 | `MAX_CONCURRENCY` | `2` | 并发生成上限 |
 | `JOB_TIMEOUT` / `OUTPUT_TTL` | `300` / `3600` | 任务超时（秒，`0`=关闭上限仅由 ComfyUI 状态判定）/`url` 产物存活期（秒） |
+| `ROUNDABOUT_VRAM_GB` | 空 | 手动钉住显存档位（GiB），用于按显卡自动调参的模型（如 `minimax-h3-self-lift`）；不填则自动探测，探测不到就不覆盖工作流自带的值 |
+
+### 按显卡自动调参（`vram_adaptive`）
+
+大模型工作流（SelfLift 权重合计 ~65 GiB）靠节点级分块在显存吃紧的卡上跑，而分块参数的合适取值只取决于显存大小。在 `models.yaml` 给模型加一行 `vram_adaptive: true`，网关启动时探测本机显存，从 `defaults.vram_tiers` 取「`min_gb` 不超过本机显存」的最大一档，作为该模型分块参数的默认值：
+
+```yaml
+defaults:
+  vram_tiers:
+    - min_gb: 24        # 24 GiB 及以上
+      chunks: 2
+      head_chunks: 8
+      seq_threshold: 16384
+      highres_tiling: true
+    # ... 12 / 8 / 0 各档
+models:
+  minimax-h3-self-lift:
+    vram_adaptive: true
+    bindings:
+      chunks: 219.inputs.chunks
+      head_chunks: 220.inputs.head_chunks
+      seq_threshold: 219.inputs.seq_threshold
+      highres_tiling: 235.inputs.highres_tiling
+```
+
+- 优先级：**档位值 < 模型自己写的 `defaults` < 请求参数**（请求里传 `chunks` 等可按单次任务覆盖）。
+- 探测不到显存（纯 CPU / 无 torch）时不覆盖，行为与不声明 `vram_adaptive` 一致。
+- 档位表在 YAML 里，改档位不用动代码；`ROUNDABOUT_VRAM_GB` 可手动钉住。
 
 ### 同机跑多个 ComfyUI 实例
 
@@ -327,6 +358,7 @@ ComfyUI-Roundabout/
 │   ├── viewer.py          # 资源浏览与任务进度页面后端
 │   ├── analyze.py         # 上传工作流时的参数映射自动分析
 │   ├── tasks.py           # 任务表
+│   ├── vram.py            # 显存探测 + 低显存分块档位选取（vram_adaptive）
 │   ├── log_filters.py     # 把 aiohttp「客户端断开」的 ERROR 降级为 DEBUG
 │   └── ...
 ├── web/                   # 前端（可视化页面 + 设置面板）
@@ -348,7 +380,13 @@ ComfyUI-Roundabout/
 <ComfyUI>/python/python.exe test_mcp_proxy_disconnect.py    # /mcp 代理的断开与不可达兜底
 <ComfyUI>/python/python.exe test_aiohttp_error_noise.py     # Error handling request 降噪
 <ComfyUI>/python/python.exe test_mcp_stateless.py           # MCP_STATELESS 开关（重启无感）
+<ComfyUI>/python/python.exe test_mcp_proxy_frozen_router.py # 代理路由在冻结前注册
+<ComfyUI>/python/python.exe test_mcp_startup_two_phase.py   # 两段式启动里的后端就绪
+<ComfyUI>/python/python.exe test_wait_no_time_limit.py      # 任务等待只由 ComfyUI 状态判定
+<ComfyUI>/python/python.exe test_vram_adaptive.py           # 显存分档调参 + LoadImage 插拔
 <ComfyUI>/python/python.exe test_mcp_import_identity.py
+<ComfyUI>/python/python.exe test_mcp_default_on.py
+<ComfyUI>/python/python.exe test_mcp_multi_instance.py
 <ComfyUI>/python/python.exe test_port_map.py
 <ComfyUI>/python/python.exe test_video_size.py
 

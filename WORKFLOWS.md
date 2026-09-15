@@ -27,7 +27,7 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 
 ### 可绑定的参数名（白名单）
 
-`prompt` `negative_prompt` `width` `height` `seed` `steps` `cfg` `sampler_name` `scheduler` `denoise` `batch_size` `image` `mask` `filename_prefix` `duration` `fps` `num_frames` `mode`
+`prompt` `negative_prompt` `width` `height` `seed` `steps` `cfg` `sampler_name` `scheduler` `denoise` `batch_size` `image` `mask` `filename_prefix` `duration` `fps` `num_frames` `mode` `chunks` `head_chunks` `seq_threshold` `highres_tiling`
 
 **白名单以外的键会被静默忽略**（只在启动日志里留一条 warning）。厂商特有参数用 `workflow_overrides` 传，不要在 `bindings` 里造名字。
 
@@ -49,6 +49,8 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 | `filename_prefix` | `SaveImage.filename_prefix`、`SaveVideo.filename_prefix` |
 | `fps` | `CreateVideo.fps`、`VideoCombine.frame_rate` |
 | `duration` / `num_frames` | 你自己链路里的时长/帧数节点 |
+| `chunks` / `head_chunks` / `seq_threshold` | `MiniMaxChunkFeedForward.chunks` / `.seq_threshold`、`MiniMaxLowVRAMAttention.head_chunks`（KJNodes） |
+| `highres_tiling` | `SelfLiftH3Sampler.highres_tiling`（comfyui-SelfLift） |
 
 ### 写映射的三条铁律
 
@@ -113,6 +115,7 @@ models:
 | `timeout` | | 单任务超时秒数 |
 | `aliases` | | 别名列表 |
 | `promptless` | | 无提示词的工具类工作流（去背景、超分…） |
+| `vram_adaptive` | | `true` 时按本机显存从顶层 `defaults.vram_tiers` 取一档，作为分块参数的默认值（见下节） |
 | `references` | | 视频参考槽位拓扑，见下 |
 | `sizes` / `mode_choices` | | 面板与接口暴露的候选值 |
 
@@ -180,6 +183,60 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 ```
 
 启动时会校验：`aggregator` 必须存在，各 load 节点必须存在，且聚合器上必须真有 `ref_images.ref_image_0` 这样的 input。
+
+**同一个工作流做「文生视频」和「带图生成」**：槽位本来就可选 —— 请求里不传 `reference_images`，网关就把对应 LoadImage 连节点带输入键一起删掉，模型自然只吃提示词。所以不必为两种模式各维护一份 JSON。`minimax-h3-self-lift` 就是这么用的（传 0 / 1 / 2 张图 = 纯文生 / 首帧 / 首尾帧）：
+
+```yaml
+    references:
+      aggregator: '136'
+      images: ['150', '164']   # 150=首帧槽位，164=尾帧槽位
+```
+
+在 ComfyUI 画布上手动跑时，把不需要的 LoadImage 按 **Bypass（Ctrl+B）** 旁路掉同样等效。
+
+---
+
+## 大模型按显卡自动调参：`vram_adaptive`
+
+像 MiniMax H3 SelfLift 这种权重几十 GiB 的工作流，靠节点级分块把激活张量切小才能在显存吃紧的卡上跑。分块参数的合适取值**只取决于显存大小**，写死在 JSON 里换台机器就得手改，所以做成档位自动填：
+
+```yaml
+defaults:
+  vram_tiers:                 # 顶层 defaults，全局共用
+    - min_gb: 48
+      chunks: 1
+      head_chunks: 4
+      seq_threshold: 262144
+      highres_tiling: false
+    - min_gb: 24
+      chunks: 2
+      head_chunks: 8
+      seq_threshold: 16384
+      highres_tiling: true
+    - min_gb: 8
+      chunks: 6
+      head_chunks: 24
+      seq_threshold: 4096
+      highres_tiling: true
+    - min_gb: 0              # 兜底档，任何显存都命中
+      chunks: 8
+      head_chunks: 28
+      seq_threshold: 4096
+      highres_tiling: true
+models:
+  minimax-h3-self-lift:
+    vram_adaptive: true
+    bindings:
+      chunks: 219.inputs.chunks
+      head_chunks: 220.inputs.head_chunks
+      seq_threshold: 219.inputs.seq_threshold
+      highres_tiling: 235.inputs.highres_tiling
+```
+
+- **选档规则**：取 `min_gb` 不超过本机显存的最大一档；匹配留 0.6 GiB 容差（显卡报的可用量普遍略低于标称值，如 12G 卡报 12282 MiB = 11.99 GiB）。
+- **优先级**：档位值 < 模型自己的 `defaults` < 请求参数。想固定某个值，就写进该模型的 `defaults`（如 `chunks: 3`），请求里仍可按次覆盖。
+- **探测不到显存**（纯 CPU / 无 torch）时不覆盖，行为等同没开这个开关；`ROUNDABOUT_VRAM_GB=24` 可手动钉住。
+- 档位表在 YAML 里，**改参数不用动代码**；本机命中哪一档见启动日志 `model ... 显存 X GiB -> 分块档位 {...}`。
 
 ---
 

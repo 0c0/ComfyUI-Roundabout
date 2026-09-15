@@ -3,6 +3,46 @@ defaults:
   params:
     negative_prompt: lowres, worst quality, blurry, jpeg artifacts, watermark, text,
       signature, deformed
+  # 低显存分块档位表：按本机显存总量取「min_gb 不超过它」的最大一档，作为
+  # chunks / head_chunks / seq_threshold / highres_tiling 的默认值。
+  # 只有声明了 `vram_adaptive: true` 的模型会用它；模型自己的 defaults 覆盖档位值。
+  # 改档位只动这里，不用碰代码。数值依据见 H3-SelfLift 分块调优文档第五节。
+  vram_tiers:
+    - min_gb: 48
+      chunks: 1
+      head_chunks: 4
+      seq_threshold: 262144
+      highres_tiling: false
+    - min_gb: 32
+      chunks: 2
+      head_chunks: 4
+      seq_threshold: 262144
+      highres_tiling: false
+    - min_gb: 24
+      chunks: 2
+      head_chunks: 8
+      seq_threshold: 16384
+      highres_tiling: true
+    - min_gb: 16
+      chunks: 3
+      head_chunks: 8
+      seq_threshold: 12288
+      highres_tiling: true
+    - min_gb: 12
+      chunks: 3
+      head_chunks: 12
+      seq_threshold: 4096
+      highres_tiling: true
+    - min_gb: 8
+      chunks: 6
+      head_chunks: 24
+      seq_threshold: 4096
+      highres_tiling: true
+    - min_gb: 0
+      chunks: 8
+      head_chunks: 28
+      seq_threshold: 4096
+      highres_tiling: true
   quality_presets:
     low:
       steps: 12
@@ -545,3 +585,62 @@ models:
     - minimax_h3_turbo_edit
     - minimaxh3turboedit
     - h3-turbo-edit
+
+  # ===================== MiniMax H3 SelfLift 变体 =====================
+  # 拓扑与前四个 H3 不同：走 SelfLiftH3Sampler 渐进采样（低分辨率 NFE + 高分辨率 NFE），
+  # 聚合节点仍是 MiniMaxH3ReferenceToVideo(136)，输出是 SaveVideo(238) 而非 92。
+  # 文生视频 / 首尾帧生视频靠两个 LoadImage 的插拔区分：都旁路（或在请求里不传
+  # reference_images）即文生视频；接上 ref_image_0 / ref_image_1 即带图生成。
+  # 请求未提供的图由网关在提交前删掉对应 LoadImage，见 gateway/pipeline.py 的
+  # _prune_unused_references。
+  # 分块参数（chunks / head_chunks / seq_threshold / highres_tiling）不写死在这里，
+  # 由 `vram_adaptive` 按本机显存从 defaults.vram_tiers 取档（显存探测见 gateway/vram.py）。
+  minimax-h3-self-lift:
+    workflow: video_minimax_h3_self_lift.json
+    description: MiniMax H3 SelfLift —— 文生视频 / 首尾帧生视频，渐进式低分→高分采样，参数按显存自动分档
+    mode: video
+    capabilities:
+    - text-to-video
+    - image-to-video
+    output_node: '238'
+    # SelfLift 要比常规 H3 多跑一轮高分辨率阶段，给更宽的窗口；
+    # 想要完全不限时仍可设 JOB_TIMEOUT=0。
+    timeout: 3600
+    vram_adaptive: true
+    references:
+      aggregator: '136'
+      images:
+      - '150'
+      - '164'
+    defaults:
+      width: 1344
+      height: 768
+      steps: 8
+      sampler_name: euler
+      scheduler: simple
+      denoise: 1
+      duration: 10
+      fps: 24
+    bindings:
+      filename_prefix: 238.inputs.filename_prefix
+      prompt: 232.inputs.value
+      seed: 235.inputs.seed
+      steps: 124.inputs.steps
+      sampler_name: 123.inputs.sampler_name
+      scheduler: 124.inputs.scheduler
+      denoise: 124.inputs.denoise
+      width: 136.inputs.width
+      height: 136.inputs.height
+      duration: 132.inputs.value
+      fps: 234.inputs.fps
+      chunks: 219.inputs.chunks
+      head_chunks: 220.inputs.head_chunks
+      seq_threshold: 219.inputs.seq_threshold
+      highres_tiling: 235.inputs.highres_tiling
+    aliases:
+    - minimax_h3_self_lift
+    - minimaxh3selflift
+    - h3-selflift
+    - h3-self-lift
+    - selflift
+    - self-lift

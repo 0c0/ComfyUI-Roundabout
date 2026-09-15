@@ -101,6 +101,7 @@ python\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-Roundabout\requ
 | `MCP_HOST` | `127.0.0.1` | `MCP_SHARE_PORT=false` 时的绑定地址 |
 | `MCP_STATELESS` | `false` | **无状态模式**：每个 MCP 请求独立处理、不跟踪会话，ComfyUI 重启后 agent 无需重新 initialize（根治 `unknown or expired session ID`）。代价：异步任务的完成通知**没有推送通道**（通知挂在会话上），客户端改为轮询 `GET /v1/videos/tasks/{id}`。SDK 原生 `stateless_http`，无自研逻辑 |
 | `ROUNDABOUT_RAW_AIOHTTP_LOGS` | 空 | 设 `true` 关闭 aiohttp「客户端断开」日志降噪（见 §10 排障），恢复 aiohttp 原始 ERROR |
+| `ROUNDABOUT_VRAM_GB` | 空 | 手动钉住显存档位（GiB），用于 `vram_adaptive: true` 的模型（如 `minimax-h3-self-lift`）；不填则启动时自动探测，探测不到就不覆盖工作流自带的分块参数 |
 | `COMFY_BASE_URL` | 自动取 ComfyUI `--listen/--port` | 覆盖后端指向（指向另一个 ComfyUI 实例） |
 | `COMFY_HTTP_TIMEOUT` | `30` | 后端请求超时（秒） |
 | `OPENAI_GATEWAY_API_KEYS` | 空 | 逗号分隔的 Bearer key；**为空则鉴权自动放行** |
@@ -326,6 +327,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `mage-flow-base` / `mage-flow-turbo` | image | text-to-image | MageFlow 文生图 |
 | `minimax-h3` / `-turbo` | video | text-to-video | H3 文生视频（25 / 8 步） |
 | `minimax-h3-edit` / `-turbo-edit` | video | text-to-video | H3 参考生视频（支持图/视频/音频参考） |
+| `minimax-h3-self-lift` | video | text-to-video / image-to-video | H3 SelfLift 渐进采样（低分 → 高分）；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧；分块参数按本机显存自动分档 |
 
 > 完整别名与绑定关系见 `models.yaml`；模型清单与用途对照也见 [README.md](README.md#内置模型)。
 

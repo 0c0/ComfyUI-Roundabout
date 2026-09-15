@@ -334,7 +334,9 @@ async def generate_video_tool(
         description=(
             "模型选择（MiniMax H3 系列）：minimax-h3=25 步高质量（默认）；"
             "minimax-h3-turbo=8 步快速；minimax-h3-edit / minimax-h3-turbo-edit=参考/编辑变体"
-            "（配合 reference_images/videos/audios 使用，最多 6 图 + 3 视频 + 3 音频）。"
+            "（配合 reference_images/videos/audios 使用，最多 6 图 + 3 视频 + 3 音频）；"
+            "minimax-h3-self-lift=SelfLift 渐进采样（低分→高分），reference_images 传 0/1/2 张"
+            "即文生 / 首帧 / 首尾帧，分块参数按本机显存自动分档。"
         ),
     ),
     duration: float | None = None,

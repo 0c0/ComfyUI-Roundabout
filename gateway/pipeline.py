@@ -413,9 +413,15 @@ async def generate_video(
         raw_list = req.image if isinstance(req.image, list) else [req.image]
         images = [await load_image_input(str(x)) for x in raw_list if x]
     if images and not spec.supports_img2img:
+        # 有些视频模型不收 `image`，而是通过 `reference_images` 的槽位接图
+        # （如 minimax-h3-self-lift：第 1 张=首帧、第 2 张=尾帧）。此时 capabilities
+        # 里可能写着 image-to-video，直接说「不支持」会自相矛盾，所以点明该走哪个字段。
+        hint = ""
+        if (spec.references or {}).get("images"):
+            hint = f" Pass image(s) via `reference_images` instead (up to {len(spec.references['images'])})."
         raise APIError(
-            f"Video model `{spec.name}` does not support image-to-video "
-            f"(capabilities: {', '.join(sorted(spec.capabilities))}).",
+            f"Video model `{spec.name}` does not take the `image` field "
+            f"(capabilities: {', '.join(sorted(spec.capabilities))}).{hint}",
             param="image",
         )
 
