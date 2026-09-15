@@ -404,10 +404,18 @@ def _validate_references(spec: ModelSpec) -> None:
 
 # ---------------------------------------------------------------- 注入
 def build_workflow(spec: ModelSpec, values: dict[str, Any], overrides: dict[str, Any] | None = None) -> dict[str, Any]:
-    """把语义参数注入 workflow 模板副本，返回可直接提交给 /prompt 的 JSON。"""
+    """把语义参数注入 workflow 模板副本，返回可直接提交给 /prompt 的 JSON。
+
+    `spec.defaults` 是地基，`values` 覆盖它：调用方只传「本次请求真正相关」的字段
+    （pipeline 里那份白名单），模型自带的默认值 —— 包括按显存挑出来的分块档位 ——
+    必须在这里兜住，否则模板里写死的字面值会悄悄胜出。
+    """
     wf = copy.deepcopy(spec.template)
 
-    for key, value in values.items():
+    effective: dict[str, Any] = {k: v for k, v in spec.defaults.items() if k in spec.bindings}
+    effective.update(values)
+
+    for key, value in effective.items():
         if value is None:
             continue
         for path in spec.bindings.get(key, []):

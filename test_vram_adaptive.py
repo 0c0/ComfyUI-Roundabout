@@ -177,6 +177,24 @@ def main() -> int:
               and wf["235"]["inputs"]["highres_tiling"] is False)
         check("模板未被注入污染", reg.resolve("t").template["219"]["inputs"]["chunks"] == 2)
 
+        # 回归：pipeline 组装出的 values 是一份白名单，永远不会带 chunks / head_chunks 这些键，
+        # 所以档位值必须由 spec.defaults 兜住。早期只有「调用方主动传参」才注入，结果是
+        # list_models 报 6/24、真正提交给 ComfyUI 的却还是模板里写死的 2/8。
+        for gb, expect in ((8.0, (6, 24, 4096, True)), (24.0, (2, 8, 16384, True))):
+            os.environ[vram.ENV_KEY] = str(gb)
+            vram.reset_cache()
+            reg_d = Registry()
+            reg_d.load(tmpdir / "models.yaml", tmpdir / "workflows", "t")
+            wf_d = build_workflow(reg_d.resolve("t"), {"prompt": "p"}, None)
+            got_d = (wf_d["219"]["inputs"]["chunks"], wf_d["220"]["inputs"]["head_chunks"],
+                     wf_d["219"]["inputs"]["seq_threshold"], wf_d["235"]["inputs"]["highres_tiling"])
+            check(f"{gb:g} GiB -> 不传分块参数也按档位注入 {expect}", got_d == expect, f"got={got_d}")
+
+        os.environ[vram.ENV_KEY] = "48"
+        vram.reset_cache()
+        wf_x = build_workflow(reg.resolve("t"), {"prompt": "p", "chunks": 9}, None)
+        check("请求参数仍然压过档位值", wf_x["219"]["inputs"]["chunks"] == 9, f"got={wf_x['219']['inputs']['chunks']}")
+
         # 模型自己写的 defaults 覆盖档位值
         text = (tmpdir / "models.yaml").read_text(encoding="utf-8").replace(
             "    vram_adaptive: true\n", "    vram_adaptive: true\n    defaults:\n      chunks: 3\n")
