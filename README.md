@@ -347,6 +347,7 @@ SelfLift 那两支有个经验值：**文戏的总步数要调低、过渡步跟
 | 不传 | 6 | 5 | 等同 `story` |
 
 - 默认档由 `defaults.motion: story` 声明——只写档名、不重复抄数值，改档表即改默认，两处不会漂移。
+- 工作流模板里的 `steps` / `transition_step` 字面值也同步成默认档的 6 / 5（在画布上手跑就是文戏档）；`test_motion_presets.py` 会断言「档表 = `defaults` = 模板」三者一致。
 - 档位表写在 `models.yaml` 的 `motion_presets` 里，改档不用动代码；别的模型想加同款机制，照样声明一份即可。
 - 要精调时直接传底层参数，**显式入参优先于命名档**：`{"motion": "story", "steps": 9}` → 9 / 5。
 - 仅 `minimax-h3-self-lift` 与 `-self-lift-edit` 支持（只有 `SelfLiftH3Sampler` 有「过渡步」这个概念）。给别的模型传 `motion` 会直接报错并提示不支持，不会静默忽略。

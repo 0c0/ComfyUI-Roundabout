@@ -158,5 +158,15 @@ for spec in (LIFT, EDIT):
     check(f"{spec.name}: defaults.motion 不进 bindings（不会被当参数注入节点）",
           "motion" not in spec.bindings)
 
+    # 模板字面值同样要与默认档一致。否则存在一个危险窗口：改了 yaml 只 reload 不重启时，
+    # defaults.steps 已经把步数压到 6，而模板里的 transition_step 还是 6 —— 正好违反
+    # SelfLift 的 1 <= transition_step <= steps-1，跑到采样才炸。
+    tpl_steps = spec.template["124"]["inputs"]["steps"]
+    tpl_ts = spec.template["235"]["inputs"]["transition_step"]
+    check(f"{spec.name}: 模板 steps={tpl_steps} 与 {default_name} 档一致",
+          tpl_steps == preset.get("steps"), (tpl_steps, preset.get("steps")))
+    check(f"{spec.name}: 模板 transition_step={tpl_ts} 与 {default_name} 档一致",
+          tpl_ts == preset.get("transition_step"), (tpl_ts, preset.get("transition_step")))
+
 print(f"\n===== {passed} passed / {failed} failed =====")
 sys.exit(1 if failed else 0)

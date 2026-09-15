@@ -43,7 +43,7 @@
   "124": {
     "inputs": {
       "scheduler": "simple",
-      "steps": 8,
+      "steps": 6,
       "denoise": 1,
       "model": [
         "219",
@@ -321,7 +321,7 @@
     "inputs": {
       "seed": 666,
       "cfg": 1,
-      "transition_step": 6,
+      "transition_step": 5,
       "lowres_scale": 0.4000000000000001,
       "rho": 0,
       "w_min": 0.5,
