@@ -644,3 +644,69 @@ models:
     - h3-self-lift
     - selflift
     - self-lift
+
+  # Ref2VA 版 SelfLift：采样链路、低显存分块、显存分档与上面那支完全一致，
+  # 差别只在 UNET 换 ref2va 权重、LoRA 换 ref2v turbo 4step，参考槽扩为全套 6 图 + 3 视频 + 3 音频。
+  # 参考视频与其音轨同源（GetVideoComponents 的两个输出），未提供时网关成对删除。
+  minimax-h3-self-lift-edit:
+    workflow: video_minimax_h3_self_lift_edit.json
+    description: MiniMax H3 SelfLift Ref2VA —— 参考图 / 视频 / 音频生视频，渐进式低分→高分采样，参数按显存自动分档
+    mode: video
+    capabilities:
+    - text-to-video
+    - image-to-video
+    - reference-to-video
+    output_node: '238'
+    # 同 self-lift，渐进采样要多跑一轮高分辨率阶段；想要完全不限时仍可设 JOB_TIMEOUT=0。
+    timeout: 3600
+    vram_adaptive: true
+    references:
+      aggregator: '136'
+      images:
+      - '300'
+      - '301'
+      - '302'
+      - '303'
+      - '304'
+      - '305'
+      videos:
+      - '306'
+      - '307'
+      - '308'
+      audios:
+      - '312'
+      - '313'
+      - '314'
+    defaults:
+      width: 1344
+      height: 768
+      steps: 8
+      sampler_name: euler
+      scheduler: simple
+      denoise: 1
+      duration: 10
+      fps: 24
+    bindings:
+      filename_prefix: 238.inputs.filename_prefix
+      prompt: 232.inputs.value
+      seed: 235.inputs.seed
+      steps: 124.inputs.steps
+      sampler_name: 123.inputs.sampler_name
+      scheduler: 124.inputs.scheduler
+      denoise: 124.inputs.denoise
+      width: 136.inputs.width
+      height: 136.inputs.height
+      duration: 132.inputs.value
+      fps: 234.inputs.fps
+      chunks: 219.inputs.chunks
+      head_chunks: 220.inputs.head_chunks
+      seq_threshold: 219.inputs.seq_threshold
+      highres_tiling: 235.inputs.highres_tiling
+    aliases:
+    - minimax_h3_self_lift_edit
+    - minimaxh3selfliftedit
+    - h3-selflift-edit
+    - h3-self-lift-edit
+    - selflift-edit
+    - self-lift-edit
+    - ref2va-selflift

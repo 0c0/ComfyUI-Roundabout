@@ -194,6 +194,18 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 
 在 ComfyUI 画布上手动跑时，把不需要的 LoadImage 按 **Bypass（Ctrl+B）** 旁路掉同样等效。
 
+三类参考可以同时挂满，`minimax-h3-self-lift-edit`（Ref2VA 权重那支）就是全套槽位：
+
+```yaml
+    references:
+      aggregator: '136'
+      images: ['300', '301', '302', '303', '304', '305']
+      videos: ['306', '307', '308']   # 每个 LoadVideo 的 GetVideoComponents 会跟着级联删除
+      audios: ['312', '313', '314']
+```
+
+传几张就留几个槽：0 图 0 视频 0 音频 = 纯文生，只传 1 张图 = 单图参考，三类混传也照常。**参考视频与它的音轨同源**（同一个 `GetVideoComponents` 的 `video` / `audio` 两个输出），所以网关按成对的方式删 `ref_videos.ref_video_N` 与 `ref_video_audios.ref_video_audio_N`。
+
 ---
 
 ## 大模型按显卡自动调参：`vram_adaptive`

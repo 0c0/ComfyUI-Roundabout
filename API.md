@@ -328,6 +328,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `minimax-h3` / `-turbo` | video | text-to-video | H3 文生视频（25 / 8 步） |
 | `minimax-h3-edit` / `-turbo-edit` | video | text-to-video | H3 参考生视频（支持图/视频/音频参考） |
 | `minimax-h3-self-lift` | video | text-to-video / image-to-video | H3 SelfLift 渐进采样（低分 → 高分）；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧；分块参数按本机显存自动分档 |
+| `minimax-h3-self-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 Ref2VA 权重；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
 
 > 完整别名与绑定关系见 `models.yaml`；模型清单与用途对照也见 [README.md](README.md#内置模型)。
 
