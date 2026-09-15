@@ -49,8 +49,8 @@ class ImageGenerationRequest(BaseModel):
     workflow_overrides: dict[str, Any] | None = None
 
     # 保存文件名前缀（透传）：ComfyUI SaveImage 的 filename_prefix。
-    # 不传用默认 "hermes/<request_id>"；传入则原样作为前缀（可含 "/" 建子目录）。
-    filename_prefix: str | None = Field(None, description="保存文件名前缀；不传则用默认 hermes/<request_id>")
+    # 不传则保留工作流模板自带的前缀（如 Z-Image-Turbo）；传入则原样作为前缀（可含 "/" 建子目录）。
+    filename_prefix: str | None = Field(None, description="保存文件名前缀；不传则用工作流模板自带的前缀")
 
 
 class ImageDatum(BaseModel):
@@ -141,8 +141,8 @@ class VideoGenerationRequest(BaseModel):
     workflow_overrides: dict[str, Any] | None = None
 
     # 保存文件名前缀（透传）：ComfyUI VHS/SaveImage 的 filename_prefix。
-    # 不传用默认 "hermes/<request_id>"；传入则原样作为前缀（可含 "/" 建子目录）。
-    filename_prefix: str | None = Field(None, description="保存文件名前缀；不传则用默认 hermes/<request_id>")
+    # 不传则保留工作流模板自带的前缀（H3 视频统一为 video/MiniMax_H3）；传入则原样作为前缀（可含 "/" 建子目录）。
+    filename_prefix: str | None = Field(None, description="保存文件名前缀；不传则用工作流模板自带的前缀")
 
     # ---- 异步任务模式（对齐 OpenAI 标准异步范式）----
     # OpenAI 官方用 background: "pending" 触发异步：POST 立即返回 task 对象（id + status: pending），

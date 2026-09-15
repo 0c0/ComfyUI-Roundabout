@@ -364,7 +364,7 @@
   },
   "238": {
     "inputs": {
-      "filename_prefix": "video/ComfyUI",
+      "filename_prefix": "video/MiniMax_H3",
       "format": "mp4",
       "format.codec": "h264",
       "format.codec.encoding": "auto",
