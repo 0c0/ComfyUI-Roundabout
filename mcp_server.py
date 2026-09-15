@@ -510,6 +510,10 @@ async def _run_video_task_and_notify(
 ) -> None:
     """异步视频任务执行 + 完成后向提交客户端推送标准 notification（替代轮询）。
 
+    只在**有状态模式**（`MCP_STATELESS=false`）下被调用——推送挂在会话上，无状态模式没有
+    常驻会话 / GET SSE 通道可推，调用方 `_handle_video` 会直接起 `_run_video_task`，
+    由客户端轮询 `GET /v1/videos/tasks/{id}`。
+
     走 MCP 标准 notifications/message（LoggingMessageNotification，客户端必处理），
     data 里带 task_id / status / url 等结构化信息。客户端保持 GET SSE 连接即可收到。
     """
@@ -531,15 +535,6 @@ async def _run_video_task_and_notify(
                 payload["url"] = _absolutize_urls({"data": items})["data"][0]["url"]
         if task.error:
             payload["error"] = task.error
-        if settings.mcp_stateless:
-            # 无状态模式（MCP_STATELESS=true）下没有常驻会话/GET SSE 通道可推，
-            # 通知发不出去——诚实记录并给出轮询替代方案，别打出误导性的「sent」。
-            log.info(
-                "MCP gateway: task %s finished (status=%s); stateless mode has no push "
-                "channel, poll GET /v1/videos/tasks/%s",
-                task_id, task.status, task_id,
-            )
-            return
         try:
             from mcp_types import LoggingMessageNotification, LoggingMessageNotificationParams
 
@@ -560,8 +555,9 @@ async def _handle_video(req: VideoGenerationRequest, ctx: Context | None = None)
         task_id = uuid.uuid4().hex
         request_id = _new_request_id()
         task_store.create(task_id, model=req.model, request_id=request_id)
-        if ctx is not None:
-            # 异步任务完成时向客户端推送 notification（MCP 原生回调，替代 get_task 轮询）
+        # 有状态模式才有推送通道（会话在，notification 才发得出去）；无状态模式连通知 task
+        # 都不用起——客户端按返回的 id 轮询 get_task。
+        if ctx is not None and not settings.mcp_stateless:
             asyncio.create_task(_run_video_task_and_notify(ctx, task_id, req, request_id))
         else:
             asyncio.create_task(_run_video_task(task_id, req, request_id))

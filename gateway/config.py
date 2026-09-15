@@ -231,12 +231,15 @@ class Settings:
     # true（默认）：MCP 端点通过 aiohttp 原生代理挂到 ComfyUI 同一端口（如 8188/mcp），
     # 内部 uvicorn 后端只绑定 127.0.0.1 回环；false：客户端直连 MCP_HOST:MCP_PORT。
     mcp_share_port: bool = field(default_factory=lambda: _env_bool("MCP_SHARE_PORT", True))
-    # false（默认）：标准 MCP streamable-http——会话存于进程内存，ComfyUI 重启后旧
-    #   Mcp-Session-Id 全部失效，客户端需重新 initialize（报「unknown or expired session ID」）。
-    # true：无状态模式，每个请求独立处理、不跟踪会话，agent 不再怕 ComfyUI 重启；
-    #   代价是「异步任务完成通知」没有推送通道（通知挂在会话上），客户端需改为轮询
-    #   GET /v1/videos/tasks/{id}。SDK 直接支持（stateless_http=True），无自研逻辑。
-    mcp_stateless: bool = field(default_factory=lambda: _env_bool("MCP_STATELESS", False))
+    # true（默认）：无状态模式——每个请求独立处理、不跟踪会话，agent 不再怕 ComfyUI 重启。
+    #   选它当默认，是因为会话在本插件里只有一处用途：给「异步任务完成通知」当推送通道
+    #   （且只在 background=pending 这条可选路径上、只在会话还活着的时候有效）。
+    #   收益这么窄，却要拿「ComfyUI 一重启、所有工具调用集体报 Session not found」去换。
+    # false：标准有状态 streamable-http，保留推送通道；代价是会话存于进程内存，ComfyUI
+    #   重启后旧 Mcp-Session-Id 全部失效，客户端必须重新 initialize，否则报
+    #   「unknown or expired session ID」。想要推送就显式关掉无状态。
+    # 两种模式都由 SDK 原生支持（stateless_http=True），无自研逻辑。
+    mcp_stateless: bool = field(default_factory=lambda: _env_bool("MCP_STATELESS", True))
 
     @property
     def comfy_port(self) -> int:

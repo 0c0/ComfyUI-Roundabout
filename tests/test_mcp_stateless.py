@@ -4,15 +4,18 @@
 旧 `Mcp-Session-Id` 再请求，SDK 按 MCP 规范回 404 `Session not found`（日志
 「Rejected request with unknown or expired session ID」）。SDK 自带
 `stateless_http=True`：每个请求独立处理、完全不跟踪会话，旧 session ID 无效与否
-根本不进判断——agent 不再怕 ComfyUI 重启。本插件经 `MCP_STATELESS=true` 启用。
+根本不进判断——agent 不再怕 ComfyUI 重启。本插件**默认就走这条路**（`MCP_STATELESS`
+默认 true）：会话在本插件里只有一处用途——给异步任务完成通知当推送通道，收益窄，
+却要拿「重启后所有工具调用集体报错」去换。想换回推送就显式设 `MCP_STATELESS=false`。
 
 验证点：
-  [1] 配置：默认 False；MCP_STATELESS=true 解析为 True（缺省容忍 1/true/yes）。
+  [1] 配置：默认 True（无状态）；MCP_STATELESS=true 解析为 True（容忍 1/true/yes）；
+      显式 false/0/no/off → False（换回有状态模式）；空串按未设置处理、回落默认。
   [2] 行为差异（端到端，真实 uvicorn + 真实 SDK）：
-      · 有状态（默认）：伪造 session ID 的 POST → 404（规范行为）；
-      · 无状态：同样的伪造 session ID → 不再 404（session 头被整个忽略）。
+      · 有状态（MCP_STATELESS=false）：伪造 session ID 的 POST → 404（规范行为）；
+      · 无状态（默认）：同样的伪造 session ID → 不再 404（session 头被整个忽略）。
   [3] 接线：serve_embedded 签名收 stateless；__init__.py 把 settings.mcp_stateless
-      传进去；无状态时长任务完成通知不再打「sent」（没有推送通道，只留轮询提示）。
+      传进去；无状态模式下连通知 task 都不起（推送只在有状态模式启用）。
 
 自测：python tests/test_mcp_stateless.py
 """
@@ -64,15 +67,22 @@ def part_config() -> None:
     saved = os.environ.pop("MCP_STATELESS", None)
     try:
         s = cfg.Settings()
-        check("默认关闭（会话模式）", s.mcp_stateless is False, repr(s.mcp_stateless))
-        for raw in ("true", "1", "yes", "TRUE"):
+        check("默认开启（无状态模式）", s.mcp_stateless is True, repr(s.mcp_stateless))
+        for raw in ("true", "1", "yes", "on", "TRUE"):
             os.environ["MCP_STATELESS"] = raw
             s = cfg.Settings()
             check(f"MCP_STATELESS={raw!r} -> True", s.mcp_stateless is True, repr(s.mcp_stateless))
-        for raw in ("false", "0", "", "no"):
+        for raw in ("false", "0", "no", "off"):
             os.environ["MCP_STATELESS"] = raw
             s = cfg.Settings()
-            check(f"MCP_STATELESS={raw!r} -> False", s.mcp_stateless is False, repr(s.mcp_stateless))
+            check(
+                f"MCP_STATELESS={raw!r} -> False（换回有状态模式）",
+                s.mcp_stateless is False,
+                repr(s.mcp_stateless),
+            )
+        os.environ["MCP_STATELESS"] = ""
+        s = cfg.Settings()
+        check("空串按未设置处理 -> 回落默认 True", s.mcp_stateless is True, repr(s.mcp_stateless))
     finally:
         if saved is None:
             os.environ.pop("MCP_STATELESS", None)
@@ -132,7 +142,7 @@ def part_e2e() -> None:
                 headers={**HEADERS, **(extra_headers or {})},
             )
 
-    # —— 对照组：有状态（默认）——
+    # —— 对照组：有状态（MCP_STATELESS=false，要推送才选它）——
     srv_stateful = MCPServer(name="t-stateful", version="0")
     app = srv_stateful.streamable_http_app(streamable_http_path="/mcp", host="127.0.0.1")
     server, port = _boot_uvicorn(app)
@@ -151,7 +161,7 @@ def part_e2e() -> None:
     finally:
         _shutdown(server)
 
-    # —— 实验组：无状态 ——
+    # —— 实验组：无状态（默认）——
     srv_stateless = MCPServer(name="t-stateless", version="0")
     app = srv_stateless.streamable_http_app(
         streamable_http_path="/mcp", host="127.0.0.1", stateless_http=True
@@ -182,15 +192,17 @@ def part_wiring() -> None:
 
     sig = inspect.signature(mcp_server.serve_embedded)
     check("serve_embedded 有 stateless 形参", "stateless" in sig.parameters, str(list(sig.parameters)))
-    check("stateless 默认 False", sig.parameters["stateless"].default is False)
+    check("stateless 默认 False", sig.parameters["stateless"].default is False,
+          "形参默认值只是签名兜底，真正取值由 __init__.py 传 settings.mcp_stateless 决定")
 
     init_src = (HERE / "__init__.py").read_text(encoding="utf-8")
     check("__init__.py 传入 settings.mcp_stateless", "stateless=settings.mcp_stateless" in init_src)
 
     src = (HERE / "mcp_server.py").read_text(encoding="utf-8")
     check(
-        "无状态时长任务通知不再谎报「sent」",
-        'stateless mode has no push' in src and "completion notification sent" in src,
+        "无状态模式不起空转的通知 task（推送只在有状态模式启用）",
+        "not settings.mcp_stateless" in src and "completion notification sent" in src,
+        "调用点应按 settings.mcp_stateless 决定是否走推送路径",
     )
     check(
         "streamable_http_app 收到 stateless_http",

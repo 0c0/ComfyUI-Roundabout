@@ -99,7 +99,7 @@ python\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-Roundabout\requ
 | `MCP_PORT_MAP` | 空 | 固定端口映射，成对书写「ComfyUI 端口,Roundabout 端口」，如 `[8188,888],[8189,999]`；按本实例的 `--port` 取值，未命中回落系统分配；**优先级低于 `MCP_PORT`** |
 | `MCP_PATH` | `/mcp` | MCP 端点路径 |
 | `MCP_HOST` | `127.0.0.1` | `MCP_SHARE_PORT=false` 时的绑定地址 |
-| `MCP_STATELESS` | `false` | **无状态模式**：每个 MCP 请求独立处理、不跟踪会话，ComfyUI 重启后 agent 无需重新 initialize（根治 `unknown or expired session ID`）。代价：异步任务的完成通知**没有推送通道**（通知挂在会话上），客户端改为轮询 `GET /v1/videos/tasks/{id}`。SDK 原生 `stateless_http`，无自研逻辑 |
+| `MCP_STATELESS` | `true` | **无状态模式（默认）**：每个 MCP 请求独立处理、不跟踪会话，ComfyUI 重启后 agent 无需重新 initialize（根治 `unknown or expired session ID`）。设成 `false` 即为标准有状态 streamable-http，那是唯一能拿到「异步任务完成通知」推送的模式（通知挂在会话上）——代价是 ComfyUI 一重启旧会话全失效，客户端没重新握手前所有调用都报错。两种模式都由 SDK 原生 `stateless_http` 支持，无自研逻辑 |
 | `ROUNDABOUT_RAW_AIOHTTP_LOGS` | 空 | 设 `true` 关闭 aiohttp「客户端断开」日志降噪（见 §10 排障），恢复 aiohttp 原始 ERROR |
 | `ROUNDABOUT_VRAM_GB` | 空 | 手动钉住显存档位（GiB），用于 `vram_adaptive: true` 的模型（如 `minimax-h3-self-lift`）；不填则启动时自动探测，探测不到就不覆盖工作流自带的分块参数 |
 | `COMFY_BASE_URL` | 自动取 ComfyUI `--listen/--port` | 覆盖后端指向（指向另一个 ComfyUI 实例） |
@@ -446,7 +446,11 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 > 鉴权开启时浏览器无法带自定义头，页面支持 `?key=<api_key>`；`get_view_url` 会自动把 key 拼进返回的 url。
 > 页面与前端资源改动只需**强刷浏览器**；新增/修改 Python 路由需重启 ComfyUI。
 
-### 7.2 完成推送（替代轮询）
+### 7.2 完成推送（替代轮询，仅在 `MCP_STATELESS=false` 时可用）
+
+> 默认的**无状态模式没有推送通道**：通知挂在会话上，而无状态模式不建会话。想在异步任务完成时
+> 收到通知，就得显式设 `MCP_STATELESS=false` 换回有状态模式（代价见 §2.3 的环境变量表与 §10 排障速查）。
+> 默认模式下请轮询 `get_task(id)`——它不依赖任何会话，反而更稳（客户端重连也不会丢）。
 
 MCP 异步视频任务完成时，服务端通过标准 `notifications/message`（`LoggingMessageNotification`）向保持连接的客户端主动推送，无需轮询：
 
@@ -494,7 +498,8 @@ curl -X DELETE http://127.0.0.1:8188/v1/videos/tasks/$TASK
 ```
 call generate_video(prompt="a cat walking in rain", model="minimax-h3-turbo",
                     duration=5, background="pending")  → 返回 {id, status:pending}
-# 保持 SSE 连接，等待 notifications/message 推送；或轮询 get_task(id)
+# 默认（无状态模式）：轮询 get_task(id)，不依赖会话，客户端重连也不会丢
+# 若显式设了 MCP_STATELESS=false：可保持 SSE 连接，等服务端 notifications/message 推送
 ```
 
 ---
@@ -515,8 +520,8 @@ call generate_video(prompt="a cat walking in rain", model="minimax-h3-turbo",
 | `/mcp` 404 / 连不上 | URL 用了内部回环端口；或 MCP 被显式关闭（`.env` 里 `MCP_ENABLED=false`）；或后端端口绑定失败（启动日志出现 `backend server stopped`） | URL 用 **ComfyUI 对外端口** + `/mcp`；删掉该行或改成 `true` 后重启 |
 | 日志反复出现 `Error handling request from <客户端IP>`，后面拖一整段 traceback | aiohttp 在 handler 抛异常时**先打这条 ERROR、再判断连接是否已断**（`web_protocol.handle_error`），所以 SSE 场景下「客户端超时/重连把旧连接关掉」这种常态每次都会刷一条。**看 traceback 最后一行**：<br>· `ClientConnectionResetError: Cannot write to closing transport`（或 `ConnectionResetError` / `ConnectionAbortedError` / `BrokenPipeError`）→ 就是客户端断开，**属常态，不是故障**<br>· `ClientConnectorError: Cannot connect to host 127.0.0.1:<port>` → 内部 MCP 后端没起来，代理转发失败 | 前者：已由两层兜住——`mcp_server._proxy` 把这类断开降为 DEBUG，`gateway/log_filters.py` 再给 `aiohttp.server` 挂一个过滤器把这类记录降级（只降「客户端断开」，**真异常照旧报 ERROR**）。更新代码即可；想看原始日志设 `ROUNDABOUT_RAW_AIOHTTP_LOGS=true`<br>后者：查启动日志 `ComfyUI port <N> -> MCP backend port <M>`，核对 `MCP_PORT` / `MCP_PORT_MAP` 与本实例 `--port` 是否对得上 |
 | 启动日志 `MCP gateway: on_ready callback failed: Cannot register a resource into frozen router` | 代理路由注册晚于 ComfyUI 冻结 aiohttp 路由表（旧版本在拿到后端端口后才 `add_route`） | 更新到当前代码即可（路由改为 import 期注册、端口后回填）。若仍出现，说明有别的节点/代码在 ComfyUI 起服务后才 import 本节点，或改用 `MCP_SHARE_PORT=false` 走独立端口 |
-| ComfyUI 重启后 agent 侧报 `Rejected request with unknown or expired session ID: <hex>` | **不是故障，也与端口无关**。MCP streamable-http 的会话只存在后端进程内存里（`Mcp-Session-Id` → `_server_instances`），ComfyUI 重启即全部清空；agent 仍拿着旧 session ID 发请求，SDK 按 MCP 规范回 404 `Session not found` 并打这条 INFO（logger `mcp.server.streamable_http_manager`）。URL 走的是 ComfyUI 固定端口 `/mcp`，所以请求能到达服务器——若真是端口问题，症状会是「连接被拒」而不是「session 未知」 | agent 侧重新 initialize 即可（多数 MCP 客户端下次调用时自动重连；不自动重连的，重启该 agent 的 MCP 连接）。想让 agent **彻底不怕 ComfyUI 重启**：设 `MCP_STATELESS=true`（无状态模式，见环境变量表；代价是完成通知推送改为轮询任务状态） |
-| 日志反复出现 `Created new transport with session ID: <hex>` | 请求**没带 `Mcp-Session-Id`**（或带了已失效的），SDK 就为每个这样的请求新建一个会话——`streamable_http_manager.py` 有状态路径的「New session case」，INFO 级。典型原因是客户端不保存 initialize 响应里的 `Mcp-Session-Id`、每次工具调用都重新 initialize / 新建连接（即客户端按无状态方式在用它）。**注意**：SDK 默认 `session_idle_timeout=None`，空闲会话**不会被回收**，会话及其后台任务会持续堆积（`_server_instances` + 每会话一个 `run_server` task），不会自己释放 | 服务端无 bug，是客户端没有复用会话。能改客户端就让它保存并回带 `Mcp-Session-Id`；改不动就设 `MCP_STATELESS=true`——服务端不再建任何会话，这条日志消失，也顺带根治上面那条 `unknown or expired session ID`（代价同上：完成通知改为轮询） |
+| ComfyUI 重启后 agent 侧报 `Rejected request with unknown or expired session ID: <hex>`（仅 `MCP_STATELESS=false` 的有状态模式） | **不是故障，也与端口无关**。MCP streamable-http 的会话只存在后端进程内存里（`Mcp-Session-Id` → `_server_instances`），ComfyUI 重启即全部清空；agent 仍拿着旧 session ID 发请求，SDK 按 MCP 规范回 404 `Session not found` 并打这条 INFO（logger `mcp.server.streamable_http_manager`）。URL 走的是 ComfyUI 固定端口 `/mcp`，所以请求能到达服务器——若真是端口问题，症状会是「连接被拒」而不是「session 未知」 | agent 侧重新 initialize 即可（多数 MCP 客户端下次调用时自动重连；不自动重连的，重启该 agent 的 MCP 连接）。**默认的无状态模式不会出现这条**——见到它就说明有人把 `MCP_STATELESS` 显式设成了 `false`（为了换异步完成推送）：要么接受「重启后手动重连」，要么去掉这个配置改回默认 |
+| 日志反复出现 `Created new transport with session ID: <hex>`（仅 `MCP_STATELESS=false` 的有状态模式） | 请求**没带 `Mcp-Session-Id`**（或带了已失效的），SDK 就为每个这样的请求新建一个会话——`streamable_http_manager.py` 有状态路径的「New session case」，INFO 级。典型原因是客户端不保存 initialize 响应里的 `Mcp-Session-Id`、每次工具调用都重新 initialize / 新建连接（即客户端按无状态方式在用它）。**注意**：SDK 默认 `session_idle_timeout=None`，空闲会话**不会被回收**，会话及其后台任务会持续堆积（`_server_instances` + 每会话一个 `run_server` task），不会自己释放 | 服务端无 bug，是客户端没有复用会话。能改客户端就让它保存并回带 `Mcp-Session-Id`；改不动就设 `MCP_STATELESS=true`（**已经是默认值**）——服务端不再建任何会话，这条日志消失，也顺带根治上面那条 `unknown or expired session ID`（代价同上：完成通知改为轮询） |
 | MCP 握手成功但工具列表为空 | 后端 uvicorn 未起来（上一行日志） | 同上；确认启动日志出现 `MCP gateway: embedded streamable-http shared on ComfyUI port` |
 | 访问远程 IP 不通（如 `:20003`）但本机 `127.0.0.1` 正常 | ComfyUI 未加 `--listen 0.0.0.0`，或反代未放行 SSE（`text/event-stream`）长连接 | 启动加 `--listen 0.0.0.0`；反代关闭缓冲、放行 `Accept: text/event-stream` |
 | 生成后 `url` 是相对路径 | 未设 `PUBLIC_BASE_URL` 且请求 host 不可达客户端 | 设 `PUBLIC_BASE_URL=http://<对外地址>` |
