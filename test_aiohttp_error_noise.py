@@ -4,7 +4,7 @@
 
     [INFO]  [Roundabout] req=1b9ee2a7e95c model=minimax-h3-turbo n=1 videos=1 elapsed=148.4s
     [INFO]  [Roundabout] MCP gateway: task 5f6e9843... completion notification sent (status=succeeded)
-    [ERROR] Error handling request from 192.168.31.198
+    [ERROR] Error handling request from 192.168.1.10
     Traceback (most recent call last): ...
 
 这条 ERROR 由 aiohttp 的 `RequestHandler.handle_error` 打出，而它是**先打日志、再判断
@@ -143,7 +143,7 @@ def _record(exc: BaseException | None, msg: str = "Error handling request from %
         except BaseException:  # noqa: BLE001
             exc_info = sys.exc_info()
     return logging.LogRecord(
-        "aiohttp.server", logging.ERROR, __file__, 1, msg, ("192.168.31.198",), exc_info
+        "aiohttp.server", logging.ERROR, __file__, 1, msg, ("192.168.1.10",), exc_info
     )
 
 
@@ -212,11 +212,11 @@ def part_filter(log_filters) -> None:
         try:
             raise ClientConnectionResetError("Cannot write to closing transport")
         except BaseException:  # noqa: BLE001
-            srv.error("Error handling request from %s", "192.168.31.198", exc_info=True)
+            srv.error("Error handling request from %s", "192.168.1.10", exc_info=True)
         try:
             raise ValueError("real bug")
         except BaseException:  # noqa: BLE001
-            srv.error("Error handling request from %s", "192.168.31.198", exc_info=True)
+            srv.error("Error handling request from %s", "192.168.1.10", exc_info=True)
         lines = [r for r in sink.records if "Error handling request" in r.getMessage()]
         kept_errors = [r for r in lines if r.levelno >= logging.ERROR]
         check(

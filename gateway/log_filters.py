@@ -23,7 +23,7 @@ aiohttp 的 `web_protocol.RequestHandler._handle_request` 捕获 handler 抛出�
 也就是说：**日志已经落盘，降级判定才发生**。而 SSE / 长轮询（本项目 MCP streamable-http
 的 `/mcp` 就是）下「客户端超时重连、旧连接被关掉」是常态，于是每次都会刷一条
 
-    [ERROR] Error handling request from 192.168.31.198
+    [ERROR] Error handling request from 192.168.1.10
     Traceback (most recent call last): ...
 
 既看不出是哪个 handler，也看不出请求路径，只会让人以为服务端出错了。

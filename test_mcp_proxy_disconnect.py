@@ -3,7 +3,7 @@
 背景（真实日志）：
 
     [INFO]  [Roundabout] MCP gateway: task 672ecf8e... completion notification sent
-    [ERROR] Error handling request from 192.168.31.198
+    [ERROR] Error handling request from 192.168.1.10
     Traceback (most recent call last):
       ...
       File "aiohttp/http_writer.py", line 106, in _writelines
