@@ -238,7 +238,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
 | 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3 25 步，支持 6 图 + 3 视频 + 3 音频参考 |
 | 视频 | `minimax-h3-turbo` / `minimax-h3-turbo-edit` | 8 步快速版 |
-| 视频 | `minimax-h3-self-lift` | SelfLift 渐进采样（低分辨率 NFE + 高分辨率 NFE）；文生 / 首尾帧生视频靠 `reference_images` 插拔；分块参数按本机显存自动分档；`motion=story/fight` 一键切文戏 / 打戏步数档 |
+| 视频 | `minimax-h3-self-lift` | SelfLift 渐进采样（低分辨率 NFE + 高分辨率 NFE）；文生 / 首尾帧生视频靠 `reference_images` 插拔；分块参数按本机显存自动分档；`motion=story/fight` 一键切文戏 / 打戏步数档（默认 `story`） |
 | 视频 | `minimax-h3-self-lift-edit` | 同上，改用 Ref2VA 权重，参考槽保留全套 6 图 + 3 视频 + 3 音频 |
 
 - 编辑类模型**必须传 `image`**；输出尺寸跟随输入图（工作流内缩放到 1MP），`size` 不生效。
@@ -342,10 +342,11 @@ SelfLift 那两支有个经验值：**文戏的总步数要调低、过渡步跟
 
 | `motion` | 总步数（`124.steps`） | 过渡步（`235.transition_step`） | 适用 |
 |---|---|---|---|
-| `story` | 6 | 5 | 文戏：对话、静态、慢动作 |
+| `story` | 6 | 5 | 文戏：对话、静态、慢动作（**默认**） |
 | `fight` | 8 | 6 | 打戏：奔跑、追逐、快节奏 |
-| 不传 | 模型 `defaults`（8） | 模板原值（6） | 等同 `fight` |
+| 不传 | 6 | 5 | 等同 `story` |
 
+- 默认档由 `defaults.motion: story` 声明——只写档名、不重复抄数值，改档表即改默认，两处不会漂移。
 - 档位表写在 `models.yaml` 的 `motion_presets` 里，改档不用动代码；别的模型想加同款机制，照样声明一份即可。
 - 要精调时直接传底层参数，**显式入参优先于命名档**：`{"motion": "story", "steps": 9}` → 9 / 5。
 - 仅 `minimax-h3-self-lift` 与 `-self-lift-edit` 支持（只有 `SelfLiftH3Sampler` 有「过渡步」这个概念）。给别的模型传 `motion` 会直接报错并提示不支持，不会静默忽略。
@@ -354,6 +355,10 @@ SelfLift 那两支有个经验值：**文戏的总步数要调低、过渡步跟
 ```yaml
 models:
   minimax-h3-self-lift:
+    defaults:
+      motion: story        # 默认档（等同 6 / 5）
+      steps: 6             # 与 story 档同值，仅兜底
+      transition_step: 5
     motion_presets:
       story:
         steps: 6
@@ -411,26 +416,22 @@ ComfyUI-Roundabout/
 ## 测试
 
 ```bash
-# 离线自测（不需要 ComfyUI 在跑，全部用系统分配的临时端口）
-<ComfyUI>/python/python.exe test_mcp_proxy_disconnect.py    # /mcp 代理的断开与不可达兜底
-<ComfyUI>/python/python.exe test_aiohttp_error_noise.py     # Error handling request 降噪
-<ComfyUI>/python/python.exe test_mcp_stateless.py           # MCP_STATELESS 开关（重启无感）
-<ComfyUI>/python/python.exe test_mcp_proxy_frozen_router.py # 代理路由在冻结前注册
-<ComfyUI>/python/python.exe test_mcp_startup_two_phase.py   # 两段式启动里的后端就绪
-<ComfyUI>/python/python.exe test_wait_no_time_limit.py      # 任务等待只由 ComfyUI 状态判定
-<ComfyUI>/python/python.exe test_vram_adaptive.py           # 显存分档调参 + LoadImage 插拔
-<ComfyUI>/python/python.exe test_mcp_import_identity.py
-<ComfyUI>/python/python.exe test_mcp_default_on.py
-<ComfyUI>/python/python.exe test_mcp_multi_instance.py
-<ComfyUI>/python/python.exe test_port_map.py
-<ComfyUI>/python/python.exe test_video_size.py
-
-# 需 ComfyUI 在跑
-<ComfyUI>/python/python.exe test_viewer_smoke.py
-<ComfyUI>/python/python.exe test_removebg_e2e.py     # 去背景独立实例 e2e
-# 前端 jsdom（需 node + jsdom）
-node test_view_frontend.cjs
+<ComfyUI>/python/python.exe run_tests.py                # 全量离线自测（默认跳过会驱动 ComfyUI 的用例）
+<ComfyUI>/python/python.exe run_tests.py --list         # 只列出将执行 / 跳过的文件
+<ComfyUI>/python/python.exe run_tests.py test_vram_adaptive.py   # 跑单个文件
+<ComfyUI>/python/python.exe run_tests.py --all          # 连 GPU 用例一起（会真出图、真去背景）
+node test_view_frontend.cjs                             # 前端 jsdom（需 node + jsdom）
 ```
+
+**用例分两类**，别用 `for f in test_*.py` 一把梭——那会把下面两个也扫进去，它们会**真的占用 GPU 并落产物**：
+
+| 用例 | 行为 |
+|---|---|
+| `test_e2e_sync_generation.py` | 真提交一次生图（z-image-turbo 512x512，约 10–30s GPU） |
+| `test_removebg_e2e.py` | 真跑 BiRefNet 去背景 |
+
+`run_tests.py` 默认跳过它们（名字含 `e2e`，或列在脚本顶部的 `GPU_TESTS` 里），要跑得显式加 `--all`。
+其余用例全部离线、用系统分配的临时端口，不需要 ComfyUI 在跑。
 
 ## 许可
 

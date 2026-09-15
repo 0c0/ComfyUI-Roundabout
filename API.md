@@ -188,7 +188,7 @@ MCP 客户端配置（`mcp.json`）：
 | `mask` | string? | 局部重绘遮罩 |
 | `mode` | string? | 生图模式（部分模型，受 `mode_choices` 约束，如 Ideogram4） |
 | `workflow_overrides` | object? | 直接改写节点，如 `{"3.inputs.cfg": 4.5}` |
-| `filename_prefix` | string? | 落盘前缀，可含 `/` 建子目录；空用 `hermes/<request_id>` |
+| `filename_prefix` | string? | 落盘前缀，可含 `/` 建子目录；空则用该模型工作流模板里的前缀（H3 视频统一为 `video/MiniMax_H3`） |
 
 **响应**（200）：
 

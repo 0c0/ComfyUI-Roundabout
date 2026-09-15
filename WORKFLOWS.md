@@ -255,7 +255,7 @@ models:
 
 ## 按叙事节奏切参数档：`motion_presets`
 
-有些参数**必须成对调整**，只改一个反而更糟。SelfLift 的「总步数 + 过渡步」就是典型：文戏 6 / 5、打戏 8 / 6。与其每次记两个数字，不如打包成命名档，请求里写一个词即可：
+有些参数**必须成对调整**，只改一个反而更糟。SelfLift 的「总步数 + 过渡步」就是典型：文戏 6 / 5、打戏 8 / 6（**默认文戏**）。与其每次记两个数字，不如打包成命名档，请求里写一个词即可：
 
 ```json
 {"model": "minimax-h3-self-lift", "prompt": "...", "duration": 5, "motion": "story"}
@@ -264,8 +264,10 @@ models:
 ```yaml
 models:
   minimax-h3-self-lift:
+    defaults:
+      motion: story           # 默认档；不传 motion 时落回这里
     motion_presets:
-      story:                  # 文戏：对话、静态、慢动作
+      story:                  # 文戏：对话、静态、慢动作（默认）
         steps: 6
         transition_step: 5
       fight:                  # 打戏：奔跑、追逐、快节奏
@@ -275,8 +277,9 @@ models:
       transition_step: 235.inputs.transition_step   # 档位值靠 bindings 才注得进节点
 ```
 
+- **默认档只写档名**（`defaults.motion: story`），数值一律从档表取——避免「档表改了、defaults 里那串数字没改」的两处漂移。
 - 档里的键就是普通参数名，**必须先在 `bindings` 里绑好**，否则档位值算得出来却写不到节点上。
-- **优先级**：命名档 < 同请求里的显式参数。`{"motion": "story", "steps": 9}` 得到 9 / 5，方便在档位基础上微调。
+- **优先级**：模型 `defaults` < 命名档 < 同请求里的显式参数。`{"motion": "story", "steps": 9}` 得到 9 / 5，方便在档位基础上微调。
 - 未声明 `motion_presets` 的模型收到 `motion` 会**报错并列出可用值**，不会静默忽略——档名拼错能立刻发现。
 
 ---

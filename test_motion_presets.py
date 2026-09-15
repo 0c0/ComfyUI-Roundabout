@@ -73,9 +73,13 @@ check("fight -> steps / transition_step", (v["steps"], v["transition_step"]) == 
       (v["steps"], v["transition_step"]))
 check("story 大小写不敏感", values_for(motion="STORY")["steps"] == 6)
 check("首尾空格被裁掉", values_for(motion=" story ")["steps"] == 6)
-check("未传 motion 时落到模型 defaults（steps=8）", values_for()["steps"] == 8)
-check("未传 motion 时不写 transition_step（节点保留模板值）",
-      values_for()["transition_step"] is None)
+check("未传 motion 时默认走 story 档（6 / 5）",
+      (values_for()["steps"], values_for()["transition_step"]) == (6, 5),
+      (values_for()["steps"], values_for()["transition_step"]))
+check("不传 motion 与显式 motion=story 完全等价", values_for() == values_for(motion="story"))
+check("默认档由 defaults.motion 声明，不是把数值抄两遍",
+      LIFT.defaults.get("motion") == "story" and EDIT.defaults.get("motion") == "story",
+      (LIFT.defaults.get("motion"), EDIT.defaults.get("motion")))
 
 print("\n== 3. 显式入参优先于命名档 ==")
 v = values_for(motion="story", steps=9)
@@ -88,7 +92,7 @@ v = values_for(motion="story", steps=9, transition_step=7)
 check("两个都显式 -> 9 / 7", (v["steps"], v["transition_step"]) == (9, 7),
       (v["steps"], v["transition_step"]))
 v = values_for(transition_step=4)
-check("只传 transition_step=4（无 motion）-> 8 / 4", (v["steps"], v["transition_step"]) == (8, 4),
+check("只传 transition_step=4（步数按默认档 story）-> 6 / 4", (v["steps"], v["transition_step"]) == (6, 4),
       (v["steps"], v["transition_step"]))
 
 print("\n== 4. 落到工作流节点（端到端） ==")
@@ -96,7 +100,8 @@ check("story -> 124.steps=6 / 235.transition_step=5", nodes_for({"motion": "stor
       nodes_for({"motion": "story"}))
 check("fight -> 124.steps=8 / 235.transition_step=6", nodes_for({"motion": "fight"}) == (8, 6),
       nodes_for({"motion": "fight"}))
-check("不传 -> 模板原值 8 / 6", nodes_for({}) == (8, 6), nodes_for({}))
+check("不传 -> 默认档 story 落到节点 6 / 5", nodes_for({}) == (6, 5), nodes_for({}))
+check("self-lift-edit 不传也是 6 / 5", nodes_for({}, EDIT) == (6, 5), nodes_for({}, EDIT))
 check("story + steps=9 -> 9 / 5", nodes_for({"motion": "story", "steps": 9}) == (9, 5),
       nodes_for({"motion": "story", "steps": 9}))
 check("self-lift-edit 同样生效（story）", nodes_for({"motion": "story"}, EDIT) == (6, 5),
@@ -137,6 +142,21 @@ v = values_for(steps=8, transition_step=7)
 check("transition_step=steps-1 合法", v["transition_step"] == 7)
 check("story 档 6/5 本身满足约束", (STORY["transition_step"] < STORY["steps"]))
 check("fight 档 8/6 本身满足约束", (FIGHT["transition_step"] < FIGHT["steps"]))
+
+print("\n== 8. 默认档与档表不许漂移 ==")
+# defaults 里同时写「档名」和「同值的数值」时，两处一旦不同步就会误导后来的人
+# （档表改了、数值没改，读 YAML 的人以为默认是旧的）。这里把它变成受检不变量。
+for spec in (LIFT, EDIT):
+    default_name = spec.defaults.get("motion")
+    check(f"{spec.name}: defaults.motion={default_name!r} 指向已声明的档",
+          default_name in spec.motion_presets, sorted(spec.motion_presets))
+    preset = spec.motion_presets.get(default_name) or {}
+    for key, want in preset.items():
+        if key in spec.defaults:
+            check(f"{spec.name}: defaults.{key}={spec.defaults[key]} 与 {default_name} 档一致",
+                  spec.defaults[key] == want, f"defaults={spec.defaults[key]} 档表={want}")
+    check(f"{spec.name}: defaults.motion 不进 bindings（不会被当参数注入节点）",
+          "motion" not in spec.bindings)
 
 print(f"\n===== {passed} passed / {failed} failed =====")
 sys.exit(1 if failed else 0)

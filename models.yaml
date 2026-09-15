@@ -615,7 +615,11 @@ models:
     defaults:
       width: 1344
       height: 768
-      steps: 8
+      # 默认档：motion 未显式传时落回这里（等同 story = 6 / 5）。
+      # 下面的 steps / transition_step 与 story 档同值，只是兜底——档表才是默认值的来源。
+      motion: story
+      steps: 6
+      transition_step: 5
       sampler_name: euler
       scheduler: simple
       denoise: 1
@@ -640,7 +644,7 @@ models:
       transition_step: 235.inputs.transition_step
     # 文戏 / 打戏差的只有「总步数 + 过渡步」两个数，单独传容易配错，打包成命名档：
     # 请求里写 "motion": "story" / "fight" 即可。显式传 steps / transition_step 仍可覆盖。
-    # 不传 motion 时按 defaults.steps 与模板里的 transition_step 走（等同 fight）。
+    # 不传 motion 时按 defaults.motion 走（默认 story）。
     motion_presets:
       story:
         steps: 6
@@ -691,7 +695,10 @@ models:
     defaults:
       width: 1344
       height: 768
-      steps: 8
+      # 默认档同 self-lift：motion 未显式传时落回这里（等同 story = 6 / 5）。
+      motion: story
+      steps: 6
+      transition_step: 5
       sampler_name: euler
       scheduler: simple
       denoise: 1
@@ -714,7 +721,7 @@ models:
       seq_threshold: 219.inputs.seq_threshold
       highres_tiling: 235.inputs.highres_tiling
       transition_step: 235.inputs.transition_step
-    # 同 self-lift：story=文戏（6 / 5）、fight=打戏（8 / 6）。
+    # 同 self-lift：story=文戏（6 / 5）、fight=打戏（8 / 6）；不传 motion 时默认 story。
     motion_presets:
       story:
         steps: 6

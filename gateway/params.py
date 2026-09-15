@@ -189,7 +189,11 @@ def apply_presets(
         for k, v in (preset or {}).items():
             out[k] = v  # 预设优先级低于显式入参，调用方在后面再覆盖
 
+    # 未显式传 motion 时回落到模型声明的默认档（`defaults.motion`）。
+    # 默认档只写档名、不重复写数值：档表是唯一来源，避免两处各说一套而漂移。
+    motion = motion or spec.defaults.get("motion")
     if motion:
+        motion = str(motion)
         key = motion.strip().lower()
         preset = spec.motion_presets.get(key) or spec.motion_presets.get(motion)
         if preset is None:
