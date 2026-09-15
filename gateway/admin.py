@@ -356,7 +356,9 @@ async def put_models_config(request: web.Request) -> web.Response:
 _MODEL_ENTRY_KEYS = (
     "workflow", "description", "mode", "capabilities", "output_node", "timeout",
     "defaults", "bindings", "aliases", "mode_choices", "quality_presets",
-    "style_presets", "size_choices",
+    "style_presets", "motion_presets", "size_choices",
+    # 下面三类前端不渲染，但要允许结构化 API 改：参考槽拓扑 / 显存自适应 / 无提示词工具流。
+    "references", "vram_adaptive", "promptless",
 )
 
 
@@ -381,6 +383,13 @@ async def get_models_structured(request: web.Request) -> web.Response:
             "mode_choices": cfg.get("mode_choices") or [],
             "defaults": cfg.get("defaults") or {},
             "bindings": cfg.get("bindings") or {},
+            # 回传「前端不渲染但保存时必须保留」的字段，便于排查与结构化编辑。
+            "quality_presets": cfg.get("quality_presets") or {},
+            "style_presets": cfg.get("style_presets") or {},
+            "motion_presets": cfg.get("motion_presets") or {},
+            "references": cfg.get("references") or {},
+            "vram_adaptive": bool(cfg.get("vram_adaptive")),
+            "promptless": bool(cfg.get("promptless")),
         })
     return web.json_response({
         "default_model": raw.get("default_model"),
@@ -393,6 +402,31 @@ async def get_models_structured(request: web.Request) -> web.Response:
         "available_workflows": _list_available_workflows(),
         "known_params": sorted(KNOWN_PARAMS),
     })
+
+
+def merge_model_entry(existing: dict[str, Any] | None, incoming: dict[str, Any]) -> dict[str, Any]:
+    """把结构化编辑提交的模型条目合并到磁盘上已有条目上。
+
+    以现有条目为基底：`incoming` 给了的键覆盖，没给的**保留原值**。
+
+    为什么不是从零重建：前端表单（web/roundabout_settings.js）只渲染 workflow / timeout /
+    defaults / bindings / capabilities / output_node / description / aliases，
+    `references`（参考槽拓扑）、`vram_adaptive`（显存分档）、`promptless`（无提示词工具流）、
+    各类 `*_presets` 它一个字都不认识。从零重建的话，用户在 /settings 点一次保存，
+    这些配置就被静默抹掉——功能无声消失，且 YAML 里已经没有痕迹可查。
+
+    空 dict / 空 list 视为「本次没提交这个键」而非「清空」，同样是为了不误删；
+    真要删键请直接编辑 models.yaml。
+    """
+    entry: dict[str, Any] = dict(existing or {})
+    for key in _MODEL_ENTRY_KEYS:
+        value = incoming.get(key)
+        if value is None:
+            continue
+        if isinstance(value, (list, dict)) and len(value) == 0:
+            continue
+        entry[key] = value
+    return entry
 
 
 @gateway_handler
@@ -416,20 +450,15 @@ async def put_models_structured(request: web.Request) -> web.Response:
     if defaults:
         raw["defaults"] = defaults
 
+    # 与磁盘上的现有条目合并（详见 merge_model_entry 的注释：前端不认识的那批键不能丢）。
+    existing_models = (_read_raw_config().get("models") or {})
+
     models_map: dict[str, Any] = {}
     for m in models_in:
         name = m.get("name")
         if not name:
             continue
-        entry: dict[str, Any] = {}
-        for k in _MODEL_ENTRY_KEYS:
-            v = m.get(k)
-            if v is None:
-                continue
-            if isinstance(v, (list, dict)) and len(v) == 0:
-                continue
-            entry[k] = v
-        models_map[name] = entry
+        models_map[name] = merge_model_entry(existing_models.get(name), m)
     if not models_map:
         raise APIError("No models provided.", status_code=400)
     raw["models"] = models_map
