@@ -76,7 +76,8 @@ class JobTimeout(APIError):
         else:
             detail = (
                 "The task was still running in the ComfyUI queue when the grace period ended. "
-                "Increase the per-model `timeout`/`JOB_TIMEOUT`/`JOB_GRACE` if the workflow is expected to be slow."
+                "Increase the per-model `timeout`/`JOB_TIMEOUT`/`JOB_GRACE` if the workflow is expected to be slow, "
+                "or set `JOB_TIMEOUT=0` to disable the time cap entirely and let ComfyUI task status decide."
             )
         super().__init__(
             f"Image generation timed out after {shown}s. {detail}",

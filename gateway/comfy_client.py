@@ -127,27 +127,35 @@ class ComfyClient:
         self,
         prompt_id: str,
         *,
-        timeout: float,
+        timeout: float = 0.0,
         grace: float = 0.0,
         poll_interval: float = 1.0,
         poll_interval_max: float = 3.0,
     ) -> dict[str, Any]:
-        """轮询直到任务结束，返回该 prompt 的 history 条目。
+        """轮询直到任务终态，返回该 prompt 的 history 条目。
 
-        超时语义（避免误杀「还在跑但慢」的任务）：
-        - 首轮 ``timeout`` 秒内完成 → 正常返回；
-        - 超过 ``timeout`` 后先查 ComfyUI 队列：任务仍在 running/pending → 说明
-          只是生成慢，**不中断**，进入 ``grace`` 秒宽限期继续等（期间若完成同样返回）；
-        - 任务已离开队列且 history 无结果 → 任务已消失（被清队列/异常终止），
-          判定真超时：中断并抛 ``JobTimeout``。
-        宽限期结束仍活着但未完成 → 同样中断并抛 ``JobTimeout``（防止无限等待）。
+        判定任务是否健康**完全依据 ComfyUI 状态**，时间只是可选的兜底上限：
 
-        外部取消感知：每轮 history 无结果时都会检查队列活性，任务连续多轮
-        不在队列（被用户在 ComfyUI 取消/清队列）→ 立即抛 ``JobCancelled``，
-        不必等到超时；任务表随即反映取消状态。
+        - ``timeout <= 0``（推荐用于视频等长任务，或设 ``JOB_TIMEOUT=0``）→ **无限等待**：
+          只要 ComfyUI 队列里还查得到该任务（running/pending），就视为「健康、生成中」，
+          一直等到出结果；绝不会因为「跑了 2100s」之类耗时被判死刑。
+        - ``timeout > 0`` → 保留向后兼容的安全上限：超时且任务已离开队列（消失/被清
+          队列/异常终止）才报 ``JobTimeout``；超时但任务仍在跑则进入 ``grace`` 秒宽限，
+          宽限结束仍在跑才放弃。
+
+        无论哪种模式，终态都靠 ComfyUI 状态确认：
+        - history 含 outputs / completed → 正常返回；
+        - history 标记 error（或 completed=False 且带 messages）→ 抛 UpstreamError；
+        - 连续 3 轮「无 history 且不在队列」→ 任务已被取消/清队列/worker 异常，
+          抛 JobCancelled（任务确实不在 ComfyUI 了，不是慢）。
+
+        ComfyUI 不可达时 ``is_queued`` 保守返回 True，不会误杀在途任务；代价是
+        ComfyUI 彻底宕机时本协程会一直等，直到任务状态变为上述任一终态。
         """
-        deadline = time.monotonic() + timeout
-        grace_deadline = deadline + max(0.0, grace)
+        use_deadline = timeout > 0
+        if use_deadline:
+            deadline = time.monotonic() + timeout
+            grace_deadline = deadline + max(0.0, grace)
         interval = poll_interval
         missing_rounds = 0  # 连续几轮「无 history 且不在队列」
         while True:
@@ -173,9 +181,9 @@ class ComfyClient:
                     # 连续 3 轮既无 history 又不在队列：被外部取消/清队列/worker 异常
                     raise JobCancelled(prompt_id)
 
-            now = time.monotonic()
-            if now >= deadline:
-                if not still_queued:
+            if use_deadline:
+                now = time.monotonic()
+                if now >= deadline and not still_queued:
                     # 任务已离开队列且无 history 结果 → 真超时（消失/被清队列/异常终止）
                     await self.interrupt(silent=True)
                     raise JobTimeout(timeout, vanished=True)
@@ -183,8 +191,12 @@ class ComfyClient:
                     # 宽限期结束仍在跑：不再等，中断并报超时
                     await self.interrupt(silent=True)
                     raise JobTimeout(timeout + grace)
+                sleep_for = min(interval, max(0.05, deadline - now))
+            else:
+                # 无时间上限：依据 ComfyUI 状态轮询，间隔自然增长至 poll_interval_max
+                sleep_for = min(interval, poll_interval_max)
 
-            await asyncio.sleep(min(interval, max(0.05, deadline - time.monotonic())))
+            await asyncio.sleep(sleep_for)
             interval = min(interval * 1.35, poll_interval_max)
 
     async def is_queued(self, prompt_id: str) -> bool:

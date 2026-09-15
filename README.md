@@ -297,7 +297,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | `OPENAI_GATEWAY_API_KEYS` | 空 | 填了才启用鉴权（逗号分隔多 key） |
 | `PUBLIC_BASE_URL` | 空 | 产物 `url` 绝对化基准，**远程部署必填** |
 | `MAX_CONCURRENCY` | `2` | 并发生成上限 |
-| `JOB_TIMEOUT` / `OUTPUT_TTL` | `300` / `3600` | 任务超时（秒）/ `url` 产物存活期（秒） |
+| `JOB_TIMEOUT` / `OUTPUT_TTL` | `300` / `3600` | 任务超时（秒，`0`=关闭上限仅由 ComfyUI 状态判定）/`url` 产物存活期（秒） |
 
 ### 同机跑多个 ComfyUI 实例
 

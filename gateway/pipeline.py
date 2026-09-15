@@ -298,7 +298,9 @@ async def generate(
     if values.get("height") is None:
         values["height"] = spec.defaults.get("height")
 
-    timeout = spec.timeout or settings.job_timeout
+    # JOB_TIMEOUT=0（或不传正 timeout）→ 无限等待，仅由 ComfyUI 任务状态判定健康；
+    # 否则沿用「模型自身 timeout 优先、回落全局 JOB_TIMEOUT」的旧逻辑（向后兼容）。
+    timeout = 0.0 if (settings.job_timeout and settings.job_timeout <= 0) else (spec.timeout or settings.job_timeout)
 
     # ---- 4. 执行（能批就批，不能批就串行多次） ----
     t0 = time.monotonic()
@@ -453,7 +455,9 @@ async def generate_video(
     if values.get("height") is None:
         values["height"] = spec.defaults.get("height")
 
-    timeout = spec.timeout or settings.job_timeout
+    # JOB_TIMEOUT=0（或不传正 timeout）→ 无限等待，仅由 ComfyUI 任务状态判定健康；
+    # 否则沿用「模型自身 timeout 优先、回落全局 JOB_TIMEOUT」的旧逻辑（向后兼容）。
+    timeout = 0.0 if (settings.job_timeout and settings.job_timeout <= 0) else (spec.timeout or settings.job_timeout)
 
     # ---- 4. 执行（能批就批，不能批就串行多次） ----
     t0 = time.monotonic()
