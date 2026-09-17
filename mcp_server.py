@@ -340,8 +340,6 @@ async def generate_video_tool(
             "（配合 reference_images/videos/audios 使用，最多 6 图 + 3 视频 + 3 音频）；"
             "minimax-h3-self-lift=SelfLift 渐进采样（低分→高分），reference_images 传 0/1/2 张"
             "即文生 / 首帧 / 首尾帧，分块参数按本机显存自动分档；"
-            "minimax-h3-self-lift-max / -self-lift-edit-max=同拓扑但摘掉加速 LoRA、总步数 30"
-            "（低分 25 / 高分 6）的质量档，无 motion 档。"
         ),
     ),
     duration: float | None = None,
