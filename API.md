@@ -256,7 +256,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `fps` | int? | 帧率 |
 | `num_frames` | int? | 总帧数（部分工作流用帧数而非时长） |
 | `motion` | string? | **命名运动档**（仅 SelfLift 系列）：`story`=文戏（总步数 6 / 过渡步 5）、`fight`=打戏（8 / 6）。不传用模型默认；与 `steps` / `transition_step` 同传时后者胜出 |
-| `transition_step` | int? | SelfLift 渐进采样的过渡步（低分切到高分的步位），**需小于 `steps`**；仅 `minimax-h3-self-lift` / `-self-lift-edit` 有效 |
+| `transition_step` | int? | SelfLift 渐进采样的过渡步（低分切到高分的步位），**需小于 `steps`**；仅 SelfLift 系列（`minimax-h3-self-lift*`，含 `-max` 变体）有效 |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |
 | `image` | string\|string[]? | 图生视频输入 |
 | `reference_images` | string[]? | 参考图，最多 6，支持 base64/URL/本地路径 |
@@ -332,6 +332,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `minimax-h3-edit` / `-turbo-edit` | video | text-to-video | H3 参考生视频（支持图/视频/音频参考） |
 | `minimax-h3-self-lift` | video | text-to-video / image-to-video | H3 SelfLift 渐进采样（低分 → 高分）；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧；分块参数按本机显存自动分档；`motion=story/fight` 一键切文戏 / 打戏步数档 |
 | `minimax-h3-self-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 Ref2VA 权重；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
+| `minimax-h3-self-lift-max` / `-self-lift-edit-max` | video | text-to-video / image-to-video / reference-to-video | SelfLift 质量档：摘掉 4step 加速 LoRA，总步数 30（低分 25 / 高分 6，实测 31 NFE）。不声明 `motion` 档 |
 
 > 完整别名与绑定关系见 `models.yaml`；模型清单与用途对照也见 [README.md](README.md#内置模型)。
 

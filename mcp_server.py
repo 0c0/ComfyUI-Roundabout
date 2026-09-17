@@ -65,7 +65,7 @@ if __package__:
         generate_tracked,
         generate_video_tracked,
     )
-    from .gateway.log_filters import client_gone  # noqa: E402
+    from .gateway.log_filters import client_gone, exception_chain_names  # noqa: E402
     from .gateway.registry import registry  # noqa: E402
     from .gateway.schemas import ImageGenerationRequest, VideoGenerationRequest  # noqa: E402
     from .gateway.tasks import task_store  # noqa: E402
@@ -82,7 +82,7 @@ else:
         generate_tracked,
         generate_video_tracked,
     )
-    from gateway.log_filters import client_gone  # noqa: E402
+    from gateway.log_filters import client_gone, exception_chain_names  # noqa: E402
     from gateway.registry import registry  # noqa: E402
     from gateway.schemas import ImageGenerationRequest, VideoGenerationRequest  # noqa: E402
     from gateway.tasks import task_store  # noqa: E402
@@ -324,8 +324,9 @@ async def remove_background(
         "生成视频（文生视频 / 参考生视频）。model 默认 minimax-h3；支持 duration(1-15s) / "
         "fps / size(如 720p-16:9 / 768p-16:9 / 1080p-16:9) / seed / reference_images(参考图，最多 6 张，"
         "支持 base64/URL/本地路径) / reference_videos / reference_audios。"
-        "SelfLift 系列可用 motion=\"story\"（文戏，6 步 / 过渡 5，默认）或 \"fight\"（打戏，8 / 6）一键切档，"
-        "要精调则改传 steps + transition_step。"
+        "SelfLift 的 self-lift / -self-lift-edit 可用 motion=\"story\"（文戏，6 步 / 过渡 5，默认）"
+        "或 \"fight\"（打戏，8 / 6）一键切档，要精调则改传 steps + transition_step；"
+        "-max 那两支是 30 步质量档，没有 motion 档。"
         "默认同步等待（长任务建议 background=pending 异步，再轮询 get_task）。"
     ),
 )
@@ -338,7 +339,9 @@ async def generate_video_tool(
             "minimax-h3-turbo=8 步快速；minimax-h3-edit / minimax-h3-turbo-edit=参考/编辑变体"
             "（配合 reference_images/videos/audios 使用，最多 6 图 + 3 视频 + 3 音频）；"
             "minimax-h3-self-lift=SelfLift 渐进采样（低分→高分），reference_images 传 0/1/2 张"
-            "即文生 / 首帧 / 首尾帧，分块参数按本机显存自动分档。"
+            "即文生 / 首帧 / 首尾帧，分块参数按本机显存自动分档；"
+            "minimax-h3-self-lift-max / -self-lift-edit-max=同拓扑但摘掉加速 LoRA、总步数 30"
+            "（低分 25 / 高分 6）的质量档，无 motion 档。"
         ),
     ),
     duration: float | None = None,
@@ -913,10 +916,12 @@ def register_share_port_proxy(
                 return web.Response(status=502, text="MCP backend unavailable")
             # 最后一道网：任何真正的异常都不许逃回 aiohttp——逃回去只会得到一条
             # 「[ERROR] Error handling request from <ip>」+ 整段 traceback，
-            # 既看不出是哪个 handler 也看不出请求路径。这里带上上下文自己打。
+            # 既看不出是哪个 handler 也看不出请求路径。这里带上上下文自己打，
+            # 并把异常链的类型名一并写出：外层常常只是个包装器，真凶挂在 __cause__ 上
+            # （典型形态 `OSError: [WinError 995]` <- `CancelledError`）。
             log.exception(
-                "MCP gateway: unexpected error proxying %s %s: %s",
-                request.method, request.path, exc,
+                "MCP gateway: unexpected error proxying %s %s: %s (chain: %s)",
+                request.method, request.path, exc, exception_chain_names(exc),
             )
             if resp is not None and resp.prepared:
                 return resp

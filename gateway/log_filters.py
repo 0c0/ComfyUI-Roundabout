@@ -60,10 +60,37 @@ agent 连续调工具时就是刷屏。这行信息量为零（没有会话可�
 `None` 那一种。
 
 设 `ROUNDABOUT_RAW_MCP_LOGS=true` 可关闭本过滤器。
+
+---
+
+**第三条噪音：Proactor 收尾回调的 `_call_connection_lost`（WinError 10054）**
+
+Windows 的 `ProactorEventLoop` 在连接关闭时由
+`_ProactorBasePipeTransport._call_connection_lost` 收尾，它会对 socket 调
+`shutdown(SHUT_RDWR)`；如果对端已经 RST（浏览器刷新、agent 断连、代理取消任务时
+硬断上游），这次 `shutdown` 会抛 `ConnectionResetError`（10054「远程主机强迫关闭了
+一个现有的连接」）。该异常沿 `loop.call_exception_handler()` 落到 **`asyncio`
+logger**，形如：
+
+    [ERROR] Exception in callback _ProactorBasePipeTransport._call_connection_lost()
+    ...
+    ConnectionResetError: [WinError 10054] 远程主机强迫关闭了一个现有的连接。
+
+这是 CPython 在 Windows 上的已知形态（连接本来就在关闭流程里，异常不代表故障），
+信息量为零但每次客户端硬断开都刷一条。过滤器判据同时满足才丢弃：
+
+1. traceback 里真的经过 `_call_connection_lost` 帧（只认这一条收尾路径）；
+2. 异常（或其链上）属于「对端走了」一族 —— 复用 `_BENIGN_TYPES` /
+   `_BENIGN_WINERRORS`，**不含** ConnectionRefusedError（连不上目标仍是真故障）。
+
+其它任何经 `asyncio` logger 的 ERROR 原样放行。
+
+设 `ROUNDABOUT_RAW_ASYNCIO_LOGS=true` 可关闭本过滤器。
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 
@@ -74,26 +101,63 @@ _ERROR_HANDLING_MSG = "Error handling request"
 # 注意不含 ConnectionRefusedError（那是连不上目标，属真故障，不该降级）。
 _BENIGN_TYPES = (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)
 
+# Windows 上「对端把连接搞没了」的 winerror。
+# 10053 / 10054 / 10058 多数情形已经由 ConnectionAbortedError / ConnectionResetError 覆盖，
+# 这里额外认 **995 ERROR_OPERATION_ABORTED**：对端 RST 之后，挂起的 WSARecv / WSASend 会
+# 以这个码收尾，而 Python 只把它映射成裸 `OSError` —— 既不属于 ConnectionError 族，消息里
+# 也没有任何 "connection lost" / "closing transport" 字样，只看顶层类型必然漏判。
+_BENIGN_WINERRORS = frozenset({995, 10053, 10054, 10058})
+
 # aiohttp 把「写向已关闭的 transport」包装成 RuntimeError/OSError 的历史路径
 _CLOSING_HINTS = ("closing transport", "connection lost")
 
 
+def _exception_chain(exc: BaseException):
+    """沿 `__cause__` / `__context__` 展开异常链（防环）。"""
+    seen: set[int] = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        yield exc
+        exc = exc.__cause__ if exc.__cause__ is not None else exc.__context__
+
+
+def exception_chain_names(exc: BaseException) -> str:
+    """异常链的类型名，用 ` <- ` 串起来 —— 给日志用：外层常常只是个包装器。"""
+    return " <- ".join(type(item).__name__ for item in _exception_chain(exc))
+
+
 def client_gone(exc: BaseException) -> bool:
-    """异常是否只是「连接被对端关掉」，而不是服务端真的出错。
+    """异常（或它所包装的底层异常）是否只是「连接被对端关掉」，而不是服务端真的出错。
+
+    判据要看**整条异常链**，不能只看最外层：代理里读上游字节时抛出来的常常是个包装器，
+    真凶挂在 `__cause__` 上。实测形态 —— 顶层是 `OSError`(WinError 995)，
+    `__cause__` 是 aiohttp 读流被取消时的 `asyncio.CancelledError`。
 
     - `aiohttp.ClientConnectionResetError` 同时继承 ClientError 与 ConnectionResetError，
       因此落进 ConnectionResetError 分支；
     - Windows 上对端硬断开（RST）时抛的不一定是 ConnectionResetError，也可能是
-      ConnectionAbortedError（WinError 10053）或 BrokenPipeError，都要算进来；
-    - `ConnectionRefusedError` 不算：那是「连不上」，属于真故障。
+      ConnectionAbortedError（WinError 10053）/ BrokenPipeError / 裸 OSError(995)，都要算进来；
+    - `asyncio.CancelledError` 算「对方走了」：代理自身从不取消任何任务，出现取消只可能是
+      请求的生命周期已经结束（连接断了被 aiohttp / 事件循环收尾，或进程关停）；
+    - `ConnectionRefusedError` 一票否决：那是「连不上目标」，属于真故障，哪怕链上还有
+      别的断开痕迹也不能降级。
     """
-    if type(exc) is ConnectionError:  # aiohttp 自己抛的裸 ConnectionError
-        return True
-    if isinstance(exc, _BENIGN_TYPES):
-        return True
-    if isinstance(exc, (RuntimeError, OSError)) and not isinstance(exc, ConnectionRefusedError):
-        text = str(exc).lower()
-        return any(hint in text for hint in _CLOSING_HINTS)
+    chain = list(_exception_chain(exc))
+    if any(isinstance(item, ConnectionRefusedError) for item in chain):
+        return False
+    for item in chain:
+        if type(item) is ConnectionError:  # aiohttp 自己抛的裸 ConnectionError
+            return True
+        if isinstance(item, _BENIGN_TYPES):
+            return True
+        if isinstance(item, asyncio.CancelledError):
+            return True
+        if getattr(item, "winerror", None) in _BENIGN_WINERRORS:
+            return True
+        if isinstance(item, (RuntimeError, OSError)):
+            text = str(item).lower()
+            if any(hint in text for hint in _CLOSING_HINTS):
+                return True
     return False
 
 
@@ -171,4 +235,48 @@ def install_mcp_stateless_terminate_noise_filter() -> bool:
     logger = logging.getLogger(MCP_STREAMABLE_LOGGER)
     if not any(isinstance(f, McpStatelessTerminateNoiseFilter) for f in logger.filters):
         logger.addFilter(McpStatelessTerminateNoiseFilter())
+    return True
+
+
+ASYNCIO_LOGGER = "asyncio"
+_CALL_CONNECTION_LOST = "_call_connection_lost"
+
+
+class AsyncioProactorDisconnectNoiseFilter(logging.Filter):
+    """丢掉 Proactor 连接收尾回调 `_call_connection_lost` 里的对端断开异常。
+
+    CPython 的 `_ProactorBasePipeTransport._call_connection_lost` 在收尾时调
+    `sock.shutdown(SHUT_RDWR)`，对端已 RST 时这条 `shutdown` 自己会抛
+    ConnectionResetError(10054)——连接本来就在关闭流程里，异常不代表故障。
+    判据（必须同时满足）：
+
+    1. traceback 经过 `_call_connection_lost` 帧 —— 只认这一条收尾路径，
+       别处抛出的断开异常（handler 内部、代理读流等）一律不动；
+    2. 异常（或其链上）落在「对端走了」一族（`_BENIGN_TYPES` /
+       `_BENIGN_WINERRORS`）。ConnectionRefusedError 不在族内，真故障照旧可见。
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno < logging.ERROR or not record.exc_info:
+            return True
+        exc, tb = record.exc_info[1], record.exc_info[2]
+        if exc is None or tb is None:
+            return True
+        while tb is not None and tb.tb_frame.f_code.co_name != _CALL_CONNECTION_LOST:
+            tb = tb.tb_next
+        if tb is None:  # 不是连接收尾回调这条路径，与本过滤器无关
+            return True
+        for item in _exception_chain(exc):
+            if isinstance(item, _BENIGN_TYPES) or getattr(item, "winerror", None) in _BENIGN_WINERRORS:
+                return False
+        return True
+
+
+def install_asyncio_proactor_disconnect_noise_filter() -> bool:
+    """给 asyncio logger 装上降噪过滤器（幂等）。返回是否已生效。"""
+    if os.getenv("ROUNDABOUT_RAW_ASYNCIO_LOGS", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return False
+    logger = logging.getLogger(ASYNCIO_LOGGER)
+    if not any(isinstance(f, AsyncioProactorDisconnectNoiseFilter) for f in logger.filters):
+        logger.addFilter(AsyncioProactorDisconnectNoiseFilter())
     return True

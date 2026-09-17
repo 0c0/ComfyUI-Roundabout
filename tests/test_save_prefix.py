@@ -71,7 +71,7 @@ for spec in video_specs:
 
 print("\n== 3. H3 系列统一为 video/MiniMax_H3 ==")
 h3_specs = [s for s in video_specs if "h3" in s.name]
-check("H3 系列共 6 支", len(h3_specs) == 6, [s.name for s in h3_specs])
+check("H3 系列共 8 支（4 支常规 + 4 支 SelfLift）", len(h3_specs) == 8, [s.name for s in h3_specs])
 for spec in h3_specs:
     _, prefix = save_prefix(spec)
     check(f"{spec.name}: {prefix!r} == {H3_PREFIX!r}", prefix == H3_PREFIX, prefix)

@@ -17,6 +17,7 @@ from server import PromptServer
 from .gateway.config import settings
 from .gateway.log_filters import (
     install_aiohttp_disconnect_noise_filter,
+    install_asyncio_proactor_disconnect_noise_filter,
     install_mcp_stateless_terminate_noise_filter,
 )
 from .gateway.registry import registry
@@ -64,6 +65,14 @@ install_aiohttp_disconnect_noise_filter()
 # 「[INFO] Terminating session: None」——agent 连续调工具即刷屏。这里只丢 session id 为
 # None 的那条，真实会话的终止事件保留。细节见 gateway/log_filters.py。
 install_mcp_stateless_terminate_noise_filter()
+
+# Windows ProactorEventLoop 收尾连接时对已 RST 的 socket 调 shutdown() 会抛
+# ConnectionResetError(10054)，被 asyncio 默认异常 handler 打成
+# 「[ERROR] Exception in callback _ProactorBasePipeTransport._call_connection_lost()」
+# ——连接本来就在关闭流程里，异常不代表故障，客户端硬断开就刷一条。这里只拦
+# `_call_connection_lost` 帧内、且异常属「对端走了」一族的记录；其它 asyncio
+# ERROR 一律放行。细节见 gateway/log_filters.py。
+install_asyncio_proactor_disconnect_noise_filter()
 
 # 前端扩展目录：web/ 下的 .js 会被 ComfyUI 以 /extensions/ComfyUI-Roundabout/ 路径
 # 静态托管，并自动加载（见 server.py 的 get_extensions 路由）。

@@ -236,10 +236,11 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 图像编辑 | `flux2-klein-image-edit-turbo` | 语义改写首选：换背景 / 换材质 / 增删物体（`edit_image` 默认） |
 | 图像编辑 | `boogu-image-edit` / `boogu-image-edit-turbo` | 擅长改写 / 添加**图内文字**，30 步 / 6 步 |
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
-| 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3 25 步，支持 6 图 + 3 视频 + 3 音频参考 |
+| 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base 30 步 / edit 25 步），支持 6 图 + 3 视频 + 3 音频参考 |
 | 视频 | `minimax-h3-turbo` / `minimax-h3-turbo-edit` | 8 步快速版 |
 | 视频 | `minimax-h3-self-lift` | SelfLift 渐进采样（低分辨率 NFE + 高分辨率 NFE）；文生 / 首尾帧生视频靠 `reference_images` 插拔；分块参数按本机显存自动分档；`motion=story/fight` 一键切文戏 / 打戏步数档（默认 `story`） |
 | 视频 | `minimax-h3-self-lift-edit` | 同上，改用 Ref2VA 权重，参考槽保留全套 6 图 + 3 视频 + 3 音频 |
+| 视频 | `minimax-h3-self-lift-max` / `-self-lift-edit-max` | 同 SelfLift 拓扑，但**摘掉 4step 加速 LoRA**、总步数 30（低分 25 / 高分 6，实测 31 NFE）：质量档，不提供 `motion` 档 |
 
 - 编辑类模型**必须传 `image`**；输出尺寸跟随输入图（工作流内缩放到 1MP），`size` 不生效。
 - 给文生图模型传 `image` 会被拒绝，错误信息里会列出所有支持输入图的模型名。
@@ -263,9 +264,10 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | `minimax-h3-turbo` / `minimax-h3-turbo-edit` | 同上，另需 `loras/` `MiniMax-H3-FL2VA-Acc-8Step.safetensors` 或 `MiniMax-H3-Ref2VA-Acc-8Step.safetensors` |
 | `minimax-h3-self-lift` | 同上，另需 `loras/` `minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy.safetensors` · `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors` |
 | `minimax-h3-self-lift-edit` | 同上，另需 `loras/` `minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors` · `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors` |
+| `minimax-h3-self-lift-max` / `-self-lift-edit-max` | 与 `minimax-h3` / `-edit` 同一行（fl2va / ref2va + 文本编码 + 两个 VAE），另需 `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors`；**不需要任何 LoRA** |
 
-> 这些工作流用到的节点**除两支 SelfLift 外全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` 等节点。
-> `minimax-h3-self-lift` 与 `-edit` 额外依赖两个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3Sampler` + `latent_upscale_models/` 目录下的上采样权重）与 `ComfyUI-KJNodes`（`MiniMaxChunkFeedForward` / `MiniMaxLowVRAMAttention`）。
+> 这些工作流用到的节点**除 SelfLift 四支（`-self-lift` / `-edit` / `-max` / `-edit-max`）外全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` 等节点。
+> SelfLift 那四支额外依赖两个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3Sampler` + `latent_upscale_models/` 目录下的上采样权重）与 `ComfyUI-KJNodes`（`MiniMaxChunkFeedForward` / `MiniMaxLowVRAMAttention`）。
 > 上述权重多为 `int8_convrot` 量化版，只在你已具备同名权重的机器上开箱即用；换成自己的模型时，同步改工作流 JSON 里的文件名即可。
 
 ---
@@ -350,7 +352,7 @@ SelfLift 那两支有个经验值：**文戏的总步数要调低、过渡步跟
 - 工作流模板里的 `steps` / `transition_step` 字面值也同步成默认档的 6 / 5（在画布上手跑就是文戏档）；`tests/test_motion_presets.py` 会断言「档表 = `defaults` = 模板」三者一致。
 - 档位表写在 `models.yaml` 的 `motion_presets` 里，改档不用动代码；别的模型想加同款机制，照样声明一份即可。
 - 要精调时直接传底层参数，**显式入参优先于命名档**：`{"motion": "story", "steps": 9}` → 9 / 5。
-- 仅 `minimax-h3-self-lift` 与 `-self-lift-edit` 支持（只有 `SelfLiftH3Sampler` 有「过渡步」这个概念）。给别的模型传 `motion` 会直接报错并提示不支持，不会静默忽略。
+- 档位只有 `minimax-h3-self-lift` 与 `-self-lift-edit` 声明（只有 `SelfLiftH3Sampler` 有「过渡步」这个概念）；30 步的 `-max` 那两支是质量档、不切档。给没有档位的模型传 `motion` 会直接报错并提示不支持，不会静默忽略。
 - 不想记节点号又不想加档位时，也可以直接点名改节点：`workflow_overrides: {"124.inputs.steps": 6, "235.inputs.transition_step": 5}`。
 
 ```yaml

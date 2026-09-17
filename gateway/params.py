@@ -20,7 +20,6 @@ from .registry import ModelSpec
 _SIZE_RE = re.compile(r"^\s*(\d{2,5})\s*[x×*]\s*(\d{2,5})\s*$", re.IGNORECASE)
 _DATAURL_RE = re.compile(r"^data:(?P<mime>[\w/+.-]+)?;base64,(?P<data>.*)$", re.DOTALL)
 
-MAX_SEED = 2**63 - 1
 _MAGIC = {
     b"\x89PNG\r\n\x1a\n": ("png", "image/png"),
     b"\xff\xd8\xff": ("jpg", "image/jpeg"),
@@ -160,12 +159,28 @@ def resolve_video_size(size: str | None, spec: ModelSpec) -> tuple[int | None, i
 
 
 # ------------------------------------------------------------------ 种子
+# JS 安全整数上限（2^53-1 ≈ 9.007e15，16 位）。超过它的种子经过任何把 JSON number
+# 转 float64 的中间层（JS 宿主、浏览器、部分 SDK）都会静默丢精度——实测会出现
+# 「末几位被改写」（如 1788460445875452919 -> 1788460445875453000）。网关自己透传
+# 没问题，但拦在上游：超限直接报错，把静默损坏变成显式失败，建议换短种子。
+SAFE_SEED = 2**53 - 1
+
+
 def resolve_seed(seed: int | None, index: int = 0) -> int:
     # 不传 / -1 → 随机（OpenAI 兼容语义：-1 视为"未指定"）；0 与正整数 → 固定种子
     if seed is None or seed < 0:
-        return random.randint(0, MAX_SEED)
+        # 随机种子也压在安全区，保证回显值能被任何客户端原样复用
+        return random.randint(0, SAFE_SEED)
+    seed = int(seed)
+    if seed > SAFE_SEED:
+        raise APIError(
+            f"`seed` {seed} exceeds the safe integer limit {SAFE_SEED} (2^53-1). "
+            "Longer seeds lose precision in JSON/JS number layers before reaching the "
+            "gateway (trailing digits get rewritten). Use a shorter seed, e.g. <= 15 digits.",
+            param="seed",
+        )
     # 批量生成时递增，保证 n>1 不返回 n 张一样的图
-    return (int(seed) + index) % (MAX_SEED + 1)
+    return seed + index
 
 
 # ------------------------------------------------------------------ 预设

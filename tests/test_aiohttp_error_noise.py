@@ -186,6 +186,23 @@ def part_filter(log_filters) -> None:
         ok, level = suppressed(exc)
         check(f"丢弃：{label}", ok, level)
 
+    # —— 异常链：外层只是包装器，真凶挂在 __cause__ 上 ——
+    # 部署机实测形态：读上游字节时被取消，aiohttp 抛出的裸 OSError(WinError 995)
+    # 把 CancelledError 挂在 __cause__ 上；只看顶层类型会漏判成真故障。
+    aborted = OSError("I/O operation aborted")
+    aborted.winerror = 995
+    aborted.__cause__ = asyncio.CancelledError()
+    ok, level = suppressed(aborted)
+    check("丢弃：OSError(WinError 995) <- CancelledError", ok, level)
+    check(
+        "诊断串列出整条链的类型名",
+        log_filters.exception_chain_names(aborted) == "OSError <- CancelledError",
+        log_filters.exception_chain_names(aborted),
+    )
+
+    ok, level = suppressed(asyncio.CancelledError())
+    check("丢弃：裸 CancelledError（请求生命周期已结束）", ok, level)
+
     # —— 不该动的：真故障 / 与连接无关 ——
     for exc, label in (
         (ConnectionRefusedError(10061), "ConnectionRefusedError(连不上后端)"),
@@ -194,6 +211,12 @@ def part_filter(log_filters) -> None:
     ):
         ok, level = suppressed(exc)
         check(f"保留 ERROR：{label}", not ok, level)
+
+    # 一票否决：链上只要出现「连不上目标」，哪怕还挂着断开痕迹也不能降级。
+    veto = ConnectionRefusedError(10061)
+    veto.__cause__ = asyncio.CancelledError()
+    ok, level = suppressed(veto)
+    check("保留 ERROR：链上有 ConnectionRefusedError", not ok, level)
 
     # —— 只处理 aiohttp 那条通用消息，handler 自己打的 ERROR 不动 ——
     ok, level = suppressed(ConnectionResetError("Connection lost"), msg="unexpected error proxying GET /mcp: x")

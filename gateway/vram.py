@@ -11,7 +11,7 @@ MiniMax H3 这类大模型（SelfLift 工作流权重合计 ~65 GiB）在显存/
 前三个是纯粹的「用时间换显存」，不改变输出；第四个块数不可手调。它们的合适取值
 只取决于显存大小，所以做成按档位自动填默认值 —— 同一份工作流换机器不用改 JSON。
 
-档位表放在 ``models.yaml`` 的 ``params.vram_tiers``（改参数不用动代码），本模块只
+档位表放在 ``models.yaml`` 的 ``defaults.vram_tiers``（改参数不用动代码），本模块只
 负责两件纯函数式的事：**探测显存** 与 **选档**，便于离线测试。
 """
 
@@ -135,21 +135,21 @@ def select_tier(vram_gb: float | None, tiers: list[dict[str, Any]] | None) -> di
 
 
 def normalize_tiers(raw: Any) -> list[dict[str, Any]]:
-    """校验并规范化 ``params.vram_tiers``，按 ``min_gb`` 升序返回。"""
+    """校验并规范化 ``defaults.vram_tiers``，按 ``min_gb`` 升序返回。"""
     if raw in (None, ""):
         return []
     if not isinstance(raw, list):
-        raise RuntimeError("params.vram_tiers must be a list of `{min_gb: <GiB>, <param>: <value>}`")
+        raise RuntimeError("defaults.vram_tiers must be a list of `{min_gb: <GiB>, <param>: <value>}`")
     out: list[dict[str, Any]] = []
     for i, entry in enumerate(raw):
         if not isinstance(entry, dict):
-            raise RuntimeError(f"params.vram_tiers[{i}] must be a mapping")
+            raise RuntimeError(f"defaults.vram_tiers[{i}] must be a mapping")
         if "min_gb" not in entry:
-            raise RuntimeError(f"params.vram_tiers[{i}] is missing `min_gb`")
+            raise RuntimeError(f"defaults.vram_tiers[{i}] is missing `min_gb`")
         try:
             min_gb = float(entry["min_gb"])
         except (TypeError, ValueError) as exc:
-            raise RuntimeError(f"params.vram_tiers[{i}].min_gb is not a number: {entry['min_gb']!r}") from exc
+            raise RuntimeError(f"defaults.vram_tiers[{i}].min_gb is not a number: {entry['min_gb']!r}") from exc
         out.append({**entry, "min_gb": min_gb})
     out.sort(key=lambda e: e["min_gb"])
     return out

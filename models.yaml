@@ -387,7 +387,7 @@ models:
   #   - _edit 变体在当前导出模板中与 base 同构（额外节点 142 仅 turbo 有），绑定一致。
   minimax-h3:
     workflow: video_minimax_h3.json
-    description: MiniMax H3 (FL2VA) —— 文生视频 / 参考生视频，25 步
+    description: MiniMax H3 (FL2VA) —— 文生视频 / 参考生视频，30 步
     mode: video
     capabilities:
     - text-to-video
@@ -413,7 +413,7 @@ models:
     defaults:
       width: 1344
       height: 768
-      steps: 25
+      steps: 30
       sampler_name: res_multistep
       scheduler: simple
       denoise: 1
@@ -737,3 +737,137 @@ models:
     - selflift-edit
     - self-lift-edit
     - ref2va-selflift
+
+  # ===================== MiniMax H3 SelfLift 质量档（无加速 LoRA） =====================
+  # 与上面两支同拓扑，只做了三件事：删掉 4step 加速 LoRA（工作流里 145 LoraLoaderModelOnly
+  # 已移除，220.model 直连 148 AttentionBackend，UNET 仍是 fl2va/ref2va int8_convrot）、
+  # 总步数提到 30、其余参数（采样器 euler / 调度 simple / denoise 1 / 低显存分块 / latent
+  # upscaler / SigmaRefiner）逐字沿用。
+  # 过渡点 25 的判据是「切换点落在轨迹的同一位置」，不是「6/5 等比放大」：
+  # SelfLift 按 sigma 切换，30 步经 H3SigmaRefiner 后 sigmas[25]=0.7064，与加速版 story 档
+  # （6 步）的 sigmas[5] 相同 —— 两者都在 t≈0.17（σ=12t/(1+11t)）把活交给高分阶段，即高分
+  # 阶段固定拥有轨迹最后 ~17%。这段尾巴值多少步 = 17% × 总 NFE：6 NFE → 1 步；30 基础步 → 5
+  # 步，再加 refiner 在低噪区补的 1 步 = 6 步。所以高分步数随总步数上升不是额外开销，而是
+  # 「切换位置不动、总步数变大」的必然结果；加速 LoRA 的作用正是让单步吞下这段（story 档那
+  # 一步 Δσ=0.7064，是低分阶段最大跨度 0.1511 的 4.7 倍，拿掉 LoRA 一步跨不过去）。
+  # refiner 生效范围：本档真加 1 步（阈值 0.7 之后开始加密）→ 实际 NFE 31；story 档 6 步时
+  # 阈值落在末项之外＝空操作（6 NFE）；fight 档 8 步时生效（9 NFE = 低分 6 + 高分 3）。
+  # 不声明 motion 档：本档已是质量档，传 `motion` 会报错并说明该模型没有档位。
+  minimax-h3-self-lift-max:
+    workflow: video_minimax_h3_self_lift_max.json
+    description: MiniMax H3 SelfLift 质量档 —— 无加速 LoRA、30 步渐进采样（低分 25 / 高分 6），文生 / 首尾帧生视频，参数按显存自动分档
+    mode: video
+    capabilities:
+    - text-to-video
+    - image-to-video
+    output_node: '238'
+    # 30 步比加速版慢数倍：实测 6 步那支约 3–5 分钟，按 NFE 当量（25×0.16 + 6 ≈ 10，加速版
+    # 5×0.16 + 1 ≈ 1.8）估约 15–30 分钟，这里留 ~4 倍余量；想完全不限时仍可设 JOB_TIMEOUT=0。
+    timeout: 7200
+    vram_adaptive: true
+    references:
+      aggregator: '136'
+      images:
+      - '150'
+      - '164'
+    defaults:
+      width: 1344
+      height: 768
+      # 与工作流模板里的 30 / 25 同值：模板字面值是兜底，这里才是请求参数的来源。
+      steps: 30
+      transition_step: 25
+      sampler_name: euler
+      scheduler: simple
+      denoise: 1
+      duration: 10
+      fps: 24
+    bindings:
+      filename_prefix: 238.inputs.filename_prefix
+      prompt: 232.inputs.value
+      seed: 235.inputs.seed
+      steps: 124.inputs.steps
+      sampler_name: 123.inputs.sampler_name
+      scheduler: 124.inputs.scheduler
+      denoise: 124.inputs.denoise
+      width: 136.inputs.width
+      height: 136.inputs.height
+      duration: 132.inputs.value
+      fps: 234.inputs.fps
+      chunks: 219.inputs.chunks
+      head_chunks: 220.inputs.head_chunks
+      seq_threshold: 219.inputs.seq_threshold
+      highres_tiling: 235.inputs.highres_tiling
+      transition_step: 235.inputs.transition_step
+    aliases:
+    - minimax_h3_self_lift_max
+    - minimaxh3selfliftmax
+    - h3-selflift-max
+    - h3-self-lift-max
+    - selflift-max
+    - self-lift-max
+
+  # Ref2VA 版质量档：与上面那支只差 UNET 权重（ref2va）与参考槽（6 图 + 3 视频 + 3 音频，
+  # 未提供的成对删除）。步数、过渡点、分块、超时的取舍同上。
+  minimax-h3-self-lift-edit-max:
+    workflow: video_minimax_h3_self_lift_edit_max.json
+    description: MiniMax H3 SelfLift Ref2VA 质量档 —— 无加速 LoRA、30 步渐进采样（低分 25 / 高分 6），参考槽全套 6 图 + 3 视频 + 3 音频
+    mode: video
+    capabilities:
+    - text-to-video
+    - image-to-video
+    - reference-to-video
+    output_node: '238'
+    timeout: 7200
+    vram_adaptive: true
+    references:
+      aggregator: '136'
+      images:
+      - '300'
+      - '301'
+      - '302'
+      - '303'
+      - '304'
+      - '305'
+      videos:
+      - '306'
+      - '307'
+      - '308'
+      audios:
+      - '312'
+      - '313'
+      - '314'
+    defaults:
+      width: 1344
+      height: 768
+      steps: 30
+      transition_step: 25
+      sampler_name: euler
+      scheduler: simple
+      denoise: 1
+      duration: 10
+      fps: 24
+    bindings:
+      filename_prefix: 238.inputs.filename_prefix
+      prompt: 232.inputs.value
+      seed: 235.inputs.seed
+      steps: 124.inputs.steps
+      sampler_name: 123.inputs.sampler_name
+      scheduler: 124.inputs.scheduler
+      denoise: 124.inputs.denoise
+      width: 136.inputs.width
+      height: 136.inputs.height
+      duration: 132.inputs.value
+      fps: 234.inputs.fps
+      chunks: 219.inputs.chunks
+      head_chunks: 220.inputs.head_chunks
+      seq_threshold: 219.inputs.seq_threshold
+      highres_tiling: 235.inputs.highres_tiling
+      transition_step: 235.inputs.transition_step
+    aliases:
+    - minimax_h3_self_lift_edit_max
+    - minimaxh3selflifteditmax
+    - h3-selflift-edit-max
+    - h3-self-lift-edit-max
+    - selflift-edit-max
+    - self-lift-edit-max
+    - ref2va-selflift-max

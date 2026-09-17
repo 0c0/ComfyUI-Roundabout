@@ -112,7 +112,7 @@ class VideoGenerationRequest(BaseModel):
         le=200,
         description=(
             "SelfLift 渐进采样的过渡步：低分辨率阶段结束后，在第几步切到高分辨率。"
-            "必须小于 `steps`。仅 minimax-h3-self-lift / -self-lift-edit 有效。"
+            "必须小于 `steps`。仅 SelfLift 系列（minimax-h3-self-lift*，含 -max 变体）有效。"
         ),
     )
 

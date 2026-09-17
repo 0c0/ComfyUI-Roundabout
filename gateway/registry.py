@@ -85,7 +85,7 @@ class ModelSpec:
     # 且 pipeline 不会再要求请求带 prompt。
     promptless: bool = False
     # 按本机显存档位自动填默认值（大模型分块：chunks / head_chunks / seq_threshold /
-    # highres_tiling）。档位表来自 `params.vram_tiers`，本机命中哪一档记在 vram_tier。
+    # highres_tiling）。档位表来自 `defaults.vram_tiers`，本机命中哪一档记在 vram_tier。
     vram_adaptive: bool = False
     vram_tier: dict[str, Any] = field(default_factory=dict)
 
