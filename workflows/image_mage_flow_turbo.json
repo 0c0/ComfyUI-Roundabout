@@ -1,0 +1,115 @@
+{
+  "10": {
+    "inputs": {
+      "filename_prefix": "Mage-Flow-Turbo",
+      "format": "png",
+      "format.bit_depth": "8-bit",
+      "format.input_color_space": "sRGB",
+      "images": [
+        "12:8",
+        0
+      ]
+    },
+    "class_type": "SaveImageAdvanced",
+    "_meta": {
+      "title": "保存图像（高级）"
+    }
+  },
+  "12:1": {
+    "inputs": {
+      "unet_name": "mage_flow_turbo_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "12:3": {
+    "inputs": {
+      "clip_name": "qwen3vl_4b_bf16.safetensors",
+      "type": "mage",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "12:4": {
+    "inputs": {
+      "vae_name": "mage_flow_vae_bf16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "12:5": {
+    "inputs": {
+      "prompt": "surreal underwater portrait of a cute chinese girl surrounded by floating colorful flowers, eyes gently closed, hair and petals suspended weightlessly, soft refracted light, vivid yet dreamy tones, delicate bubbles, fine art conceptual photography, ultra detailed, photorealistic，右上角写着“花”\n\n35mm镜头，侧面半身，浅景深，",
+      "negative_prompt": "",
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1,
+      "clip": [
+        "12:3",
+        0
+      ],
+      "vae": [
+        "12:4",
+        0
+      ]
+    },
+    "class_type": "TextEncodeMageFlowEdit",
+    "_meta": {
+      "title": "TextEncodeMageFlowEdit"
+    }
+  },
+  "12:6": {
+    "inputs": {
+      "seed": 635310941973636,
+      "steps": 4,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "12:1",
+        0
+      ],
+      "positive": [
+        "12:5",
+        0
+      ],
+      "negative": [
+        "12:5",
+        1
+      ],
+      "latent_image": [
+        "12:5",
+        2
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "12:8": {
+    "inputs": {
+      "samples": [
+        "12:6",
+        0
+      ],
+      "vae": [
+        "12:4",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  }
+}

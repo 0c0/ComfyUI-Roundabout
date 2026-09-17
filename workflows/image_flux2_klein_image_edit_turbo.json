@@ -1,0 +1,272 @@
+{
+ "76": {
+  "inputs": {
+   "image": "Z-Image-Turbo_00012_.png"
+  },
+  "class_type": "LoadImage",
+  "_meta": {
+   "title": "加载图像"
+  }
+ },
+ "94": {
+  "inputs": {
+   "filename_prefix": "Flux2-Klein-9b-turbo",
+   "images": [
+    "92:104",
+    0
+   ]
+  },
+  "class_type": "SaveImage",
+  "_meta": {
+   "title": "保存图像"
+  }
+ },
+ "92:102": {
+  "inputs": {
+   "sampler_name": "euler"
+  },
+  "class_type": "KSamplerSelect",
+  "_meta": {
+   "title": "K采样器选择"
+  }
+ },
+ "92:103": {
+  "inputs": {
+   "noise": [
+    "92:105",
+    0
+   ],
+   "guider": [
+    "92:114",
+    0
+   ],
+   "sampler": [
+    "92:102",
+    0
+   ],
+   "sigmas": [
+    "92:115",
+    0
+   ],
+   "latent_image": [
+    "92:109",
+    0
+   ]
+  },
+  "class_type": "SamplerCustomAdvanced",
+  "_meta": {
+   "title": "自定义采样器（高级）"
+  }
+ },
+ "92:104": {
+  "inputs": {
+   "samples": [
+    "92:103",
+    0
+   ],
+   "vae": [
+    "92:107",
+    0
+   ]
+  },
+  "class_type": "VAEDecode",
+  "_meta": {
+   "title": "VAE解码"
+  }
+ },
+ "92:105": {
+  "inputs": {
+   "noise_seed": 133932424540642
+  },
+  "class_type": "RandomNoise",
+  "_meta": {
+   "title": "随机噪波"
+  }
+ },
+ "92:106": {
+  "inputs": {
+   "unet_name": "flux-2-klein-9b-kv-fp8.safetensors",
+   "weight_dtype": "default"
+  },
+  "class_type": "UNETLoader",
+  "_meta": {
+   "title": "UNet加载器"
+  }
+ },
+ "92:107": {
+  "inputs": {
+   "vae_name": "flux2-vae.safetensors"
+  },
+  "class_type": "VAELoader",
+  "_meta": {
+   "title": "加载VAE"
+  }
+ },
+ "92:108": {
+  "inputs": {
+   "image": [
+    "92:110",
+    0
+   ]
+  },
+  "class_type": "GetImageSize",
+  "_meta": {
+   "title": "获取图像尺寸"
+  }
+ },
+ "92:109": {
+  "inputs": {
+   "width": [
+    "92:108",
+    0
+   ],
+   "height": [
+    "92:108",
+    1
+   ],
+   "batch_size": 1
+  },
+  "class_type": "EmptyFlux2LatentImage",
+  "_meta": {
+   "title": "空Latent图像（Flux2）"
+  }
+ },
+ "92:110": {
+  "inputs": {
+   "upscale_method": "nearest-exact",
+   "megapixels": 1,
+   "resolution_steps": 1,
+   "image": [
+    "76",
+    0
+   ]
+  },
+  "class_type": "ImageScaleToTotalPixels",
+  "_meta": {
+   "title": "缩放图像（像素）"
+  }
+ },
+ "92:111": {
+  "inputs": {
+   "clip_name": "qwen3vl_8b_fp8_scaled.safetensors",
+   "type": "flux2",
+   "device": "default"
+  },
+  "class_type": "CLIPLoader",
+  "_meta": {
+   "title": "加载CLIP"
+  }
+ },
+ "92:113": {
+  "inputs": {
+   "text": "A stylish young woman with dark skin wearing a plush deep emerald green bathrobe, light pink towel turban, and red heart-shaped sunglasses, seated on a light-colored rattan chair with soft pink cushions, positioned in front of a textured dusty rose pink wall with an arched alcove, large tropical plants with broad dark green leaves framing both sides, woven straw baskets on the floor, remove any existing shoes from the background, only the woman's beige woven sandals visible in the foreground, soft natural lighting casting gentle shadows, warm bohemian chic aesthetic, professional fashion photography",
+   "clip": [
+    "92:111",
+    0
+   ]
+  },
+  "class_type": "CLIPTextEncode",
+  "_meta": {
+   "title": "CLIP Text Encode (Positive Prompt)"
+  }
+ },
+ "92:87": {
+  "inputs": {
+   "text": "",
+   "clip": [
+    "92:111",
+    0
+   ]
+  },
+  "class_type": "CLIPTextEncode",
+  "_meta": {
+   "title": "CLIP Text Encode ( Negative Prompt)"
+  }
+ },
+ "92:114": {
+  "inputs": {
+   "cfg": 1,
+   "model": [
+    "92:106",
+    0
+   ],
+   "positive": [
+    "92:127",
+    0
+   ],
+   "negative": [
+    "92:125",
+    0
+   ]
+  },
+  "class_type": "CFGGuider",
+  "_meta": {
+   "title": "CFG引导器"
+  }
+ },
+ "92:115": {
+  "inputs": {
+   "steps": 6,
+   "width": [
+    "92:108",
+    0
+   ],
+   "height": [
+    "92:108",
+    1
+   ]
+  },
+  "class_type": "Flux2Scheduler",
+  "_meta": {
+   "title": "Flux2调度器"
+  }
+ },
+ "92:125": {
+  "inputs": {
+   "conditioning": [
+    "92:87",
+    0
+   ],
+   "latent": [
+    "92:126",
+    0
+   ]
+  },
+  "class_type": "ReferenceLatent",
+  "_meta": {
+   "title": "参考Latent"
+  }
+ },
+ "92:126": {
+  "inputs": {
+   "pixels": [
+    "92:110",
+    0
+   ],
+   "vae": [
+    "92:107",
+    0
+   ]
+  },
+  "class_type": "VAEEncode",
+  "_meta": {
+   "title": "VAE编码"
+  }
+ },
+ "92:127": {
+  "inputs": {
+   "conditioning": [
+    "92:113",
+    0
+   ],
+   "latent": [
+    "92:126",
+    0
+   ]
+  },
+  "class_type": "ReferenceLatent",
+  "_meta": {
+   "title": "参考Latent"
+  }
+ }
+}
