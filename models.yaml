@@ -737,3 +737,110 @@ models:
     - selflift-edit
     - self-lift-edit
     - ref2va-selflift
+
+  # ===================== FastVideo FastH3 =====================
+  # FastVideo 的 FastH3 蒸馏档（fastvideo_fasth3_8step_v2_pruned_int8_convrot + qwen3vl int8）。
+  # 与 MiniMax H3 系的关键差别：文生视频那支的聚合节点是 MiniMaxH3ImageToVideo(105:104)，
+  # 首尾帧走**关键帧**槽 first_frame / last_frame，而不是 Ref2VA 的 ref_image_N 参考 token；
+  # 网关默认只认 ref_* 键名，所以这里用 image_keys 逐槽覆盖（见 gateway/registry.py 的 ref_key）。
+  # reference_images 传 0 张=文生视频、1 张=首帧、2 张=首尾帧，未传的槽提交前由网关删除。
+  fasth3:
+    workflow: video_fastvideo_fasth3.json
+    description: FastVideo FastH3 —— 文生视频 / 首尾帧生视频，8 步蒸馏档（实测 10 步画质更好，可传 steps=10）
+    mode: video
+    capabilities:
+    - text-to-video
+    - image-to-video
+    output_node: '92'
+    timeout: 1800
+    references:
+      aggregator: '105:104'
+      images:
+      - '105:200'
+      - '105:201'
+      # 聚合节点上的键名：第 1 张=首帧、第 2 张=尾帧
+      image_keys:
+      - first_frame
+      - last_frame
+    defaults:
+      width: 1344
+      height: 768
+      steps: 8
+      sampler_name: res_multistep
+      scheduler: simple
+      denoise: 1
+      duration: 5
+      fps: 24
+    bindings:
+      filename_prefix: 92.inputs.filename_prefix
+      prompt: 105:104.inputs.prompt
+      seed: 105:15.inputs.noise_seed
+      steps: 105:9.inputs.steps
+      sampler_name: 105:17.inputs.sampler_name
+      scheduler: 105:9.inputs.scheduler
+      denoise: 105:9.inputs.denoise
+      width: 105:104.inputs.width
+      height: 105:104.inputs.height
+      duration: 105:111.inputs.value
+      fps: 105:91.inputs.fps
+    aliases:
+    - fastvideo-fasth3
+    - fastvideo_fasth3
+    - fast-h3
+    - fasth3-t2v
+
+  # 参考生视频版：聚合节点换成 MiniMaxH3ReferenceToVideo(105:145)，槽位就是默认的
+  # ref_images.* / ref_videos.* / ref_audios.*，与其余 H3 编辑模型一致（6 图 + 3 视频 + 3 音频），
+  # 参考视频与其音轨同源（GetVideoComponents 的两路输出），未提供时网关成对删除。
+  fasth3-edit:
+    workflow: video_fastvideo_fasth3_edit.json
+    description: FastVideo FastH3 Edit —— 参考图 / 视频 / 音频生视频，8 步蒸馏档
+    mode: video
+    capabilities:
+    - text-to-video
+    - reference-to-video
+    output_node: '92'
+    timeout: 1800
+    references:
+      aggregator: '105:145'
+      images:
+      - '105:200'
+      - '105:201'
+      - '105:202'
+      - '105:203'
+      - '105:204'
+      - '105:205'
+      videos:
+      - '105:206'
+      - '105:207'
+      - '105:208'
+      audios:
+      - '105:212'
+      - '105:213'
+      - '105:214'
+    defaults:
+      width: 1344
+      height: 768
+      steps: 8
+      sampler_name: res_multistep
+      scheduler: simple
+      denoise: 1
+      duration: 5
+      fps: 24
+    bindings:
+      filename_prefix: 92.inputs.filename_prefix
+      prompt: 105:145.inputs.prompt
+      seed: 105:15.inputs.noise_seed
+      steps: 105:9.inputs.steps
+      sampler_name: 105:17.inputs.sampler_name
+      scheduler: 105:9.inputs.scheduler
+      denoise: 105:9.inputs.denoise
+      width: 105:145.inputs.width
+      height: 105:145.inputs.height
+      duration: 105:111.inputs.value
+      fps: 105:91.inputs.fps
+    aliases:
+    - fastvideo-fasth3-edit
+    - fastvideo_fasth3_edit
+    - fast-h3-edit
+    - fasth3-reference

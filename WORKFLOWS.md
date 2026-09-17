@@ -207,6 +207,31 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 
 传几张就留几个槽：0 图 0 视频 0 音频 = 纯文生，只传 1 张图 = 单图参考，三类混传也照常。**参考视频与它的音轨同源**（同一个 `GetVideoComponents` 的 `video` / `audio` 两个输出），所以网关按成对的方式删 `ref_videos.ref_video_N` 与 `ref_video_audios.ref_video_audio_N`。
 
+### 聚合节点不收 `ref_image_N` 时：`image_keys`
+
+上面那套键名（`ref_images.ref_image_N`）是 Ref2VA 聚合节点的约定。有的聚合节点收的是别的名字 ——
+典型是 `MiniMaxH3ImageToVideo`：它的首尾帧是**关键帧**槽 `first_frame` / `last_frame`，
+和参考 token 不是一回事。这时用 `image_keys` 逐槽给出真实键名即可（`videos` / `audios` 同理有 `video_keys` / `audio_keys`）：
+
+```yaml
+    references:
+      aggregator: '105:104'
+      images: ['105:200', '105:201']
+      image_keys: ['first_frame', 'last_frame']   # 第 1 张=首帧、第 2 张=尾帧
+```
+
+要点：
+
+- 键名列表与节点列表**必须等长** —— 数量不一致启动时直接报错，不会让多出来的槽悄悄回落到默认键名。
+- 不写 `*_keys` 时行为与以前完全一致（默认 `ref_images.ref_image_N`）。
+- 节点 id 含冒号（子图扁平化导出的 `105:200`）照抄，绑定路径按 `.` 切分，冒号不影响解析。
+- `fasth3` / `fasth3-edit` 就是这么接的：前者用 `image_keys` 接管首尾帧，后者聚合节点是
+  `MiniMaxH3ReferenceToVideo`，仍走默认键名。
+
+**示例提示词的落点**：`prompt` 既可绑到独立的 `PrimitiveStringMultiline` 节点，
+也可直接绑聚合节点自己的 `prompt` 输入（`105:104.inputs.prompt`）—— 后者少一个节点，
+新工作流推荐这么做。
+
 ---
 
 ## 大模型按显卡自动调参：`vram_adaptive`

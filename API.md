@@ -256,7 +256,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `fps` | int? | 帧率 |
 | `num_frames` | int? | 总帧数（部分工作流用帧数而非时长） |
 | `motion` | string? | **命名运动档**（仅 SelfLift 系列）：`story`=文戏（总步数 6 / 过渡步 5）、`fight`=打戏（8 / 6）。不传用模型默认；与 `steps` / `transition_step` 同传时后者胜出 |
-| `transition_step` | int? | SelfLift 渐进采样的过渡步（低分切到高分的步位），**需小于 `steps`**；仅 SelfLift 系列（`minimax-h3-self-lift*`，含 `-max` 变体）有效 |
+| `transition_step` | int? | SelfLift 渐进采样的过渡步（低分切到高分的步位），**需小于 `steps`**；仅 SelfLift 系列（`minimax-h3-self-lift` / `-self-lift-edit`）有效 |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |
 | `image` | string\|string[]? | 图生视频输入 |
 | `reference_images` | string[]? | 参考图，最多 6，支持 base64/URL/本地路径 |
@@ -266,6 +266,8 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `background` | `"pending"`? | **异步**触发：POST 立即返回 task 对象 |
 | `async` | bool? | 兼容别名，`true` 等价于 `background:"pending"` |
 | `workflow_overrides` / `filename_prefix` | 各? | 同图像 |
+
+> **外部来源的参考素材会被复制进 ComfyUI 的 `input/`**：`http(s)` / `dataURL` / `base64`，以及**不在 `input/` 目录下**的本地路径（含 `output/`、`temp/`）都要先转存；命名形如 `{请求id}_ref{img|vid|aud}_{槽位序号}.{ext}`（如 `18ae9470d11a-0_refvid_0.mp4`，其中 `18ae9470d11a-0` 是 `请求id-批次号`）。**已经在 `input/` 内的文件免转存、沿用原名**。输入图与 mask 同理，命名为 `{请求id}_src.{ext}` / `{请求id}_mask.{ext}`。这些副本会留在 `input/` 里，需要时自行清理。
 
 **同步响应**（200）：`{ "created", "data":[{ "url" }], "seed", "references":[...] }`。
 
@@ -328,10 +330,12 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | **`flux2-klein-image-edit-turbo`** | image | **image-to-image** | Flux2 Klein 9B 单图编辑，语义改写/换背景首选（见 5.1） |
 | **`utility-birefnet-remove-background`** | image | **image-to-image**（promptless） | 去背景独立工具，无 prompt，透明 PNG；专属端点 `/v1/images/remove-background` |
 | `mage-flow-base` / `mage-flow-turbo` | image | text-to-image | MageFlow 文生图 |
-| `minimax-h3` / `-turbo` | video | text-to-video | H3 文生视频（25 / 8 步） |
+| `minimax-h3` / `-turbo` | video | text-to-video | H3 文生视频（30 / 8 步） |
 | `minimax-h3-edit` / `-turbo-edit` | video | text-to-video | H3 参考生视频（支持图/视频/音频参考） |
 | `minimax-h3-self-lift` | video | text-to-video / image-to-video | H3 SelfLift 渐进采样（低分 → 高分）；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧；分块参数按本机显存自动分档；`motion=story/fight` 一键切文戏 / 打戏步数档 |
 | `minimax-h3-self-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 Ref2VA 权重；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
+| `fasth3` | video | text-to-video / image-to-video | FastVideo FastH3 8 步蒸馏档；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（首尾帧走关键帧槽 `first_frame` / `last_frame`，见 [WORKFLOWS.md](WORKFLOWS.md)） |
+| `fasth3-edit` | video | text-to-video / reference-to-video | FastH3 参考生视频；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
 
 > 完整别名与绑定关系见 `models.yaml`；模型清单与用途对照也见 [README.md](README.md#内置模型)。
 

@@ -366,14 +366,43 @@ def _validate_bindings(spec: ModelSpec) -> None:
         raise RuntimeError(f"model `{spec.name}`: output_node `{spec.output_node}` not in workflow")
 
 
+# 聚合节点上参考资源的输入键名。默认是 H3 Ref2VA 那套 ref_images.ref_image_{i}，
+# 但聚合节点不一定收这套名字 —— MiniMaxH3ImageToVideo 的首尾关键帧叫
+# first_frame / last_frame，所以模型可以用 image_keys（videos/audios 同理）逐槽覆盖。
+_REF_KEY_FMT = {
+    "images": "ref_images.ref_image_{}",
+    "videos": "ref_videos.ref_video_{}",
+    "audios": "ref_audios.ref_audio_{}",
+}
+_REF_KEY_OVERRIDE = {"images": "image_keys", "videos": "video_keys", "audios": "audio_keys"}
+# 参考视频与其音轨同源、同节点，音轨键名固定（只有 videos 有配对的第二个键）
+REF_VIDEO_AUDIO_KEY_FMT = "ref_video_audios.ref_video_audio_{}"
+
+
+def ref_key(references: dict[str, Any] | None, cat: str, idx: int) -> str:
+    """聚合节点上第 idx 个参考资源的输入键名（先看模型有没有逐槽覆盖）。"""
+    ref = references or {}
+    override = ref.get(_REF_KEY_OVERRIDE[cat]) or []
+    if idx < len(override):
+        return str(override[idx])
+    return _REF_KEY_FMT[cat].format(idx)
+
+
 def _normalize_references(raw: dict[str, Any]) -> dict[str, Any]:
-    """把 models.yaml 的 references 段规范化为字符串节点 id 列表。"""
+    """把 models.yaml 的 references 段规范化为字符串节点 id 列表。
+
+    可选的 `image_keys` / `video_keys` / `audio_keys` 逐槽覆盖聚合节点上的输入键名，
+    用于聚合节点不收 ref_* 槽位的场景（见 `ref_key`）。
+    """
     out: dict[str, Any] = {}
     agg = raw.get("aggregator")
     if agg is not None:
         out["aggregator"] = str(agg)
     for cat in ("images", "videos", "audios"):
         out[cat] = [str(x) for x in (raw.get(cat) or [])]
+        keys = raw.get(_REF_KEY_OVERRIDE[cat])
+        if keys:
+            out[_REF_KEY_OVERRIDE[cat]] = [str(k) for k in keys]
     return out
 
 
@@ -390,22 +419,30 @@ def _validate_references(spec: ModelSpec) -> None:
         )
     agg_ins = tpl[agg].get("inputs", {})
 
-    def _need(cat: str, key_fmt: str, nid: str, idx: int) -> None:
+    def _need(cat: str, key: str, nid: str, idx: int) -> None:
         if nid not in tpl:
             raise RuntimeError(
                 f"model `{spec.name}`: references.{cat}[{idx}]={nid} not found in {spec.workflow_path.name}"
             )
-        key = key_fmt.format(idx)
         if key not in agg_ins:
             raise RuntimeError(f"model `{spec.name}`: aggregator `{agg}` missing input `{key}`")
 
+    for cat in ("images", "videos", "audios"):
+        override = ref.get(_REF_KEY_OVERRIDE[cat]) or []
+        if override and len(override) != len(ref.get(cat, [])):
+            # 覆盖列表与节点列表必须一一对应，否则缺的那几槽会悄悄回落到默认键名
+            raise RuntimeError(
+                f"model `{spec.name}`: references.{_REF_KEY_OVERRIDE[cat]} 有 {len(override)} 项，"
+                f"与 references.{cat} 的 {len(ref.get(cat, []))} 项对不上"
+            )
+
     for i, nid in enumerate(ref.get("images", [])):
-        _need("images", "ref_images.ref_image_{}", nid, i)
+        _need("images", ref_key(ref, "images", i), nid, i)
     for i, nid in enumerate(ref.get("videos", [])):
-        _need("videos", "ref_videos.ref_video_{}", nid, i)
-        _need("videos", "ref_video_audios.ref_video_audio_{}", nid, i)
+        _need("videos", ref_key(ref, "videos", i), nid, i)
+        _need("videos", REF_VIDEO_AUDIO_KEY_FMT.format(i), nid, i)
     for i, nid in enumerate(ref.get("audios", [])):
-        _need("audios", "ref_audios.ref_audio_{}", nid, i)
+        _need("audios", ref_key(ref, "audios", i), nid, i)
 
 
 # ---------------------------------------------------------------- 注入

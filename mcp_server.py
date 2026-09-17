@@ -326,7 +326,8 @@ async def remove_background(
         "支持 base64/URL/本地路径) / reference_videos / reference_audios。"
         "SelfLift 的 self-lift / -self-lift-edit 可用 motion=\"story\"（文戏，6 步 / 过渡 5，默认）"
         "或 \"fight\"（打戏，8 / 6）一键切档，要精调则改传 steps + transition_step；"
-        "-max 那两支是 30 步质量档，没有 motion 档。"
+        "fasth3=FastVideo 8 步蒸馏档（reference_images 传 0/1/2 张 = 文生 / 首帧 / 首尾帧）；"
+        "fasth3-edit=FastH3 参考生视频（6 图 + 3 视频 + 3 音频）。"
         "默认同步等待（长任务建议 background=pending 异步，再轮询 get_task）。"
     ),
 )
@@ -335,11 +336,13 @@ async def generate_video_tool(
     model: str = Field(
         default="minimax-h3",
         description=(
-            "模型选择（MiniMax H3 系列）：minimax-h3=25 步高质量（默认）；"
+            "模型选择（MiniMax H3 / FastH3 系列）：minimax-h3=30 步高质量（默认）；"
             "minimax-h3-turbo=8 步快速；minimax-h3-edit / minimax-h3-turbo-edit=参考/编辑变体"
             "（配合 reference_images/videos/audios 使用，最多 6 图 + 3 视频 + 3 音频）；"
             "minimax-h3-self-lift=SelfLift 渐进采样（低分→高分），reference_images 传 0/1/2 张"
             "即文生 / 首帧 / 首尾帧，分块参数按本机显存自动分档；"
+            "fasth3=FastVideo FastH3 8 步蒸馏档（文生 / 首尾帧）；"
+            "fasth3-edit=FastH3 参考生视频（配合 reference_images/videos/audios，最多 6 图 + 3 视频 + 3 音频）。"
         ),
     ),
     duration: float | None = None,

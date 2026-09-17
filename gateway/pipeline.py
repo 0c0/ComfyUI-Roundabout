@@ -27,7 +27,14 @@ from .params import (
     sniff_image,
     split_negative_prompt,
 )
-from .registry import CAP_IMG2IMG, ModelSpec, build_workflow, registry
+from .registry import (
+    CAP_IMG2IMG,
+    ModelSpec,
+    REF_VIDEO_AUDIO_KEY_FMT,
+    build_workflow,
+    ref_key,
+    registry,
+)
 from .schemas import ImageGenerationRequest, ImageResponse, VideoGenerationRequest, VideoResponse
 from .store import store
 
@@ -254,10 +261,10 @@ async def generate(
     uploaded_mask: str | None = None
     if images:
         ext, _ = sniff_image(images[0])
-        uploaded = await client.upload_image(images[0], f"hermes_{request_id}_src.{ext}")
+        uploaded = await client.upload_image(images[0], f"{request_id}_src.{ext}")
     if mask_input and spec.binds("mask"):
         ext, _ = sniff_image(mask_input)
-        uploaded_mask = await client.upload_image(mask_input, f"hermes_{request_id}_mask.{ext}")
+        uploaded_mask = await client.upload_image(mask_input, f"{request_id}_mask.{ext}")
 
     # ---- 3. 组装语义参数 ----
     width, height = parse_size(req.size, spec)
@@ -486,7 +493,7 @@ async def generate_video(
     uploaded: str | None = None
     if images:
         ext, _ = sniff_image(images[0])
-        uploaded = await client.upload_image(images[0], f"hermes_{request_id}_src.{ext}")
+        uploaded = await client.upload_image(images[0], f"{request_id}_src.{ext}")
 
     # ---- 3. 组装语义参数 ----
     values = build_video_values(req, spec, prompt_in, neg_in, uploaded)
@@ -578,7 +585,7 @@ async def _run_once(
         if dropped:
             log.info("req=%s pruned %d unused reference node(s) before submit", trace, dropped)
     async with semaphore():
-        prompt_id = await client.submit(workflow, client_id=f"hermes-gateway-{trace}")
+        prompt_id = await client.submit(workflow, client_id=f"roundabout-{trace}")
         log.debug("req=%s submitted prompt_id=%s", trace, prompt_id)
         # 提交成功后回调（异步任务用它把 prompt_id + workflow 快照写回任务表，失败也能查）
         if on_submit is not None:
@@ -656,19 +663,19 @@ def _prune_unused_references(
     imgs = req.reference_images or []
     for i, nid in enumerate(ref.get("images", [])):
         if i >= len(imgs):
-            _drop(f"ref_images.ref_image_{i}", str(nid))
+            _drop(ref_key(ref, "images", i), str(nid))
 
     vids = req.reference_videos or []
     for i, nid in enumerate(ref.get("videos", [])):
         if i >= len(vids):
             # 参考视频与其音轨（ref_video_audio_N）同源、同节点，一并移除
-            _drop(f"ref_videos.ref_video_{i}", str(nid))
-            _drop(f"ref_video_audios.ref_video_audio_{i}", str(nid))
+            _drop(ref_key(ref, "videos", i), str(nid))
+            _drop(REF_VIDEO_AUDIO_KEY_FMT.format(i), str(nid))
 
     auds = req.reference_audios or []
     for i, nid in enumerate(ref.get("audios", [])):
         if i >= len(auds):
-            _drop(f"ref_audios.ref_audio_{i}", str(nid))
+            _drop(ref_key(ref, "audios", i), str(nid))
 
     return removed
 
@@ -768,7 +775,7 @@ async def _stage_ref(
     ext = _asset_ext(v, data, kind)
     tag = {"image": "img", "video": "vid", "audio": "aud"}[kind]
     name = await client.upload_image(
-        data, f"hermes_{trace}_ref{tag}_{idx}.{ext}", content_type=mime_for_ext(ext)
+        data, f"{trace}_ref{tag}_{idx}.{ext}", content_type=mime_for_ext(ext)
     )
     desc = None
     if kind == "image":

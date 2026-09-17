@@ -20,6 +20,7 @@ from gateway.schemas import VideoGenerationRequest  # noqa: E402
 
 VIDEO_PREFIX = "video/"
 H3_PREFIX = "video/MiniMax_H3"
+FASTH3_PREFIX = "video/FastH3"
 
 passed = failed = 0
 
@@ -69,12 +70,22 @@ for spec in video_specs:
     _, prefix = save_prefix(spec)
     check(f"{spec.name}: {prefix!r} 在 video/ 下", str(prefix).startswith(VIDEO_PREFIX), prefix)
 
-print("\n== 3. H3 系列统一为 video/MiniMax_H3 ==")
-h3_specs = [s for s in video_specs if "h3" in s.name]
-check("H3 系列共 6 支（4 支常规 + 2 支 SelfLift）", len(h3_specs) == 6, [s.name for s in h3_specs])
-for spec in h3_specs:
-    _, prefix = save_prefix(spec)
-    check(f"{spec.name}: {prefix!r} == {H3_PREFIX!r}", prefix == H3_PREFIX, prefix)
+print("\n== 3. H3 两族各自的保存目录 ==")
+# 名字里带 h3 的视频模型就这两族：MiniMax H3 落 video/MiniMax_H3，
+# FastVideo 的 FastH3 蒸馏档单独落 video/FastH3，产物目录一眼能分辨来源。
+FAMILIES = (
+    ("minimax-h3", H3_PREFIX, 6, "4 支常规 + 2 支 SelfLift"),
+    ("fasth3", FASTH3_PREFIX, 2, "文生/首尾帧 + 参考生视频"),
+)
+all_h3 = [s for s in video_specs if "h3" in s.name]
+check("h3 家族合计 8 支", len(all_h3) == 8, [s.name for s in all_h3])
+for prefix_key, expect_prefix, expect_count, note in FAMILIES:
+    family = [s for s in all_h3 if s.name.startswith(prefix_key)]
+    check(f"{prefix_key} 系列共 {expect_count} 支（{note}）",
+          len(family) == expect_count, [s.name for s in family])
+    for spec in family:
+        _, prefix = save_prefix(spec)
+        check(f"{spec.name}: {prefix!r} == {expect_prefix!r}", prefix == expect_prefix, prefix)
 
 print("\n== 4. 不传就用模板默认（不是被网关改写成别的） ==")
 LIFT = registry.resolve("minimax-h3-self-lift")
