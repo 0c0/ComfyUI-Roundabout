@@ -95,7 +95,7 @@ class VideoGenerationRequest(BaseModel):
         None,
         description=(
             "命名运动档，一次展开成多组参数（由模型在 models.yaml 的 motion_presets 中声明）。"
-            "SelfLift 系列支持 story=文戏（总步数 6 / 过渡步 5）与 fight=打戏（8 / 6）；"
+            "SelfLift 系列支持 story=文戏（总步数 8 / 过渡步 8）与 fight=打戏（10 / 8）；"
             "需要精调时改传 `steps` + `transition_step`。"
         ),
     )
@@ -122,7 +122,7 @@ class VideoGenerationRequest(BaseModel):
         description=(
             "SelfLift 低分前缀的相对分辨率（0.25–1.0），或 \"auto\"：按目标尺寸反推，"
             "把低分长边压在 H3 原生画布 1344 上（1080p→0.70、2K→0.525、4K→0.35）。"
-            "fastvideo-fasth3-self-lift* 默认 auto；minimax-h3-self-lift* 未实测，默认仍走模板字面值 0.40。"
+            "SelfLift 系列四支默认均为 auto；显式传 0.25–1.0 可覆盖。"
             "低分长边越过 1344 会掉宽谱细节并织出规则假网格，网关会告警。仅 SelfLift 系列有效。"
         ),
     )
