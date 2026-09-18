@@ -255,9 +255,9 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `duration` | float? | 时长 1–15 秒 |
 | `fps` | int? | 帧率 |
 | `num_frames` | int? | 总帧数（部分工作流用帧数而非时长） |
-| `motion` | string? | **命名运动档**（仅声明了 `motion_presets` 的 `minimax-h3-self-lift*` 含无 LoRA 版两支；`fastvideo-fasth3-self-lift*` 未声明、传了会报错）：旧 SelfLift `story`=文戏（总步数 6 / 过渡步 5）、`fight`=打戏（8 / 6）；无 LoRA 版 `story`=8/8、`fight`=10/8。不传用模型默认；与 `steps` / `transition_step` 同传时后者胜出 |
-| `transition_step` | int? | SelfLift 渐进采样的过渡步（低分切到高分的步位），合法区间 **`1 ≤ transition_step ≤ steps + extra_steps - 1`**（`extra_steps` = 高分阶段在 σ 网格上补的点数，随模型而定：`minimax-h3-self-lift*` 为 1、`fastvideo-fasth3-self-lift*` 为 2；越界会被网关在提交前拦下）。仅 SelfLift 系列（`minimax-h3-self-lift*` / `fastvideo-fasth3-self-lift*`）有效 |
-| `lowres_scale` | float \| `"auto"`? | SelfLift 一采（低分前缀）的相对分辨率，0.25–1.0。**`"auto"`**（`fastvideo-fasth3-self-lift*` 的默认）= 按目标尺寸反推，把低分长边压在 H3 原生画布 1344 上：1080p→`0.70`、2K→`0.525`、4K→`0.35`；`minimax-h3-self-lift*` 未实测，默认沿用模板字面值 `0.40`（显式传 `"auto"` 同样生效）。低分长边越过 1344 会掉宽谱细节并织出规则假网格，网关会告警但不拦（属于显式选择）。仅 SelfLift 系列有效 |
+| `motion` | string? | **命名运动档**（仅声明了 `motion_presets` 的 `minimax-h3-self-lift*`；`fastvideo-fasth3-self-lift*` 未声明、传了会报错）：`story`=文戏（总步数 8 / 过渡步 8）、`fight`=打戏（10 / 8）。不传用模型默认；与 `steps` / `transition_step` 同传时后者胜出 |
+| `transition_step` | int? | SelfLift 渐进采样的过渡步（低分切到高分的步位），合法区间 **`1 ≤ transition_step ≤ steps + extra_steps - 1`**（`extra_steps` = 高分阶段在 σ 网格上补的点数，各支均为 2：`minimax-h3-self-lift*` / `fastvideo-fasth3-self-lift*`；越界会被网关在提交前拦下）。仅 SelfLift 系列（`minimax-h3-self-lift*` / `fastvideo-fasth3-self-lift*`）有效 |
+| `lowres_scale` | float \| `"auto"`? | SelfLift 一采（低分前缀）的相对分辨率，0.25–1.0。**`"auto"`**（SelfLift 四支的默认）= 按目标尺寸反推，把低分长边压在 H3 原生画布 1344 上：1080p→`0.70`、2K→`0.525`、4K→`0.35`。低分长边越过 1344 会掉宽谱细节并织出规则假网格，网关会告警但不拦（属于显式选择）。仅 SelfLift 系列有效 |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |
 | `image` | string\|string[]? | 图生视频输入 |
 | `reference_images` | string[]? | 参考图，最多 6，支持 base64/URL/本地路径 |

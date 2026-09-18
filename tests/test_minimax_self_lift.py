@@ -1,4 +1,4 @@
-"""无 LoRA 版 SelfLift 两支（minimax-h3-self-lift-nolora / -edit-nolora）回归测试。
+"""SelfLift 两支（minimax-h3-self-lift / -edit，无 LoRA 标定）回归测试。
 
 背景：旧 SelfLift 两支在基础权重上挂 0.65 强度的 4 步蒸馏 LoRA（lightx2v / ref2v turbo），
 两阶段渐进采样下细节劣化。新两支去掉 LoRA，基础 fl2va / ref2va 权重直跑，步数与 σ 标定
@@ -11,7 +11,7 @@ lowres_scale 默认 auto，保存产物落 video/MiniMax_H3_Lift。
   [2] defaults 流：ts=8 合法性（extra_steps=2 必须被校验感知）、auto 解析、注入闭环
   [3] 参考槽插拔：0/1/2 张图无悬空连线（复用 _prune_unused_references）
 
-自测：python tests/test_minimax_self_lift_nolora.py
+自测：python tests/test_minimax_self_lift.py
 """
 from __future__ import annotations
 
@@ -48,8 +48,8 @@ def main() -> int:
     reg.load(HERE / "models.yaml", HERE / "workflows", "z-image")
 
     cases = (
-        ("minimax-h3-self-lift-nolora", ("150", "164")),
-        ("minimax-h3-self-lift-edit-nolora", ("300", "301")),
+        ("minimax-h3-self-lift", ("150", "164")),
+        ("minimax-h3-self-lift-edit", ("300", "301")),
     )
 
     print("\n[1] 模板结构")

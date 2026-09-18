@@ -292,10 +292,10 @@ def main() -> int:  # noqa: C901
     except Exception:
         zero_rejected = True
     check("ts=0 在请求模型层就被拒（schema ge=1，不落到 pipeline）", zero_rejected)
-    # self-lift 的 defaults 未声明 extra_steps，上界回退为 steps-1，默认档仍在范围内
+    # self-lift 的 defaults 声明 extra_steps=2，上界 = steps+extra-1，默认档 ts=8 仍在范围内
     lift = reg.resolve("minimax-h3-self-lift")
     err = ts_ok(lift, lift.defaults["steps"], lift.defaults["transition_step"])
-    check("self-lift 默认档（6/5）仍通过（上界回退 steps-1 也不误伤）", err is None, err or "")
+    check("self-lift 默认档（8/8，extra_steps=2）仍通过（上界 steps+extra-1 不误伤）", err is None, err or "")
     base = reg.resolve("fasth3")
     err = ts_ok(base, 8, 8)
     check("原版 fasth3 未绑定 transition_step，传了也不校验（仍是 res_multistep 链路）",

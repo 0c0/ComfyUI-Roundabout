@@ -53,9 +53,9 @@ print("== 1. 前端不认识的键必须原样保留 ==")
 merged = merge_model_entry(LIFT, FRONTEND_PAYLOAD)
 for key in ("references", "vram_adaptive", "motion_presets"):
     check(f"{key} 保留", merged.get(key) == LIFT.get(key), merged.get(key))
-check("motion_presets 内容未变（story 6/5、fight 8/6）",
-      merged["motion_presets"]["story"] == {"steps": 6, "transition_step": 5}
-      and merged["motion_presets"]["fight"] == {"steps": 8, "transition_step": 6},
+check("motion_presets 内容未变（story 8/8、fight 10/8）",
+      merged["motion_presets"]["story"] == {"steps": 8, "transition_step": 8}
+      and merged["motion_presets"]["fight"] == {"steps": 10, "transition_step": 8},
       merged.get("motion_presets"))
 check("references.aggregator 仍是 136", (merged.get("references") or {}).get("aggregator") == "136")
 check("vram_adaptive 仍为 true", merged.get("vram_adaptive") is True)

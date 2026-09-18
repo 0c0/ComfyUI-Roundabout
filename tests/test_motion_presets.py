@@ -39,8 +39,8 @@ LIFT = registry.resolve("minimax-h3-self-lift")
 EDIT = registry.resolve("minimax-h3-self-lift-edit")
 IMAGE = registry.resolve("z-image")
 
-STORY = {"steps": 6, "transition_step": 5}
-FIGHT = {"steps": 8, "transition_step": 6}
+STORY = {"steps": 8, "transition_step": 8}
+FIGHT = {"steps": 10, "transition_step": 8}
 
 
 def values_for(spec=LIFT, prompt="x", **kw):
@@ -66,15 +66,15 @@ check("z-image 未声明 motion 档", not IMAGE.motion_presets)
 
 print("\n== 2. 组装路径：命名档取值 ==")
 v = values_for(motion="story")
-check("story -> steps / transition_step", (v["steps"], v["transition_step"]) == (6, 5),
+check("story -> steps / transition_step", (v["steps"], v["transition_step"]) == (8, 8),
       (v["steps"], v["transition_step"]))
 v = values_for(motion="fight")
-check("fight -> steps / transition_step", (v["steps"], v["transition_step"]) == (8, 6),
+check("fight -> steps / transition_step", (v["steps"], v["transition_step"]) == (10, 8),
       (v["steps"], v["transition_step"]))
-check("story 大小写不敏感", values_for(motion="STORY")["steps"] == 6)
-check("首尾空格被裁掉", values_for(motion=" story ")["steps"] == 6)
-check("未传 motion 时默认走 story 档（6 / 5）",
-      (values_for()["steps"], values_for()["transition_step"]) == (6, 5),
+check("story 大小写不敏感", values_for(motion="STORY")["steps"] == 8)
+check("首尾空格被裁掉", values_for(motion=" story ")["steps"] == 8)
+check("未传 motion 时默认走 story 档（8 / 8）",
+      (values_for()["steps"], values_for()["transition_step"]) == (8, 8),
       (values_for()["steps"], values_for()["transition_step"]))
 check("不传 motion 与显式 motion=story 完全等价", values_for() == values_for(motion="story"))
 check("默认档由 defaults.motion 声明，不是把数值抄两遍",
@@ -83,28 +83,28 @@ check("默认档由 defaults.motion 声明，不是把数值抄两遍",
 
 print("\n== 3. 显式入参优先于命名档 ==")
 v = values_for(motion="story", steps=9)
-check("story + steps=9 -> 9 / 5", (v["steps"], v["transition_step"]) == (9, 5),
+check("story + steps=9 -> 9 / 8", (v["steps"], v["transition_step"]) == (9, 8),
       (v["steps"], v["transition_step"]))
 v = values_for(motion="story", transition_step=4)
-check("story + transition_step=4 -> 6 / 4", (v["steps"], v["transition_step"]) == (6, 4),
+check("story + transition_step=4 -> 8 / 4", (v["steps"], v["transition_step"]) == (8, 4),
       (v["steps"], v["transition_step"]))
 v = values_for(motion="story", steps=9, transition_step=7)
 check("两个都显式 -> 9 / 7", (v["steps"], v["transition_step"]) == (9, 7),
       (v["steps"], v["transition_step"]))
 v = values_for(transition_step=4)
-check("只传 transition_step=4（步数按默认档 story）-> 6 / 4", (v["steps"], v["transition_step"]) == (6, 4),
+check("只传 transition_step=4（步数按默认档 story）-> 8 / 4", (v["steps"], v["transition_step"]) == (8, 4),
       (v["steps"], v["transition_step"]))
 
 print("\n== 4. 落到工作流节点（端到端） ==")
-check("story -> 124.steps=6 / 235.transition_step=5", nodes_for({"motion": "story"}) == (6, 5),
+check("story -> 124.steps=8 / 235.transition_step=8", nodes_for({"motion": "story"}) == (8, 8),
       nodes_for({"motion": "story"}))
-check("fight -> 124.steps=8 / 235.transition_step=6", nodes_for({"motion": "fight"}) == (8, 6),
+check("fight -> 124.steps=10 / 235.transition_step=8", nodes_for({"motion": "fight"}) == (10, 8),
       nodes_for({"motion": "fight"}))
-check("不传 -> 默认档 story 落到节点 6 / 5", nodes_for({}) == (6, 5), nodes_for({}))
-check("self-lift-edit 不传也是 6 / 5", nodes_for({}, EDIT) == (6, 5), nodes_for({}, EDIT))
-check("story + steps=9 -> 9 / 5", nodes_for({"motion": "story", "steps": 9}) == (9, 5),
+check("不传 -> 默认档 story 落到节点 8 / 8", nodes_for({}) == (8, 8), nodes_for({}))
+check("self-lift-edit 不传也是 8 / 8", nodes_for({}, EDIT) == (8, 8), nodes_for({}, EDIT))
+check("story + steps=9 -> 9 / 8", nodes_for({"motion": "story", "steps": 9}) == (9, 8),
       nodes_for({"motion": "story", "steps": 9}))
-check("self-lift-edit 同样生效（story）", nodes_for({"motion": "story"}, EDIT) == (6, 5),
+check("self-lift-edit 同样生效（story）", nodes_for({"motion": "story"}, EDIT) == (8, 8),
       nodes_for({"motion": "story"}, EDIT))
 
 print("\n== 5. 分档参数不受影响 ==")
@@ -126,8 +126,8 @@ for label, fn, needle in (
      lambda: values_for(IMAGE, motion="story"), "no `motion` presets"),
     ("transition_step 等于 steps 时报错（须 <= steps-1）",
      lambda: values_for(motion="story", steps=5), "必须满足"),
-    ("transition_step 超过上限时报错",
-     lambda: values_for(steps=8, transition_step=8), "必须满足"),
+    ("transition_step 超过上限（steps+extra_steps-1）时报错",
+     lambda: values_for(steps=8, transition_step=10), "必须满足"),
 ):
     try:
         fn()
@@ -140,8 +140,8 @@ v = values_for(steps=8, transition_step=1)
 check("transition_step=1 合法", v["transition_step"] == 1)
 v = values_for(steps=8, transition_step=7)
 check("transition_step=steps-1 合法", v["transition_step"] == 7)
-check("story 档 6/5 本身满足约束", (STORY["transition_step"] < STORY["steps"]))
-check("fight 档 8/6 本身满足约束", (FIGHT["transition_step"] < FIGHT["steps"]))
+check("story 档 8/8 满足约束（ts <= steps+extra-1 = 9）", (STORY["transition_step"] <= STORY["steps"] + 1))
+check("fight 档 10/8 满足约束（ts <= steps+extra-1 = 11）", (FIGHT["transition_step"] <= FIGHT["steps"] + 1))
 
 print("\n== 8. 默认档与档表不许漂移 ==")
 # defaults 里同时写「档名」和「同值的数值」时，两处一旦不同步就会误导后来的人

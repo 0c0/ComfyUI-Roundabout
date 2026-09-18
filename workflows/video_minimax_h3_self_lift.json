@@ -43,7 +43,7 @@
   "124": {
     "inputs": {
       "scheduler": "simple",
-      "steps": 6,
+      "steps": 8,
       "denoise": 1,
       "model": [
         "219",
@@ -137,24 +137,10 @@
       "title": "MiniMax H3 参考转视频"
     }
   },
-  "145": {
-    "inputs": {
-      "lora_name": "minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy.safetensors",
-      "strength_model": 0.6500000000000001,
-      "model": [
-        "148",
-        0
-      ]
-    },
-    "class_type": "LoraLoaderModelOnly",
-    "_meta": {
-      "title": "LoRA加载器（仅模型）"
-    }
-  },
   "147": {
     "inputs": {
-      "extra_steps": 1,
-      "start_at_sigma": 0.7,
+      "extra_steps": 2,
+      "start_at_sigma": 0.9,
       "end_at_sigma": 0,
       "spacing": "cosine",
       "sigmas": [
@@ -237,7 +223,7 @@
     "inputs": {
       "head_chunks": 8,
       "model": [
-        "145",
+        "148",
         0
       ]
     },
@@ -287,8 +273,8 @@
     "inputs": {
       "seed": 666,
       "cfg": 1,
-      "transition_step": 5,
-      "lowres_scale": 0.4000000000000001,
+      "transition_step": 8,
+      "lowres_scale": 0.7,
       "rho": 0,
       "w_min": 0.5,
       "w_max": 1,
@@ -330,7 +316,7 @@
   },
   "238": {
     "inputs": {
-      "filename_prefix": "video/MiniMax_H3",
+      "filename_prefix": "video/MiniMax_H3_Lift",
       "format": "mp4",
       "format.codec": "h264",
       "format.codec.encoding": "auto",

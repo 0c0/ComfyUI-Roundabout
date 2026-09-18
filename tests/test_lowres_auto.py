@@ -66,12 +66,9 @@ for spec, node in ((FAST, "302"), (FAST_EDIT, "302"), (LIFT, "235"), (LIFT_EDIT,
     check(f"{spec.name}: lowres_scale 绑定到 {node}",
           spec.bindings.get("lowres_scale") == [f"{node}.inputs.lowres_scale"],
           spec.bindings.get("lowres_scale"))
-for spec in (FAST, FAST_EDIT):
-    check(f"{spec.name}: 默认 auto（实测过的两支）", spec.defaults.get("lowres_scale") == "auto",
+for spec in (FAST, FAST_EDIT, LIFT, LIFT_EDIT):
+    check(f"{spec.name}: 默认 auto（实测过的四支）", spec.defaults.get("lowres_scale") == "auto",
           spec.defaults.get("lowres_scale"))
-for spec in (LIFT, LIFT_EDIT):
-    check(f"{spec.name}: 未实测 → 不设默认（沿用模板字面值）",
-          "lowres_scale" not in spec.defaults, spec.defaults.get("lowres_scale"))
 check("z-image 没有 lowres_scale 绑定", "lowres_scale" not in IMAGE.bindings)
 
 print("\n== 2. 公式：在实测点上复现，且低分长边不越过原生画布 ==")
@@ -135,14 +132,14 @@ try:
 except APIError as exc:
     check("lowres_scale=2.0 在组装阶段被拦下", exc.param == "lowres_scale", exc)
 
-print("\n== 6. 未设默认档的模型：不注入，模板字面值原样 ==")
+print("\n== 6. minimax-h3-self-lift*：默认 auto，显式值可覆盖 ==")
 for spec, node in ((LIFT, "235"), (LIFT_EDIT, "235")):
     v = values_for(spec)
-    check(f"{spec.name}: values 里没有 lowres_scale", "lowres_scale" not in v, list(v))
+    check(f"{spec.name}: 默认 auto -> 0.70 @1344x768", v.get("lowres_scale") == 0.70, v.get("lowres_scale"))
     got = build_workflow(spec, v)[node]["inputs"]["lowres_scale"]
-    check(f"{spec.name}: 节点保留模板字面值 0.40", abs(got - 0.4) < 1e-9, got)
-    v2 = values_for(spec, lowres_scale="auto")
-    check(f"{spec.name}: 显式 auto 仍可覆盖 -> 0.70", v2.get("lowres_scale") == 0.70, v2.get("lowres_scale"))
+    check(f"{spec.name}: 节点收到 float 0.70", isinstance(got, float) and abs(got - 0.70) < 1e-9, got)
+    v2 = values_for(spec, lowres_scale=0.4)
+    check(f"{spec.name}: 显式 0.4 覆盖 auto", v2.get("lowres_scale") == 0.4, v2.get("lowres_scale"))
 
 print("\n== 7. 安全网：直接调 build_workflow 也不会把字符串塞进节点 ==")
 wf = build_workflow(FAST, {"prompt": "p"})

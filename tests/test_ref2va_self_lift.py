@@ -2,7 +2,7 @@
 
 背景：`minimax-h3-self-lift` 只挂两个 LoadImage（文生 / 首尾帧），而 Ref2VA 那支要
 保留 6 图 + 3 视频 + 3 音频的全套参考槽。新工作流由 self-lift 派生：采样链路、低显存
-分块、显存分档逐字保留，只换 UNET（ref2va）与 LoRA（ref2v turbo 4step），参考槽扩容。
+分块、显存分档逐字保留，只换 UNET（ref2va），与 self-lift 同为无 LoRA 两阶段，参考槽扩容。
 
 验证点：
   [1] 工作流文件：API 格式、骨架节点齐全、骨架参数与 self-lift 逐字一致
@@ -86,7 +86,7 @@ def main() -> int:  # noqa: C901
     print("[1] 工作流文件与骨架")
     check("文件是 API 格式（节点 id 直接映射，无 nodes 数组）",
           "nodes" not in wf and all(isinstance(v, dict) and "class_type" in v for v in wf.values()))
-    check("节点数 = 骨架 23 + 参考槽 13（去掉原 2 个 LoadImage 再加 15）", len(wf) == 36, f"got={len(wf)}")
+    check("节点数 = 骨架 22（无 LoRA，145 已删）+ 参考槽 13", len(wf) == 35, f"got={len(wf)}")
     missing = [nid for nid in SKELETON if nid not in wf]
     check("骨架节点齐全", not missing, f"missing={missing}")
     diff = []
@@ -110,12 +110,10 @@ def main() -> int:  # noqa: C901
     check("self-lift 仍是 fl2va（未被波及）",
           sl["127"]["inputs"]["unet_name"] == "minimax_h3_fl2va_int8_convrot.safetensors",
           sl["127"]["inputs"]["unet_name"])
-    check("LoRA 换 ref2v turbo 4step",
-          wf["145"]["inputs"]["lora_name"] == "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
-          wf["145"]["inputs"]["lora_name"])
-    check("LoRA strength 沿用 self-lift 的 0.65",
-          abs(wf["145"]["inputs"]["strength_model"] - sl["145"]["inputs"]["strength_model"]) < 1e-9,
-          f"{wf['145']['inputs']['strength_model']} vs {sl['145']['inputs']['strength_model']}")
+    check("两支都无 LoRA 节点（145 已移除）", "145" not in wf and "145" not in sl)
+    check("220 直连 MAB(148)（两支一致）",
+          wf["220"]["inputs"]["model"] == ["148", 0] and sl["220"]["inputs"]["model"] == ["148", 0],
+          (wf["220"]["inputs"]["model"], sl["220"]["inputs"]["model"]))
 
     print("\n[3] references 声明 ↔ 工作流接线")
     ins = wf["136"]["inputs"]
