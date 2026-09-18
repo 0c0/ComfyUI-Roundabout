@@ -20,6 +20,7 @@ from gateway.schemas import VideoGenerationRequest  # noqa: E402
 
 VIDEO_PREFIX = "video/"
 H3_PREFIX = "video/MiniMax_H3"
+H3_LIFT_PREFIX = "video/MiniMax_H3_Lift"
 FASTH3_PREFIX = "video/FastH3"
 FASTH3_LIFT_PREFIX = "video/FastH3_Lift"
 
@@ -72,22 +73,25 @@ for spec in video_specs:
     check(f"{spec.name}: {prefix!r} 在 video/ 下", str(prefix).startswith(VIDEO_PREFIX), prefix)
 
 print("\n== 3. H3 各族各自的保存目录 ==")
-# 三族分开落盘，产物目录一眼能分辨来源：
-#   MiniMax H3（含 SelfLift）→ video/MiniMax_H3
-#   FastVideo FastH3        → video/FastH3
-#   FastH3 + SelfLift 放大  → video/FastH3_Lift
+# 四族分开落盘，产物目录一眼能分辨来源：
+#   MiniMax H3（常规 + 旧 SelfLift）      → video/MiniMax_H3
+#   MiniMax H3 SelfLift 无 LoRA 版        → video/MiniMax_H3_Lift
+#   FastVideo FastH3                      → video/FastH3
+#   FastH3 + SelfLift 放大                → video/FastH3_Lift
 # 用**显式名单**而不是 startswith：`fastvideo-fasth3-self-lift` 并不以 `fasth3` 开头，
 # 靠前缀猜族迟早会漏；下面的「名单覆盖完整性」断言保证新增模型必须登记进来。
 FAMILIES = (
     (H3_PREFIX, ["minimax-h3", "minimax-h3-edit", "minimax-h3-turbo", "minimax-h3-turbo-edit",
                  "minimax-h3-self-lift", "minimax-h3-self-lift-edit"],
-     "4 支常规 + 2 支 SelfLift"),
+     "4 支常规 + 2 支旧 SelfLift（带蒸馏 LoRA）"),
+    (H3_LIFT_PREFIX, ["minimax-h3-self-lift-nolora", "minimax-h3-self-lift-edit-nolora"],
+     "SelfLift 无 LoRA 版两支"),
     (FASTH3_PREFIX, ["fasth3", "fasth3-edit"], "文生/首尾帧 + 参考生视频"),
     (FASTH3_LIFT_PREFIX, ["fastvideo-fasth3-self-lift", "fastvideo-fasth3-self-lift-edit"],
      "SelfLift 渐进放大的同两支"),
 )
 all_h3 = [s for s in video_specs if "h3" in s.name]
-check("h3 家族合计 10 支", len(all_h3) == 10, [s.name for s in all_h3])
+check("h3 家族合计 12 支", len(all_h3) == 12, [s.name for s in all_h3])
 covered = [name for _, names, _ in FAMILIES for name in names]
 check("名单覆盖全部 h3 模型（新增模型必须显式登记）",
       sorted(covered) == sorted(s.name for s in all_h3),

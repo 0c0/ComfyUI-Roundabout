@@ -80,7 +80,7 @@
       "steps": 30,
       "denoise": 1,
       "model": [
-        "156",
+        "158",
         0
       ]
     },
@@ -120,7 +120,7 @@
   "126": {
     "inputs": {
       "model": [
-        "156",
+        "158",
         0
       ],
       "conditioning": [
@@ -462,6 +462,33 @@
     "class_type": "ModelAttentionBackend",
     "_meta": {
       "title": "ModelAttentionBackend"
+    }
+  },
+  "157": {
+    "inputs": {
+      "head_chunks": 4,
+      "model": [
+        "156",
+        0
+      ]
+    },
+    "class_type": "MiniMaxLowVRAMAttention",
+    "_meta": {
+      "title": "低显存注意力分块"
+    }
+  },
+  "158": {
+    "inputs": {
+      "chunks": 1,
+      "seq_threshold": 262144,
+      "model": [
+        "157",
+        0
+      ]
+    },
+    "class_type": "MiniMaxChunkFeedForward",
+    "_meta": {
+      "title": "FFN 分块"
     }
   }
 }

@@ -249,6 +249,7 @@ SelfLift 把一次采样拆成「低分前缀 + 高分收尾」，两阶段共�
 | 工作流 | `extra_steps` | `start_at_sigma` | 默认 `steps` / `transition_step` |
 |---|---|---|---|
 | `minimax-h3-self-lift` / `-edit` | 1 | 0.7 | 走 `motion_presets`（文戏 6 / 5、打戏 8 / 6） |
+| `minimax-h3-self-lift-nolora` / `-edit-nolora` | 2 | 0.9 | 8 / 8（走 `motion_presets`：story 8/8、fight 10/8） |
 | `fastvideo-fasth3-self-lift` / `-edit` | 2 | 0.9 | 8 / 8 |
 
 > 两支 FastH3 的 σ 标定**不能照抄** `minimax-h3-self-lift` 的 1 / 0.7：fasth3 链上多了
@@ -263,7 +264,7 @@ SelfLift 把一次采样拆成「低分前缀 + 高分收尾」，两阶段共�
 **绝对**分辨率有关 —— 低分长边越过 1344 会掉宽谱细节、**并且**织出规则的斜向假网格
 （两种失效各自独立，实测曲线见 `skill: selflift-progressive-upscale`）。
 
-所以 `fastvideo-fasth3-self-lift*` 的默认档写成 `auto`，由网关按目标尺寸反推：
+所以 `fastvideo-fasth3-self-lift*` 与无 LoRA 版 SelfLift（`minimax-h3-self-lift-*-nolora`）的默认档写成 `auto`，由网关按目标尺寸反推：
 
 ```
 L = min(84 / max(W, H)_latent, 0.70)        # 84 = 1344 / 16
@@ -280,8 +281,8 @@ L = min(84 / max(W, H)_latent, 0.70)        # 84 = 1344 / 16
   `"auto"` 被塞进节点的 FLOAT 输入框。
 - 上限 0.70 兼任「至少放大 1.43 倍」的下限：目标本身小于原生画布时也保持这个相对放大率，
   不退化成恒等放大。尺寸未知时退回 0.70。
-- `minimax-h3-self-lift*` 没做过一采扫描，默认仍是模板字面值 `0.40`（绑定已加，传
-  `lowres_scale: "auto"` 即可切过来）。
+- 旧 SelfLift 两支（带蒸馏 LoRA 的 `minimax-h3-self-lift` / `-edit`）没做过一采扫描，默认仍是
+  模板字面值 `0.40`（绑定已加，传 `lowres_scale: "auto"` 即可切过来）；无 LoRA 版两支默认 `auto`。
 - 显式给 `> 0.70` 不拦（属于调用方的选择），但网关会打一条告警说明代价。
 - 一采分辨率是**相对**的，所以「L 的最优值」不能跨目标尺寸照搬，这是它被做成 auto 的原因。
 

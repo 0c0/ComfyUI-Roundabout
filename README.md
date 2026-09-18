@@ -236,10 +236,12 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 图像编辑 | `flux2-klein-image-edit-turbo` | 语义改写首选：换背景 / 换材质 / 增删物体（`edit_image` 默认） |
 | 图像编辑 | `boogu-image-edit` / `boogu-image-edit-turbo` | 擅长改写 / 添加**图内文字**，30 步 / 6 步 |
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
-| 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base 30 步 / edit 25 步），支持 6 图 + 3 视频 + 3 音频参考 |
+| 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base 30 步 / edit 25 步），支持 6 图 + 3 视频 + 3 音频参考；低显存分块按档位自适应（`vram_adaptive`） |
 | 视频 | `minimax-h3-turbo` / `minimax-h3-turbo-edit` | 8 步快速版 |
 | 视频 | `minimax-h3-self-lift` | SelfLift 渐进采样（低分辨率 NFE + 高分辨率 NFE）；文生 / 首尾帧生视频靠 `reference_images` 插拔；分块参数按本机显存自动分档；`motion=story/fight` 一键切文戏 / 打戏步数档（默认 `story`） |
 | 视频 | `minimax-h3-self-lift-edit` | 同上，改用 Ref2VA 权重，参考槽保留全套 6 图 + 3 视频 + 3 音频 |
+| 视频 | `minimax-h3-self-lift-nolora` | 无 LoRA 版 SelfLift：去掉 0.65 强度 4 步蒸馏 LoRA，基础权重直跑两阶段；步数/σ 不再迁就蒸馏档（8/8、σ0.9），`lowres_scale` 默认 `auto`；产物落 `video/MiniMax_H3_Lift` |
+| 视频 | `minimax-h3-self-lift-edit-nolora` | 同上，改用 Ref2VA 权重，参考槽全套 6 图 + 3 视频 + 3 音频 |
 | 视频 | `fasth3` | FastVideo FastH3 8 步蒸馏档；文生 / 首尾帧生视频（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）。首尾帧走**关键帧**槽 `first_frame` / `last_frame`，与自成一族的 `minimax-h3` 走参考图槽不是一条路 |
 | 视频 | `fasth3-edit` | 同权重改用 Ref2VA 聚合节点做参考生视频，参考槽全套 6 图 + 3 视频 + 3 音频；产物落 `video/FastH3`（不混进 `video/MiniMax_H3`） |
 | 视频 | `fastvideo-fasth3-self-lift` | FastH3 加 SelfLift 渐进放大（低分前缀 → 高分收尾）；文生 / 首尾帧生视频靠 `reference_images` 插拔，首尾帧同样走**关键帧**槽 `first_frame` / `last_frame`。**σ 标定与 `minimax-h3-self-lift` 不通用**（fasth3 链上有 `MiniMaxH3SigmaShift(shift_video=10)`），默认档 `steps=8` / `transition_step=8`；改步数必须同步重算过渡步，见 [WORKFLOWS.md](WORKFLOWS.md) |
@@ -267,12 +269,13 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | `minimax-h3-turbo` / `minimax-h3-turbo-edit` | 同上，另需 `loras/` `MiniMax-H3-FL2VA-Acc-8Step.safetensors` 或 `MiniMax-H3-Ref2VA-Acc-8Step.safetensors` |
 | `minimax-h3-self-lift` | 同上，另需 `loras/` `minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy.safetensors` · `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors` |
 | `minimax-h3-self-lift-edit` | 同上，另需 `loras/` `minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors` · `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors` |
+| `minimax-h3-self-lift-nolora` / `-edit-nolora` | 同 `minimax-h3` / `minimax-h3-edit`，另需 `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors`（**不需要** `loras/`） |
 | `fasth3` / `fasth3-edit` | `diffusion_models/` `fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` · `vae/` `minimax_h3_video_vae_int8_convrot.safetensors`、`minimax_h3_audio_vae_fp32.safetensors` |
 | `fastvideo-fasth3-self-lift` / `-edit` | 同 `fasth3`，另需 `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors` |
 
-> 这些工作流用到的节点**除 SelfLift 系列（`minimax-h3-self-lift*` / `fastvideo-fasth3-self-lift*`）外全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` 等节点。
+> 这些工作流用到的节点**除 SelfLift 系列（`minimax-h3-self-lift*` 含无 LoRA 版 / `fastvideo-fasth3-self-lift*`）和基础两支 `minimax-h3` / `-edit`（它们也接了低显存分块节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` 等节点。
 > SelfLift 系列额外依赖两个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3Sampler` + `latent_upscale_models/` 下的上采样权重）与 `ComfyUI-YCNodes-MiniMax-H3`（`H3SigmaRefiner`，负责在 σ 网格尾部补 `extra_steps` 个高分点）。
-> 其中只有 `minimax-h3-self-lift*` 还要 KJNodes 的 `MiniMaxChunkFeedForward` / `MiniMaxLowVRAMAttention` 做显存分块（`vram_adaptive`）；FastH3 那两支不接这两个节点，靠 `highres_tiling` 压显存，**不需要 ComfyUI-KJNodes**。
+> 需要 KJNodes 的 `MiniMaxChunkFeedForward` / `MiniMaxLowVRAMAttention` 做显存分块的：`minimax-h3-self-lift*`（含无 LoRA 版）与基础两支 `minimax-h3` / `-edit`；turbo 两支与 FastH3 四支不接这两个节点，**不需要 ComfyUI-KJNodes**。
 > 上述权重多为 `int8_convrot` 量化版，只在你已具备同名权重的机器上开箱即用；换成自己的模型时，同步改工作流 JSON 里的文件名即可。
 
 ---

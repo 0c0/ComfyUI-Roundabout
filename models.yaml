@@ -387,7 +387,7 @@ models:
   #   - _edit 变体在当前导出模板中与 base 同构（额外节点 142 仅 turbo 有），绑定一致。
   minimax-h3:
     workflow: video_minimax_h3.json
-    description: MiniMax H3 (FL2VA) —— 文生视频 / 参考生视频，30 步
+    description: MiniMax H3 (FL2VA) —— 文生视频 / 参考生视频，30 步，低显存分块按档位自适应
     mode: video
     capabilities:
     - text-to-video
@@ -410,6 +410,7 @@ models:
       - '150'
       - '151'
       - '152'
+    vram_adaptive: true
     defaults:
       width: 1344
       height: 768
@@ -431,13 +432,16 @@ models:
       height: 136.inputs.height
       duration: 132.inputs.value
       fps: 130.inputs.fps
+      chunks: 158.inputs.chunks
+      head_chunks: 157.inputs.head_chunks
+      seq_threshold: 158.inputs.seq_threshold
     aliases:
     - minimax_h3
     - minimaxh3
     - h3
   minimax-h3-edit:
     workflow: video_minimax_h3_edit.json
-    description: MiniMax H3 Edit —— 参考 / 图生视频编辑，25 步
+    description: MiniMax H3 Edit —— 参考 / 图生视频编辑，25 步，低显存分块按档位自适应
     mode: video
     capabilities:
     - text-to-video
@@ -460,6 +464,7 @@ models:
       - '150'
       - '151'
       - '152'
+    vram_adaptive: true
     defaults:
       width: 1344
       height: 768
@@ -481,6 +486,9 @@ models:
       height: 136.inputs.height
       duration: 132.inputs.value
       fps: 130.inputs.fps
+      chunks: 158.inputs.chunks
+      head_chunks: 157.inputs.head_chunks
+      seq_threshold: 158.inputs.seq_threshold
     aliases:
     - minimax_h3_edit
     - minimaxh3edit
@@ -743,6 +751,149 @@ models:
     - selflift-edit
     - self-lift-edit
     - ref2va-selflift
+
+  # 无 LoRA 版 SelfLift：去掉 turbo 蒸馏 LoRA（旧两支在基础权重上挂 0.65 强度 4 步 LoRA，
+  # 两阶段下细节劣化），基础 fl2va / ref2va 权重直跑两阶段渐进采样。步数与 σ 标定不再
+  # 迁就蒸馏档（旧两支 6/5/σ0.7），起点沿用 fastvideo-fasth3-self-lift 实测配方
+  # （8 步 / ts8 / extra2 / σ0.9，模板字面值同步）；保存产物落 video/MiniMax_H3_Lift。
+  minimax-h3-self-lift-nolora:
+    workflow: video_minimax_h3_self_lift_nolora.json
+    description: MiniMax H3 SelfLift 无LoRA —— 文生视频 / 首尾帧生视频，基础权重直跑两阶段渐进采样
+    mode: video
+    capabilities:
+    - text-to-video
+    - image-to-video
+    output_node: '238'
+    timeout: 3600
+    vram_adaptive: true
+    references:
+      aggregator: '136'
+      images:
+      - '150'
+      - '164'
+    defaults:
+      width: 1344
+      height: 768
+      motion: story
+      steps: 8
+      transition_step: 8
+      extra_steps: 2
+      start_at_sigma: 0.9
+      # 无 LoRA 基础权重，一采分辨率贴住 1344 原生画布（auto = min(84/目标长边latent, 0.70)）
+      lowres_scale: auto
+      sampler_name: euler
+      scheduler: simple
+      denoise: 1
+      duration: 10
+      fps: 24
+    bindings:
+      filename_prefix: 238.inputs.filename_prefix
+      prompt: 232.inputs.value
+      seed: 235.inputs.seed
+      steps: 124.inputs.steps
+      sampler_name: 123.inputs.sampler_name
+      scheduler: 124.inputs.scheduler
+      denoise: 124.inputs.denoise
+      width: 136.inputs.width
+      height: 136.inputs.height
+      duration: 132.inputs.value
+      fps: 234.inputs.fps
+      chunks: 219.inputs.chunks
+      head_chunks: 220.inputs.head_chunks
+      seq_threshold: 219.inputs.seq_threshold
+      highres_tiling: 235.inputs.highres_tiling
+      transition_step: 235.inputs.transition_step
+      lowres_scale: 235.inputs.lowres_scale
+    # 无 LoRA 起点沿用 fastvideo-fasth3-self-lift 的实测配方（story=8/8）；
+    # 打戏加总步数不加过渡步，避免高分阶段网状假纹理加重（ts 实验 2026-09-17）。
+    motion_presets:
+      story:
+        steps: 8
+        transition_step: 8
+      fight:
+        steps: 10
+        transition_step: 8
+    aliases:
+    - minimax_h3_self_lift_nolora
+    - h3-selflift-nolora
+    - h3-self-lift-nolora
+
+  # Ref2VA 无 LoRA 版：采样链路与上面完全一致，UNET 换 ref2va 权重，参考槽 6 图 + 3 视频 + 3 音频。
+  minimax-h3-self-lift-edit-nolora:
+    workflow: video_minimax_h3_self_lift_edit_nolora.json
+    description: MiniMax H3 SelfLift 无LoRA Ref2VA —— 参考图 / 视频 / 音频生视频，基础权重直跑两阶段渐进采样
+    mode: video
+    capabilities:
+    - text-to-video
+    - image-to-video
+    - reference-to-video
+    output_node: '238'
+    timeout: 3600
+    vram_adaptive: true
+    references:
+      aggregator: '136'
+      images:
+      - '300'
+      - '301'
+      - '302'
+      - '303'
+      - '304'
+      - '305'
+      videos:
+      - '306'
+      - '307'
+      - '308'
+      audios:
+      - '312'
+      - '313'
+      - '314'
+    defaults:
+      width: 1344
+      height: 768
+      motion: story
+      steps: 8
+      transition_step: 8
+      extra_steps: 2
+      start_at_sigma: 0.9
+      # 无 LoRA 基础权重，一采分辨率贴住 1344 原生画布（auto = min(84/目标长边latent, 0.70)）
+      lowres_scale: auto
+      sampler_name: euler
+      scheduler: simple
+      denoise: 1
+      duration: 10
+      fps: 24
+    bindings:
+      filename_prefix: 238.inputs.filename_prefix
+      prompt: 232.inputs.value
+      seed: 235.inputs.seed
+      steps: 124.inputs.steps
+      sampler_name: 123.inputs.sampler_name
+      scheduler: 124.inputs.scheduler
+      denoise: 124.inputs.denoise
+      width: 136.inputs.width
+      height: 136.inputs.height
+      duration: 132.inputs.value
+      fps: 234.inputs.fps
+      chunks: 219.inputs.chunks
+      head_chunks: 220.inputs.head_chunks
+      seq_threshold: 219.inputs.seq_threshold
+      highres_tiling: 235.inputs.highres_tiling
+      transition_step: 235.inputs.transition_step
+      lowres_scale: 235.inputs.lowres_scale
+    # 无 LoRA 起点沿用 fastvideo-fasth3-self-lift 的实测配方（story=8/8）；
+    # 打戏加总步数不加过渡步，避免高分阶段网状假纹理加重（ts 实验 2026-09-17）。
+    motion_presets:
+      story:
+        steps: 8
+        transition_step: 8
+      fight:
+        steps: 10
+        transition_step: 8
+    aliases:
+    - minimax_h3_self_lift_edit_nolora
+    - h3-selflift-edit-nolora
+    - h3-self-lift-edit-nolora
+    - ref2va-selflift-nolora
 
   # ===================== FastVideo FastH3 =====================
   # FastVideo 的 FastH3 蒸馏档（fastvideo_fasth3_8step_v2_pruned_int8_convrot + qwen3vl int8）。

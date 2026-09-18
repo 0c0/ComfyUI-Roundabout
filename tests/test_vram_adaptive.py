@@ -247,6 +247,29 @@ def main() -> int:
             orphans = sorted(set(wf2) - _reachable(wf2, "238"), key=int)
             check(f"传 {n} 张图 -> 无不可达孤儿节点", not orphans, f"orphans={orphans}")
 
+        print("\n[6] 真实 models.yaml：基础两支（minimax-h3 / -edit）已开启分块自适应")
+        os.environ[vram.ENV_KEY] = "8"
+        vram.reset_cache()
+        reg_real = Registry()
+        reg_real.load(HERE / "models.yaml", HERE / "workflows", "z-image")
+        for name, ff_node in (("minimax-h3", "158"), ("minimax-h3-edit", "158")):
+            sp = reg_real.resolve(name)
+            check(f"{name}: vram_adaptive 已声明", sp.vram_adaptive is True and bool(sp.vram_tier))
+            check(f"{name}: 分块三参已绑定（highres_tiling 无节点不绑）",
+                  set(sp.bindings) >= {"chunks", "head_chunks", "seq_threshold"}
+                  and "highres_tiling" not in sp.bindings, sorted(sp.bindings))
+            wf_r = build_workflow(sp, {"prompt": "p"}, None)
+            check(f"{name}: 8GB 档注入 157/220 head_chunks=24",
+                  wf_r["157"]["inputs"]["head_chunks"] == 24, wf_r["157"]["inputs"])
+            check(f"{name}: 8GB 档注入 158/219 chunks=6、seq_threshold=4096",
+                  wf_r["158"]["inputs"]["chunks"] == 6
+                  and wf_r["158"]["inputs"]["seq_threshold"] == 4096,
+                  wf_r["158"]["inputs"])
+            check(f"{name}: 注入后无悬空连线",
+                  all(not isinstance(v, list) or v[0] in wf_r
+                      for node in wf_r.values() for v in (node.get("inputs") or {}).values()
+                      if isinstance(v, list)))
+
     if saved_env is not None:
         os.environ[vram.ENV_KEY] = saved_env
     else:
