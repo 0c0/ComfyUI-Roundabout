@@ -51,7 +51,8 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 | `duration` / `num_frames` | 你自己链路里的时长/帧数节点 |
 | `chunks` / `head_chunks` / `seq_threshold` | `MiniMaxChunkFeedForward.chunks` / `.seq_threshold`、`MiniMaxLowVRAMAttention.head_chunks`（KJNodes） |
 | `highres_tiling` | `SelfLiftH3Sampler.highres_tiling`（comfyui-SelfLift） |
-| `transition_step` | `SelfLiftH3Sampler.transition_step`（comfyui-SelfLift）—— 总步数仍走 `steps`（`BasicScheduler.steps`） |
+| `transition_step` | `SelfLiftH3Sampler.transition_step`（comfyui-SelfLift）—— 总步数仍走 `steps`（`BasicScheduler.steps`）。上界是 `steps + extra_steps - 1` 而非 `steps - 1`，原因见后文《SelfLift 的 σ 网格与 `extra_steps`》 |
+| `lowres_scale` | `SelfLiftH3Sampler.lowres_scale`（comfyui-SelfLift）—— 一采的相对分辨率（0.25–1.0）。`"auto"` 由网关按目标尺寸反推，见后文《一采分辨率：`lowres_scale` 与 `auto`》 |
 
 ### 写映射的三条铁律
 
@@ -226,11 +227,63 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 - 不写 `*_keys` 时行为与以前完全一致（默认 `ref_images.ref_image_N`）。
 - 节点 id 含冒号（子图扁平化导出的 `105:200`）照抄，绑定路径按 `.` 切分，冒号不影响解析。
 - `fasth3` / `fasth3-edit` 就是这么接的：前者用 `image_keys` 接管首尾帧，后者聚合节点是
-  `MiniMaxH3ReferenceToVideo`，仍走默认键名。
+  `MiniMaxH3ReferenceToVideo`，仍走默认键名。两支的 SelfLift 放大版
+  （`fastvideo-fasth3-self-lift` / `-edit`）接线完全一样 —— 只换了采样链路，`references` 段照抄即可。
 
 **示例提示词的落点**：`prompt` 既可绑到独立的 `PrimitiveStringMultiline` 节点，
 也可直接绑聚合节点自己的 `prompt` 输入（`105:104.inputs.prompt`）—— 后者少一个节点，
 新工作流推荐这么做。
+
+### SelfLift 的 σ 网格与 `extra_steps`
+
+SelfLift 把一次采样拆成「低分前缀 + 高分收尾」，两阶段共用一条 σ 网格（`BasicScheduler(steps)` 生成），
+再由 `H3SigmaRefiner`（`ComfyUI-YCNodes-MiniMax-H3`）在网格尾部补 `extra_steps` 个点：
+
+- **最终 NFE = `steps + extra_steps`** —— `steps` 只是低分阶段的步数。
+- 高分阶段至少留 2 步，只给 1 步会明显发灰发软。
+- 于是 `transition_step` 的合法上界是 `steps + extra_steps - 1`，**不是 `steps - 1`**。
+- `extra_steps` / `start_at_sigma` **不在可注入白名单里**（见上）——它们是工作流 JSON 里写死的标定值，
+  写进 `bindings` 是死链、写进 `defaults` 也只供网关做范围校验。改步数请用
+  `skill: selflift-progressive-upscale` 的方法重算这两个数。
+
+| 工作流 | `extra_steps` | `start_at_sigma` | 默认 `steps` / `transition_step` |
+|---|---|---|---|
+| `minimax-h3-self-lift` / `-edit` | 1 | 0.7 | 走 `motion_presets`（文戏 6 / 5、打戏 8 / 6） |
+| `fastvideo-fasth3-self-lift` / `-edit` | 2 | 0.9 | 8 / 8 |
+
+> 两支 FastH3 的 σ 标定**不能照抄** `minimax-h3-self-lift` 的 1 / 0.7：fasth3 链上多了
+> `MiniMaxH3SigmaShift(shift_video=10)`，σ 网格被挤向高噪端，照抄会把 σ_resume 顶到 0.77 附近。
+
+### 一采分辨率：`lowres_scale` 与 `auto`
+
+`lowres_scale` 决定一采（低分前缀）跑在多大的画布上：`low_latent = round(dim_latent * L / 2) * 2`。
+
+**它是相对比例，同一个数值在不同目标尺寸下含义不同**：`0.70` 在 1920x1088 上得到
+1344x768（正好 H3 原生画布），在 2560x1440 上却是 1792x992（超原生 33%）。而画质只跟低分的
+**绝对**分辨率有关 —— 低分长边越过 1344 会掉宽谱细节、**并且**织出规则的斜向假网格
+（两种失效各自独立，实测曲线见 `skill: selflift-progressive-upscale`）。
+
+所以 `fastvideo-fasth3-self-lift*` 的默认档写成 `auto`，由网关按目标尺寸反推：
+
+```
+L = min(84 / max(W, H)_latent, 0.70)        # 84 = 1344 / 16
+```
+
+| 目标 | `auto` | 低分 latent / 像素 |
+|---|---|---|
+| 1920x1088（1080p） | 0.70 | 84x48 = 1344x768 |
+| 2560x1440（2K） | 0.525 | 84x48 = 1344x768 |
+| 3840x2160（4K） | 0.35 | 84x48 = 1344x768 |
+
+- 反推必须等 `width` / `height` 定稿，所以在 `pipeline.build_video_values` 里、尺寸解析
+  **之后**才算（实现见 `gateway/lowres.py`）；`build_workflow` 另留一道安全网，避免字符串
+  `"auto"` 被塞进节点的 FLOAT 输入框。
+- 上限 0.70 兼任「至少放大 1.43 倍」的下限：目标本身小于原生画布时也保持这个相对放大率，
+  不退化成恒等放大。尺寸未知时退回 0.70。
+- `minimax-h3-self-lift*` 没做过一采扫描，默认仍是模板字面值 `0.40`（绑定已加，传
+  `lowres_scale: "auto"` 即可切过来）。
+- 显式给 `> 0.70` 不拦（属于调用方的选择），但网关会打一条告警说明代价。
+- 一采分辨率是**相对**的，所以「L 的最优值」不能跨目标尺寸照搬，这是它被做成 auto 的原因。
 
 ---
 

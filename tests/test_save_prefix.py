@@ -21,6 +21,7 @@ from gateway.schemas import VideoGenerationRequest  # noqa: E402
 VIDEO_PREFIX = "video/"
 H3_PREFIX = "video/MiniMax_H3"
 FASTH3_PREFIX = "video/FastH3"
+FASTH3_LIFT_PREFIX = "video/FastH3_Lift"
 
 passed = failed = 0
 
@@ -70,20 +71,31 @@ for spec in video_specs:
     _, prefix = save_prefix(spec)
     check(f"{spec.name}: {prefix!r} 在 video/ 下", str(prefix).startswith(VIDEO_PREFIX), prefix)
 
-print("\n== 3. H3 两族各自的保存目录 ==")
-# 名字里带 h3 的视频模型就这两族：MiniMax H3 落 video/MiniMax_H3，
-# FastVideo 的 FastH3 蒸馏档单独落 video/FastH3，产物目录一眼能分辨来源。
+print("\n== 3. H3 各族各自的保存目录 ==")
+# 三族分开落盘，产物目录一眼能分辨来源：
+#   MiniMax H3（含 SelfLift）→ video/MiniMax_H3
+#   FastVideo FastH3        → video/FastH3
+#   FastH3 + SelfLift 放大  → video/FastH3_Lift
+# 用**显式名单**而不是 startswith：`fastvideo-fasth3-self-lift` 并不以 `fasth3` 开头，
+# 靠前缀猜族迟早会漏；下面的「名单覆盖完整性」断言保证新增模型必须登记进来。
 FAMILIES = (
-    ("minimax-h3", H3_PREFIX, 6, "4 支常规 + 2 支 SelfLift"),
-    ("fasth3", FASTH3_PREFIX, 2, "文生/首尾帧 + 参考生视频"),
+    (H3_PREFIX, ["minimax-h3", "minimax-h3-edit", "minimax-h3-turbo", "minimax-h3-turbo-edit",
+                 "minimax-h3-self-lift", "minimax-h3-self-lift-edit"],
+     "4 支常规 + 2 支 SelfLift"),
+    (FASTH3_PREFIX, ["fasth3", "fasth3-edit"], "文生/首尾帧 + 参考生视频"),
+    (FASTH3_LIFT_PREFIX, ["fastvideo-fasth3-self-lift", "fastvideo-fasth3-self-lift-edit"],
+     "SelfLift 渐进放大的同两支"),
 )
 all_h3 = [s for s in video_specs if "h3" in s.name]
-check("h3 家族合计 8 支", len(all_h3) == 8, [s.name for s in all_h3])
-for prefix_key, expect_prefix, expect_count, note in FAMILIES:
-    family = [s for s in all_h3 if s.name.startswith(prefix_key)]
-    check(f"{prefix_key} 系列共 {expect_count} 支（{note}）",
-          len(family) == expect_count, [s.name for s in family])
-    for spec in family:
+check("h3 家族合计 10 支", len(all_h3) == 10, [s.name for s in all_h3])
+covered = [name for _, names, _ in FAMILIES for name in names]
+check("名单覆盖全部 h3 模型（新增模型必须显式登记）",
+      sorted(covered) == sorted(s.name for s in all_h3),
+      "未登记=%s" % sorted(set(s.name for s in all_h3) - set(covered)))
+for expect_prefix, names, note in FAMILIES:
+    check(f"{note} —— 共 {len(names)} 支", all(registry.resolve(n) for n in names), names)
+    for name in names:
+        spec = registry.resolve(name)
         _, prefix = save_prefix(spec)
         check(f"{spec.name}: {prefix!r} == {expect_prefix!r}", prefix == expect_prefix, prefix)
 

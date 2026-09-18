@@ -15,6 +15,7 @@ from typing import Any
 from .comfy_client import ComfyClient, collect_images
 from .config import settings
 from .errors import APIError
+from .lowres import resolve_lowres_scale
 from .params import (
     _asset_ext,
     apply_presets,
@@ -384,6 +385,9 @@ def build_video_values(
 
     单独抽成纯函数（无 IO），是为了让回归测试能**直接调用真实组装路径**——在测试里复刻一份
     顺序曾经导致过假绿（分档参数那次）。改这里的顺序时，tests/test_motion_presets.py 会跟着生效。
+
+    `lowres_scale` 的 `"auto"` 也在这里落地：它要读最终 width/height 才能反推出比例，
+    所以只能在尺寸定稿之后解析（gateway/lowres.py）。
     """
     width, height = resolve_video_size(req.size, spec)
     values: dict[str, Any] = {
@@ -415,14 +419,43 @@ def build_video_values(
     if values.get("height") is None:
         values["height"] = spec.defaults.get("height")
 
-    # SelfLift 内部要求 1 <= transition_step <= steps-1（nodes.py `_validate_schedule`），
-    # 违规要等 ComfyUI 跑到采样阶段才抛错。这里提前拦下，省掉一次白排队。
+    # SelfLift 的低分前缀比例：显式入参 > 预设档 > 模型 defaults（self-lift 系列默认 "auto"）。
+    # 必须等 width/height 定稿后再解析 —— auto 的口径是「把低分长边压在 H3 原生画布上」，
+    # 只有知道目标尺寸才能反推出比例，这就是 2K 要用 0.525 而 1080p 用 0.70 的原因
+    # （见 gateway/lowres.py）。解析出 None 表示不注入，沿用模板字面值。
+    if spec.binds("lowres_scale"):
+        raw = getattr(req, "lowres_scale", None)
+        if raw is None:
+            raw = values.get("lowres_scale")
+        if raw is None:
+            raw = spec.defaults.get("lowres_scale")
+        resolved = resolve_lowres_scale(raw, values.get("width"), values.get("height"))
+        if resolved is not None:
+            values["lowres_scale"] = resolved
+
+    # SelfLift 的硬约束是 1 <= transition_step <= sigmas.numel()-2（nodes.py `_validate_schedule`），
+    # 即「过渡步不得超过最终网格步数 - 1」。关键在于最终网格不是 steps 个点：BasicScheduler(steps)
+    # 之后还要过 H3SigmaRefiner，它会再插 extra_steps 个点（h3_sigma_refiner.py 的 new_tail_len
+    # = 原尾部 + extra_steps），所以
+    #     最终 NFE = steps + extra_steps
+    # 早期版本按 `steps - 1` 校验：对未声明 extra_steps 的 self-lift 来说上界偏严 1 步，但它的
+    # 默认档（story 5/6、fight 6/8）都够用，所以长期没暴露；一旦模型声明 extra_steps >= 2
+    # （如 fastvideo-fasth3-self-lift 的 2），合法请求会被误拦。
+    # 违规本要等 ComfyUI 跑到采样阶段才抛错，这里仍提前拦下省一次白排队，只是把上限算准。
     if spec.binds("transition_step"):
         ts, st = values.get("transition_step"), values.get("steps")
-        if ts is not None and st is not None and not 1 <= ts <= st - 1:
+        extra = values.get("extra_steps")
+        if extra is None:
+            extra = spec.defaults.get("extra_steps") or 0
+        upper = None
+        try:
+            upper = int(st) + int(extra) - 1 if st is not None else None
+        except (TypeError, ValueError):
+            upper = None
+        if ts is not None and upper is not None and not 1 <= ts <= upper:
             raise APIError(
-                f"`transition_step` ({ts}) 必须满足 1 <= transition_step <= steps-1 ({st - 1})。"
-                f"当前 steps={st}。",
+                f"`transition_step` ({ts}) 必须满足 1 <= transition_step <= steps+extra_steps-1"
+                f" ({upper})。当前 steps={st}、extra_steps={extra}。",
                 param="transition_step",
             )
     return values
@@ -497,6 +530,13 @@ async def generate_video(
 
     # ---- 3. 组装语义参数 ----
     values = build_video_values(req, spec, prompt_in, neg_in, uploaded)
+    if "lowres_scale" in values:
+        # 这是个「配错了要多烧几分钟」的旋钮（低分前缀的绝对分辨率），值得留一行证据：
+        # 尤其 auto 是按目标尺寸现算的，事后从请求参数看不出最终落点。
+        log.info(
+            "req=%s | SelfLift lowres_scale=%.3f (target %sx%s)",
+            request_id, values["lowres_scale"], values.get("width"), values.get("height"),
+        )
 
     # JOB_TIMEOUT=0（或不传正 timeout）→ 无限等待，仅由 ComfyUI 任务状态判定健康；
     # 否则沿用「模型自身 timeout 优先、回落全局 JOB_TIMEOUT」的旧逻辑（向后兼容）。

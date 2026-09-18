@@ -20,6 +20,7 @@ from typing import Any
 import yaml
 
 from .errors import APIError, ModelNotFound
+from .lowres import resolve_lowres_scale
 from . import vram
 
 log = logging.getLogger("roundabout.registry")
@@ -48,6 +49,9 @@ KNOWN_PARAMS = {
     "num_frames",
     # SelfLift 渐进采样：总步数复用 steps，这里是「低分辨率 → 高分辨率」的过渡步
     "transition_step",
+    # SelfLift 低分前缀的相对分辨率：数字（0.25–1.0）或 "auto"
+    # （auto = 按目标尺寸反推，把低分长边压在 H3 原生画布上，见 gateway/lowres.py）
+    "lowres_scale",
     # ---- 低显存分块（按显卡档位自动填默认值，见 gateway/vram.py）----
     "chunks",
     "head_chunks",
@@ -457,6 +461,14 @@ def build_workflow(spec: ModelSpec, values: dict[str, Any], overrides: dict[str,
 
     effective: dict[str, Any] = {k: v for k, v in spec.defaults.items() if k in spec.bindings}
     effective.update(values)
+
+    # 安全网：`lowres_scale: auto` 依赖最终 width/height，而正常路径（pipeline 的
+    # build_video_values）早一步就算成了浮点数。这里兜住直接调 build_workflow 的调用方
+    # （测试、手工预演），别把字符串 "auto" 塞进节点的 FLOAT 输入框。
+    if isinstance(effective.get("lowres_scale"), str):
+        effective["lowres_scale"] = resolve_lowres_scale(
+            effective["lowres_scale"], effective.get("width"), effective.get("height")
+        )
 
     for key, value in effective.items():
         if value is None:

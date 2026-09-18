@@ -1,0 +1,512 @@
+{
+  "92": {
+    "inputs": {
+      "filename_prefix": "video/FastH3_Lift",
+      "format": "mp4",
+      "format.codec": "h264",
+      "format.codec.encoding": "auto",
+      "codec": "auto",
+      "video": [
+        "105:91",
+        0
+      ]
+    },
+    "class_type": "SaveVideo",
+    "_meta": {
+      "title": "保存视频"
+    }
+  },
+  "105:11": {
+    "inputs": {
+      "vae_name": "minimax_h3_video_vae_int8_convrot.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "105:24": {
+    "inputs": {
+      "vae_name": "minimax_h3_audio_vae_fp32.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "105:23": {
+    "inputs": {
+      "samples": [
+        "302",
+        0
+      ],
+      "vae": [
+        "105:24",
+        0
+      ]
+    },
+    "class_type": "VAEDecodeAudio",
+    "_meta": {
+      "title": "VAE解码（音频）"
+    }
+  },
+  "105:10": {
+    "inputs": {
+      "samples": [
+        "302",
+        0
+      ],
+      "vae": [
+        "105:11",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "105:17": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect",
+    "_meta": {
+      "title": "K采样器选择"
+    }
+  },
+  "105:9": {
+    "inputs": {
+      "scheduler": "simple",
+      "steps": 8,
+      "denoise": 1,
+      "model": [
+        "105:127",
+        0
+      ]
+    },
+    "class_type": "BasicScheduler",
+    "_meta": {
+      "title": "基本调度器"
+    }
+  },
+  "105:6": {
+    "inputs": {
+      "unet_name": "fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "105:13": {
+    "inputs": {
+      "clip_name": "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+      "type": "minimax",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "105:91": {
+    "inputs": {
+      "fps": 24,
+      "bit_depth": "auto",
+      "color_space": "sRGB",
+      "codec": "none",
+      "images": [
+        "105:10",
+        0
+      ],
+      "audio": [
+        "105:23",
+        0
+      ]
+    },
+    "class_type": "CreateVideo",
+    "_meta": {
+      "title": "创建视频"
+    }
+  },
+  "105:107": {
+    "inputs": {
+      "expression": "max(5, round(a * 24)) + (5 - (max(5, round(a * 24)) % 17)) % 17",
+      "values.a": [
+        "105:111",
+        0
+      ]
+    },
+    "class_type": "ComfyMathExpression",
+    "_meta": {
+      "title": "数学表达式"
+    }
+  },
+  "105:111": {
+    "inputs": {
+      "value": 5
+    },
+    "class_type": "PrimitiveFloat",
+    "_meta": {
+      "title": "Float (duration)"
+    }
+  },
+  "105:127": {
+    "inputs": {
+      "selection": "vsa",
+      "selection.keep_percent": 10,
+      "start_percent": 0.2,
+      "end_percent": 1,
+      "dense_blocks": "",
+      "min_tokens": 12288,
+      "extra_tokens": 256,
+      "sink_conditioning": "exact_kv_and_rows",
+      "verbose": false,
+      "model": [
+        "105:128",
+        0
+      ]
+    },
+    "class_type": "BlockSparseAttention",
+    "_meta": {
+      "title": "块稀疏注意力"
+    }
+  },
+  "105:128": {
+    "inputs": {
+      "attention": "comfy kitchen attention",
+      "model": [
+        "105:143",
+        0
+      ]
+    },
+    "class_type": "ModelAttentionBackend",
+    "_meta": {
+      "title": "ModelAttentionBackend"
+    }
+  },
+  "105:143": {
+    "inputs": {
+      "shift_video": 10,
+      "shift_audio": 3,
+      "model": [
+        "105:6",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3SigmaShift",
+    "_meta": {
+      "title": "MiniMax H3 Sigma Shift"
+    }
+  },
+  "105:145": {
+    "inputs": {
+      "prompt": "",
+      "width": 1344,
+      "height": 768,
+      "length": [
+        "105:107",
+        1
+      ],
+      "ref_image_size": "max",
+      "clip": [
+        "105:13",
+        0
+      ],
+      "vae": [
+        "105:11",
+        0
+      ],
+      "audio_vae": [
+        "105:24",
+        0
+      ],
+      "ref_images.ref_image_0": [
+        "105:200",
+        0
+      ],
+      "ref_images.ref_image_1": [
+        "105:201",
+        0
+      ],
+      "ref_images.ref_image_2": [
+        "105:202",
+        0
+      ],
+      "ref_images.ref_image_3": [
+        "105:203",
+        0
+      ],
+      "ref_images.ref_image_4": [
+        "105:204",
+        0
+      ],
+      "ref_images.ref_image_5": [
+        "105:205",
+        0
+      ],
+      "ref_videos.ref_video_0": [
+        "105:209",
+        0
+      ],
+      "ref_video_audios.ref_video_audio_0": [
+        "105:209",
+        1
+      ],
+      "ref_videos.ref_video_1": [
+        "105:210",
+        0
+      ],
+      "ref_video_audios.ref_video_audio_1": [
+        "105:210",
+        1
+      ],
+      "ref_videos.ref_video_2": [
+        "105:211",
+        0
+      ],
+      "ref_video_audios.ref_video_audio_2": [
+        "105:211",
+        1
+      ],
+      "ref_audios.ref_audio_0": [
+        "105:212",
+        0
+      ],
+      "ref_audios.ref_audio_1": [
+        "105:213",
+        0
+      ],
+      "ref_audios.ref_audio_2": [
+        "105:214",
+        0
+      ]
+    },
+    "class_type": "MiniMaxH3ReferenceToVideo",
+    "_meta": {
+      "title": "MiniMax H3 参考转视频"
+    }
+  },
+  "105:200": {
+    "inputs": {
+      "image": "example.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "参考图 1"
+    }
+  },
+  "105:201": {
+    "inputs": {
+      "image": "example.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "参考图 2"
+    }
+  },
+  "105:202": {
+    "inputs": {
+      "image": "example.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "参考图 3"
+    }
+  },
+  "105:203": {
+    "inputs": {
+      "image": "example.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "参考图 4"
+    }
+  },
+  "105:204": {
+    "inputs": {
+      "image": "example.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "参考图 5"
+    }
+  },
+  "105:205": {
+    "inputs": {
+      "image": "example.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "参考图 6"
+    }
+  },
+  "105:206": {
+    "inputs": {
+      "file": "hermes_dtest_refvid_0.mp4",
+      "video-preview": ""
+    },
+    "class_type": "LoadVideo",
+    "_meta": {
+      "title": "参考视频 1"
+    }
+  },
+  "105:209": {
+    "inputs": {
+      "video": [
+        "105:206",
+        0
+      ]
+    },
+    "class_type": "GetVideoComponents",
+    "_meta": {
+      "title": "视频 1 分量"
+    }
+  },
+  "105:207": {
+    "inputs": {
+      "file": "hermes_dtest_refvid_0.mp4",
+      "video-preview": ""
+    },
+    "class_type": "LoadVideo",
+    "_meta": {
+      "title": "参考视频 2"
+    }
+  },
+  "105:210": {
+    "inputs": {
+      "video": [
+        "105:207",
+        0
+      ]
+    },
+    "class_type": "GetVideoComponents",
+    "_meta": {
+      "title": "视频 2 分量"
+    }
+  },
+  "105:208": {
+    "inputs": {
+      "file": "hermes_dtest_refvid_0.mp4",
+      "video-preview": ""
+    },
+    "class_type": "LoadVideo",
+    "_meta": {
+      "title": "参考视频 3"
+    }
+  },
+  "105:211": {
+    "inputs": {
+      "video": [
+        "105:208",
+        0
+      ]
+    },
+    "class_type": "GetVideoComponents",
+    "_meta": {
+      "title": "视频 3 分量"
+    }
+  },
+  "105:212": {
+    "inputs": {
+      "audio": "hermes_dtest_refaud_0.wav"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "参考音频 1"
+    }
+  },
+  "105:213": {
+    "inputs": {
+      "audio": "hermes_dtest_refaud_0.wav"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "参考音频 2"
+    }
+  },
+  "105:214": {
+    "inputs": {
+      "audio": "hermes_dtest_refaud_0.wav"
+    },
+    "class_type": "LoadAudio",
+    "_meta": {
+      "title": "参考音频 3"
+    }
+  },
+  "300": {
+    "inputs": {
+      "extra_steps": 2,
+      "start_at_sigma": 0.9,
+      "end_at_sigma": 0,
+      "spacing": "cosine",
+      "sigmas": [
+        "105:9",
+        0
+      ]
+    },
+    "class_type": "H3SigmaRefiner",
+    "_meta": {
+      "title": "H3 Sigma Refiner"
+    }
+  },
+  "301": {
+    "inputs": {
+      "conditioning": [
+        "105:145",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "零化条件（negative）"
+    }
+  },
+  "302": {
+    "inputs": {
+      "model": [
+        "105:127",
+        0
+      ],
+      "positive": [
+        "105:145",
+        0
+      ],
+      "negative": [
+        "301",
+        0
+      ],
+      "vae": [
+        "105:11",
+        0
+      ],
+      "latent_image": [
+        "105:145",
+        1
+      ],
+      "sampler": [
+        "105:17",
+        0
+      ],
+      "sigmas": [
+        "300",
+        0
+      ],
+      "seed": 793369680225544,
+      "cfg": 1,
+      "transition_step": 8,
+      "lowres_scale": 0.4,
+      "rho": 0.0,
+      "w_min": 0.5,
+      "w_max": 1.0,
+      "upscaler_model": "minimax_h3_latent_upscaler_3d_fp16.safetensors",
+      "highres_tiling": true
+    },
+    "class_type": "SelfLiftH3Sampler",
+    "_meta": {
+      "title": "SelfLift 渐进式采样"
+    }
+  }
+}

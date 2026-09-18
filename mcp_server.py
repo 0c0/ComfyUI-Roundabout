@@ -40,7 +40,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -190,6 +190,7 @@ async def list_models() -> list[dict[str, Any]]:
         "size / steps / cfg 等精调参数；response_format=path 返回磁盘绝对路径。"
         "返回 OpenAI 风格响应（created/data/seed 回显）。"
         "【编辑已有图片不要用本工具】改图/去背景请用专门的 edit_image / remove_background 工具。"
+        "filename_prefix 指定落盘前缀（可含 \"/\" 建子目录），不传则用工作流模板自带前缀。"
     ),
 )
 async def generate_image(
@@ -215,6 +216,7 @@ async def generate_image(
     mask: str = "",
     workflow_overrides: str = "",  # JSON 字符串，形如 {"3.inputs.cfg": 4.5}
     mode: str = "",
+    filename_prefix: str = "",
     ctx: Context = None,  # type: ignore[assignment]  # MCP SDK 按注解自动注入
 ) -> dict[str, Any]:
     req = ImageGenerationRequest(
@@ -232,6 +234,7 @@ async def generate_image(
         mask=mask or None,
         workflow_overrides=_parse_json_or_none(workflow_overrides),
         mode=mode or None,
+        filename_prefix=filename_prefix or None,
     )
     # 视频模型打到图片工具 → 自动转视频链路（与 REST 端点行为一致）
     spec = registry.resolve(req.model)
@@ -327,7 +330,9 @@ async def remove_background(
         "SelfLift 的 self-lift / -self-lift-edit 可用 motion=\"story\"（文戏，6 步 / 过渡 5，默认）"
         "或 \"fight\"（打戏，8 / 6）一键切档，要精调则改传 steps + transition_step；"
         "fasth3=FastVideo 8 步蒸馏档（reference_images 传 0/1/2 张 = 文生 / 首帧 / 首尾帧）；"
-        "fasth3-edit=FastH3 参考生视频（6 图 + 3 视频 + 3 音频）。"
+        "fasth3-edit=FastH3 参考生视频（6 图 + 3 视频 + 3 音频）；"
+        "fastvideo-fasth3-self-lift / -edit=FastH3 的 SelfLift 渐进放大版，槽位与对应单阶段版一致。"
+        "filename_prefix 指定落盘前缀（可含 \"/\" 建子目录，不传则用模板默认）。"
         "默认同步等待（长任务建议 background=pending 异步，再轮询 get_task）。"
     ),
 )
@@ -342,7 +347,9 @@ async def generate_video_tool(
             "minimax-h3-self-lift=SelfLift 渐进采样（低分→高分），reference_images 传 0/1/2 张"
             "即文生 / 首帧 / 首尾帧，分块参数按本机显存自动分档；"
             "fasth3=FastVideo FastH3 8 步蒸馏档（文生 / 首尾帧）；"
-            "fasth3-edit=FastH3 参考生视频（配合 reference_images/videos/audios，最多 6 图 + 3 视频 + 3 音频）。"
+            "fasth3-edit=FastH3 参考生视频（配合 reference_images/videos/audios，最多 6 图 + 3 视频 + 3 音频）；"
+            "fastvideo-fasth3-self-lift=fasth3 的 SelfLift 渐进放大版（文生 / 首尾帧）；"
+            "fastvideo-fasth3-self-lift-edit=fasth3-edit 的 SelfLift 渐进放大版（最多 6 图 + 3 视频 + 3 音频）。"
         ),
     ),
     duration: float | None = None,
@@ -363,10 +370,23 @@ async def generate_video_tool(
     steps: int | None = None,
     transition_step: int | None = Field(
         default=None,
-        description="SelfLift 过渡步（低分辨率切到高分辨率的步位），需小于 steps；仅 SelfLift 系列有效。",
+        description=(
+            "SelfLift 过渡步（低分辨率切到高分辨率的步位），合法区间 1..steps+extra_steps-1；"
+            "仅 SelfLift 系列有效。"
+        ),
+    ),
+    lowres_scale: float | Literal["auto"] | None = Field(
+        default=None,
+        description=(
+            "SelfLift 低分前缀的相对分辨率（0.25-1.0）或 \"auto\"：auto 按目标尺寸反推，"
+            "把低分长边压在 H3 原生画布 1344 上（1080p->0.70、2K->0.525、4K->0.35）。"
+            "fastvideo-fasth3-self-lift* 默认 auto；minimax-h3-self-lift* 默认 0.40；"
+            "不传即用模型默认档。>0.70 会越过原生画布（掉细节 + 织假网格）。仅 SelfLift 系列有效。"
+        ),
     ),
     background: str = "",  # "pending" 触发异步
     response_format: str = "",
+    filename_prefix: str = "",
     ctx: Context = None,  # type: ignore[assignment]  # MCP SDK 按注解自动注入
 ) -> dict[str, Any]:
     req = VideoGenerationRequest(
@@ -383,8 +403,10 @@ async def generate_video_tool(
         motion=motion or None,
         steps=steps,
         transition_step=transition_step,
+        lowres_scale=lowres_scale,
         background=background or None,
         response_format=response_format or None,  # type: ignore[arg-type]
+        filename_prefix=filename_prefix or None,
     )
     return await _handle_video(req, ctx)
 

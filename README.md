@@ -242,6 +242,8 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 视频 | `minimax-h3-self-lift-edit` | 同上，改用 Ref2VA 权重，参考槽保留全套 6 图 + 3 视频 + 3 音频 |
 | 视频 | `fasth3` | FastVideo FastH3 8 步蒸馏档；文生 / 首尾帧生视频（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）。首尾帧走**关键帧**槽 `first_frame` / `last_frame`，与自成一族的 `minimax-h3` 走参考图槽不是一条路 |
 | 视频 | `fasth3-edit` | 同权重改用 Ref2VA 聚合节点做参考生视频，参考槽全套 6 图 + 3 视频 + 3 音频；产物落 `video/FastH3`（不混进 `video/MiniMax_H3`） |
+| 视频 | `fastvideo-fasth3-self-lift` | FastH3 加 SelfLift 渐进放大（低分前缀 → 高分收尾）；文生 / 首尾帧生视频靠 `reference_images` 插拔，首尾帧同样走**关键帧**槽 `first_frame` / `last_frame`。**σ 标定与 `minimax-h3-self-lift` 不通用**（fasth3 链上有 `MiniMaxH3SigmaShift(shift_video=10)`），默认档 `steps=8` / `transition_step=8`；改步数必须同步重算过渡步，见 [WORKFLOWS.md](WORKFLOWS.md) |
+| 视频 | `fastvideo-fasth3-self-lift-edit` | 同权重改用 Ref2VA 聚合节点做参考生视频，参考槽全套 6 图 + 3 视频 + 3 音频；产物落 `video/FastH3_Lift`（与单阶段版 `video/FastH3` 分开，便于 A/B 对比） |
 
 - 编辑类模型**必须传 `image`**；输出尺寸跟随输入图（工作流内缩放到 1MP），`size` 不生效。
 - 给文生图模型传 `image` 会被拒绝，错误信息里会列出所有支持输入图的模型名。
@@ -266,9 +268,11 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | `minimax-h3-self-lift` | 同上，另需 `loras/` `minimax_h3_fl2v_lightx2v_turbo_4step_v0.1_comfy.safetensors` · `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors` |
 | `minimax-h3-self-lift-edit` | 同上，另需 `loras/` `minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors` · `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors` |
 | `fasth3` / `fasth3-edit` | `diffusion_models/` `fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` · `vae/` `minimax_h3_video_vae_int8_convrot.safetensors`、`minimax_h3_audio_vae_fp32.safetensors` |
+| `fastvideo-fasth3-self-lift` / `-edit` | 同 `fasth3`，另需 `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors` |
 
-> 这些工作流用到的节点**除 SelfLift 两支（`-self-lift` / `-edit`）外全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` 等节点。
-> SelfLift 那两支额外依赖两个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3Sampler` + `latent_upscale_models/` 目录下的上采样权重）与 `ComfyUI-KJNodes`（`MiniMaxChunkFeedForward` / `MiniMaxLowVRAMAttention`）。
+> 这些工作流用到的节点**除 SelfLift 系列（`minimax-h3-self-lift*` / `fastvideo-fasth3-self-lift*`）外全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` 等节点。
+> SelfLift 系列额外依赖两个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3Sampler` + `latent_upscale_models/` 下的上采样权重）与 `ComfyUI-YCNodes-MiniMax-H3`（`H3SigmaRefiner`，负责在 σ 网格尾部补 `extra_steps` 个高分点）。
+> 其中只有 `minimax-h3-self-lift*` 还要 KJNodes 的 `MiniMaxChunkFeedForward` / `MiniMaxLowVRAMAttention` 做显存分块（`vram_adaptive`）；FastH3 那两支不接这两个节点，靠 `highres_tiling` 压显存，**不需要 ComfyUI-KJNodes**。
 > 上述权重多为 `int8_convrot` 量化版，只在你已具备同名权重的机器上开箱即用；换成自己的模型时，同步改工作流 JSON 里的文件名即可。
 
 ---
@@ -337,7 +341,7 @@ models:
 
 ### 按剧情节奏切档（`motion_presets`）
 
-SelfLift 那两支有个经验值：**文戏的总步数要调低、过渡步跟着调低；打戏两个都调高**——两个数必须成对改，只动一个容易出问题。于是把它们打包成命名档，请求里写一个词就行：
+SelfLift 那两支（`minimax-h3-self-lift*`）有个经验值：**文戏的总步数要调低、过渡步跟着调低；打戏两个都调高**——两个数必须成对改，只动一个容易出问题。于是把它们打包成命名档，请求里写一个词就行：
 
 ```json
 {"model": "minimax-h3-self-lift", "prompt": "...", "duration": 5, "motion": "story"}
@@ -353,7 +357,7 @@ SelfLift 那两支有个经验值：**文戏的总步数要调低、过渡步跟
 - 工作流模板里的 `steps` / `transition_step` 字面值也同步成默认档的 6 / 5（在画布上手跑就是文戏档）；`tests/test_motion_presets.py` 会断言「档表 = `defaults` = 模板」三者一致。
 - 档位表写在 `models.yaml` 的 `motion_presets` 里，改档不用动代码；别的模型想加同款机制，照样声明一份即可。
 - 要精调时直接传底层参数，**显式入参优先于命名档**：`{"motion": "story", "steps": 9}` → 9 / 5。
-- 档位只有 `minimax-h3-self-lift` 与 `-self-lift-edit` 声明（只有 `SelfLiftH3Sampler` 有「过渡步」这个概念）。给没有档位的模型传 `motion` 会直接报错并提示不支持，不会静默忽略。
+- 档位只有 `minimax-h3-self-lift` 与 `-self-lift-edit` 声明（只有这两支在 `models.yaml` 写了 `motion_presets`；`fastvideo-fasth3-self-lift*` 同样是 SelfLift，但没打包档位，传 `motion` 会报错）。给没有档位的模型传 `motion` 会直接报错并提示不支持，不会静默忽略。
 - 不想记节点号又不想加档位时，也可以直接点名改节点：`workflow_overrides: {"124.inputs.steps": 6, "235.inputs.transition_step": 5}`。
 
 ```yaml
@@ -373,6 +377,26 @@ models:
     bindings:
       transition_step: 235.inputs.transition_step
 ```
+
+### 一采分辨率自动反推（`lowres_scale: auto`）
+
+SelfLift 的两阶段采样里，一采（低分前缀）的分辨率由 `lowres_scale` 决定，而**它是相对比例**：同一个 `0.70`，在 1080p 上得到 1344x768（正好 H3 原生画布），在 2K 上却是 1792x992（超原生 33%）。画质只跟低分的**绝对**分辨率有关 —— 长边越过 1344 就会掉宽谱细节、**并且**织出规则的斜向假网格。
+
+所以 `fastvideo-fasth3-self-lift*` 的默认档写的是 `auto`，由网关按目标尺寸反推：
+
+```
+L = min(84 / max(W, H)_latent, 0.70)        # 84 = 1344 / 16
+```
+
+| 目标 | `auto` | 低分 |
+|---|---|---|
+| 1920x1088（1080p） | 0.70 | 1344x768 |
+| 2560x1440（2K） | 0.525 | 1344x768 |
+| 3840x2160（4K） | 0.35 | 1344x768 |
+
+- 按次覆盖：请求里传 `lowres_scale`（数字 0.25–1.0，或 `"auto"`）。显式给 `> 0.70` 不拦，但网关会告警说明代价。
+- `minimax-h3-self-lift*` 没做过一采扫描，默认仍是模板字面值 `0.40`（绑定已加，传 `"auto"` 就切过来）。
+- 原理与实测曲线见 [WORKFLOWS.md](WORKFLOWS.md) 与 `skill: selflift-progressive-upscale`。
 
 ### 同机跑多个 ComfyUI 实例
 
@@ -403,6 +427,7 @@ ComfyUI-Roundabout/
 │   ├── analyze.py         # 上传工作流时的参数映射自动分析
 │   ├── tasks.py           # 任务表
 │   ├── vram.py            # 显存探测 + 低显存分块档位选取（vram_adaptive）
+│   ├── lowres.py          # SelfLift 一采分辨率策略（lowres_scale 的 auto 反推）
 │   ├── log_filters.py     # 把 aiohttp「客户端断开」的 ERROR 降级为 DEBUG
 │   └── ...
 ├── web/                   # 前端（可视化页面 + 设置面板）

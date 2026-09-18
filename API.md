@@ -255,8 +255,9 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `duration` | float? | 时长 1–15 秒 |
 | `fps` | int? | 帧率 |
 | `num_frames` | int? | 总帧数（部分工作流用帧数而非时长） |
-| `motion` | string? | **命名运动档**（仅 SelfLift 系列）：`story`=文戏（总步数 6 / 过渡步 5）、`fight`=打戏（8 / 6）。不传用模型默认；与 `steps` / `transition_step` 同传时后者胜出 |
-| `transition_step` | int? | SelfLift 渐进采样的过渡步（低分切到高分的步位），**需小于 `steps`**；仅 SelfLift 系列（`minimax-h3-self-lift` / `-self-lift-edit`）有效 |
+| `motion` | string? | **命名运动档**（仅声明了 `motion_presets` 的 `minimax-h3-self-lift*`，`fastvideo-fasth3-self-lift*` 未声明、传了会报错）：`story`=文戏（总步数 6 / 过渡步 5）、`fight`=打戏（8 / 6）。不传用模型默认；与 `steps` / `transition_step` 同传时后者胜出 |
+| `transition_step` | int? | SelfLift 渐进采样的过渡步（低分切到高分的步位），合法区间 **`1 ≤ transition_step ≤ steps + extra_steps - 1`**（`extra_steps` = 高分阶段在 σ 网格上补的点数，随模型而定：`minimax-h3-self-lift*` 为 1、`fastvideo-fasth3-self-lift*` 为 2；越界会被网关在提交前拦下）。仅 SelfLift 系列（`minimax-h3-self-lift*` / `fastvideo-fasth3-self-lift*`）有效 |
+| `lowres_scale` | float \| `"auto"`? | SelfLift 一采（低分前缀）的相对分辨率，0.25–1.0。**`"auto"`**（`fastvideo-fasth3-self-lift*` 的默认）= 按目标尺寸反推，把低分长边压在 H3 原生画布 1344 上：1080p→`0.70`、2K→`0.525`、4K→`0.35`；`minimax-h3-self-lift*` 未实测，默认沿用模板字面值 `0.40`（显式传 `"auto"` 同样生效）。低分长边越过 1344 会掉宽谱细节并织出规则假网格，网关会告警但不拦（属于显式选择）。仅 SelfLift 系列有效 |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |
 | `image` | string\|string[]? | 图生视频输入 |
 | `reference_images` | string[]? | 参考图，最多 6，支持 base64/URL/本地路径 |
@@ -336,6 +337,8 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `minimax-h3-self-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 Ref2VA 权重；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
 | `fasth3` | video | text-to-video / image-to-video | FastVideo FastH3 8 步蒸馏档；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（首尾帧走关键帧槽 `first_frame` / `last_frame`，见 [WORKFLOWS.md](WORKFLOWS.md)） |
 | `fasth3-edit` | video | text-to-video / reference-to-video | FastH3 参考生视频；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
+| `fastvideo-fasth3-self-lift` | video | text-to-video / image-to-video | FastH3 加 SelfLift 渐进放大；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（走关键帧槽 `first_frame` / `last_frame`）。σ 标定与 `minimax-h3-self-lift` 不通用，默认 `steps=8` / `transition_step=8` |
+| `fastvideo-fasth3-self-lift-edit` | video | text-to-video / reference-to-video | 同上改用 Ref2VA 聚合节点；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
 
 > 完整别名与绑定关系见 `models.yaml`；模型清单与用途对照也见 [README.md](README.md#内置模型)。
 
@@ -414,9 +417,9 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | 工具 | 说明 |
 |---|---|
 | `list_models` | 列出可用模型及其能力 / 模式 / 默认参数 / 别名 |
-| `generate_image` | 文生图；支持 `negative_prompt`/`seed`/`size`/`steps`/`cfg`/`workflow_overrides`(JSON 字符串)/`mode`；返回 OpenAI 风格响应（含 `seed` 回显，url 已绝对化）；视频模型自动转视频链路。**编辑图片不要用本工具**（用 `edit_image` / `remove_background`） |
+| `generate_image` | 文生图；支持 `negative_prompt`/`seed`/`size`/`steps`/`cfg`/`workflow_overrides`(JSON 字符串)/`filename_prefix`/`mode`；返回 OpenAI 风格响应（含 `seed` 回显，url 已绝对化）；视频模型自动转视频链路。**编辑图片不要用本工具**（用 `edit_image` / `remove_background`） |
 | `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写），改图内文字传 `boogu-image-edit-turbo` / `boogu-image-edit`；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
-| `generate_video` | 文生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`reference_images|videos|audios`/`background`；`background:"pending"` 异步，再查 `get_task` |
+| `generate_video` | 文生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`reference_images|videos|audios`/`motion`/`steps`/`transition_step`/`lowres_scale`/`filename_prefix`/`background`；`background:"pending"` 异步，再查 `get_task` |
 | `remove_background` | 图片去背景（BiRefNet，独立工具，无需提示词）；参数 `image`(本地路径/URL/dataURL/base64)、`response_format`(默认 url)、`filename_prefix` |
 | `get_task` | 查询异步任务状态与产物（含 `prompt_id`、是否有工作流快照、`output`、`error`） |
 | `cancel_task` | 取消任务：`task_id` 非空取消指定任务（pending 移出队列 / running 中断）；**空则中断 ComfyUI 当前执行任务** |
@@ -425,6 +428,12 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `reload` | 热加载 `models.yaml` |
 | `health` | 网关与 ComfyUI 后端健康状态 |
 | `get_view_url` | 返回可视化页面地址（`{url}`，浏览器直接打开）：浏览 input/output 资源 + 实时任务进度。用户问「生成的东西在哪看」「给我查看页面」时调用，把 `url` 原样给用户 |
+
+> ⚠️ MCP 工具的形参是**逐个手写**的，与 REST 的 pydantic 请求模型是两条独立路径，二者并不自动对齐。
+> MCP SDK 的参数模型沿用 pydantic 默认的 `extra="ignore"`：**传入未声明的字段不报错、被直接丢弃**。
+> 所以遇到「文档里有的参数传了却没生效」时，先核对本表 —— 参数名不在上面就是被静默吃掉了。
+> 覆盖度由 `tests/test_mcp_param_coverage.py` 守护（REST 新增字段而 MCP 漏暴露、或加了形参忘了透传，都会直接测试失败）。
+> 另注：MCP 未暴露的字段仍可走 REST 端点传（两条路径最终汇入同一个 pipeline）。
 
 ### 7.1 可视化页面（view.html）
 

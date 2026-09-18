@@ -112,7 +112,18 @@ class VideoGenerationRequest(BaseModel):
         le=200,
         description=(
             "SelfLift 渐进采样的过渡步：低分辨率阶段结束后，在第几步切到高分辨率。"
-            "必须小于 `steps`。仅 SelfLift 系列（minimax-h3-self-lift*，含 -max 变体）有效。"
+            "合法区间 1 <= transition_step <= steps + extra_steps - 1，其中 extra_steps 是高分阶段"
+            "在 σ 网格上补的点数（随模型而定：minimax-h3-self-lift* 为 1、fastvideo-fasth3-self-lift* 为 2）；"
+            "越界时网关会在提交前拦下。仅 SelfLift 系列（minimax-h3-self-lift* / fastvideo-fasth3-self-lift*）有效。"
+        ),
+    )
+    lowres_scale: float | Literal["auto"] | None = Field(
+        None,
+        description=(
+            "SelfLift 低分前缀的相对分辨率（0.25–1.0），或 \"auto\"：按目标尺寸反推，"
+            "把低分长边压在 H3 原生画布 1344 上（1080p→0.70、2K→0.525、4K→0.35）。"
+            "fastvideo-fasth3-self-lift* 默认 auto；minimax-h3-self-lift* 未实测，默认仍走模板字面值 0.40。"
+            "低分长边越过 1344 会掉宽谱细节并织出规则假网格，网关会告警。仅 SelfLift 系列有效。"
         ),
     )
 
