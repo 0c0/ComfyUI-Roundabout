@@ -237,7 +237,8 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 图像编辑 | `boogu-image-edit` / `boogu-image-edit-turbo` | 擅长改写 / 添加**图内文字**，30 步 / 6 步 |
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
 | 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base 30 步 / edit 25 步），支持 6 图 + 3 视频 + 3 音频参考；低显存分块按档位自适应（`vram_adaptive`） |
-| 视频 | `minimax-h3-turbo` / `minimax-h3-turbo-edit` | 8 步快速版 |
+| 视频 | `minimax-h3-turbo` / `minimax-h3-turbo-edit` | 8 步快速版（Acc-8Step 蒸馏 LoRA，采样器 `res_multistep`）；低显存分块按档位自适应（`vram_adaptive`） |
+| 视频 | `minimax-h3-hyperflow` | HyperFlow 8 步加速档（Video Rebirth 无数据流自蒸馏 LoRA）。与 turbo 同构——都是「base 权重 + 8 步 LoRA」——差别只在 LoRA 换成 HyperFlow（strength 1.0）、采样器换 `euler` + `simple`；参考槽全套 6 图 + 3 视频 + 3 音频；产物落 `video/HyperFlow`；分块按档位自适应 |
 | 视频 | `minimax-h3-self-lift` | SelfLift 渐进采样（低分辨率 NFE + 高分辨率 NFE），基础权重直跑（**无 LoRA**，旧蒸馏 LoRA 版已于 2026-09-18 淘汰）；文生 / 首尾帧生视频靠 `reference_images` 插拔；分块按显存自动分档；`lowres_scale` 默认 `auto`；产物落 `video/MiniMax_H3_Lift`；`motion=story/fight`（story 8/8、fight 10/8） |
 | 视频 | `minimax-h3-self-lift-edit` | 同上，改用 Ref2VA 权重，参考槽保留全套 6 图 + 3 视频 + 3 音频 |
 | 视频 | `fasth3` | FastVideo FastH3 8 步蒸馏档；文生 / 首尾帧生视频（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）。首尾帧走**关键帧**槽 `first_frame` / `last_frame`，与自成一族的 `minimax-h3` 走参考图槽不是一条路 |
@@ -265,13 +266,14 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | `utility-birefnet-remove-background` | `background_removal/` `birefnet.safetensors` |
 | `minimax-h3` / `minimax-h3-edit` | `diffusion_models/` `minimax_h3_fl2va_int8_convrot.safetensors`、`minimax_h3_ref2va_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` · `vae/` `minimax_h3_video_vae_int8_convrot.safetensors`、`minimax_h3_audio_vae_fp32.safetensors` |
 | `minimax-h3-turbo` / `minimax-h3-turbo-edit` | 同上，另需 `loras/` `MiniMax-H3-FL2VA-Acc-8Step.safetensors` 或 `MiniMax-H3-Ref2VA-Acc-8Step.safetensors` |
+| `minimax-h3-hyperflow` | 同 `minimax-h3`（用 **FL2VA** 权重的 `minimax_h3_fl2va_int8_convrot.safetensors`），另需 `loras/` `minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors`。⚠ 该基础权重是**完整版**形态，只能用**非 pruned** 的 LoRA 文件；`*_pruned_*.safetensors` 是给 curve-form 权重（如 `fasth3` 用的那支）转换的，挂错会 key 不匹配 → LoRA 静默不加载 |
 | `minimax-h3-self-lift` / `-edit` | 同 `minimax-h3` / `minimax-h3-edit`，另需 `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors`（**不需要** `loras/`） |
 | `fasth3` / `fasth3-edit` | `diffusion_models/` `fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` · `vae/` `minimax_h3_video_vae_int8_convrot.safetensors`、`minimax_h3_audio_vae_fp32.safetensors` |
 | `fastvideo-fasth3-self-lift` / `-edit` | 同 `fasth3`，另需 `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors` |
 
 > 这些工作流用到的节点**除 SelfLift 系列（`minimax-h3-self-lift*` / `fastvideo-fasth3-self-lift*`）和基础两支 `minimax-h3` / `-edit`（它们也接了低显存分块节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` 等节点。
 > SelfLift 系列额外依赖两个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3Sampler` + `latent_upscale_models/` 下的上采样权重）与 `ComfyUI-YCNodes-MiniMax-H3`（`H3SigmaRefiner`，负责在 σ 网格尾部补 `extra_steps` 个高分点）。
-> 需要 KJNodes 的 `MiniMaxChunkFeedForward` / `MiniMaxLowVRAMAttention` 做显存分块的：`minimax-h3-self-lift*`（含无 LoRA 版）与基础两支 `minimax-h3` / `-edit`；turbo 两支与 FastH3 四支不接这两个节点，**不需要 ComfyUI-KJNodes**。
+> 需要 KJNodes 的 `MiniMaxChunkFeedForward` / `MiniMaxLowVRAMAttention` 做显存分块的：基础两支 `minimax-h3` / `-edit`、turbo 两支、`minimax-h3-hyperflow`，以及全部 SelfLift 支（`minimax-h3-self-lift*` / `fastvideo-fasth3-self-lift*`）。只有 FastH3 单阶段四支不接这两个节点，**不需要 ComfyUI-KJNodes**。
 > 上述权重多为 `int8_convrot` 量化版，只在你已具备同名权重的机器上开箱即用；换成自己的模型时，同步改工作流 JSON 里的文件名即可。
 
 ---

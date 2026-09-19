@@ -277,8 +277,8 @@ def main() -> int:  # noqa: C901
               VIDEO_VAE in vaes, f"{vaes}")
         check(f"{name}: audio VAE 仍是 fp32",
               AUDIO_VAE in vaes, f"{vaes}")
-    check("H3 系列视频模型总数为 10（4 支 MiniMax 常规 + 2 支 MiniMax SelfLift + 2 支 FastH3 + 2 支 FastH3 SelfLift）",
-          len([s for s in reg.all() if s.mode == "video"]) == 10,
+    check("H3 系列视频模型总数为 11（5 支 MiniMax 常规——含 HyperFlow 加速档 + 2 支 MiniMax SelfLift + 2 支 FastH3 + 2 支 FastH3 SelfLift）",
+          len([s for s in reg.all() if s.mode == "video"]) == 11,
           [s.name for s in reg.all() if s.mode == "video"])
 
     if saved_env is not None:

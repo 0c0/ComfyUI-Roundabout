@@ -1,7 +1,7 @@
 {
   "92": {
     "inputs": {
-      "filename_prefix": "video/MiniMax_H3",
+      "filename_prefix": "video/HyperFlow",
       "format": "auto",
       "format.codec": "auto",
       "codec": "auto",
@@ -67,7 +67,7 @@
   },
   "123": {
     "inputs": {
-      "sampler_name": "res_multistep"
+      "sampler_name": "euler"
     },
     "class_type": "KSamplerSelect",
     "_meta": {
@@ -80,7 +80,7 @@
       "steps": 8,
       "denoise": 1,
       "model": [
-        "159",
+        "158",
         0
       ]
     },
@@ -120,7 +120,7 @@
   "126": {
     "inputs": {
       "model": [
-        "159",
+        "158",
         0
       ],
       "conditioning": [
@@ -135,7 +135,7 @@
   },
   "127": {
     "inputs": {
-      "unet_name": "minimax_h3_ref2va_int8_convrot.safetensors",
+      "unet_name": "minimax_h3_fl2va_int8_convrot.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
@@ -156,7 +156,7 @@
   },
   "129": {
     "inputs": {
-      "noise_seed": 1043737271901742
+      "noise_seed": 343041436654223
     },
     "class_type": "RandomNoise",
     "_meta": {
@@ -306,7 +306,7 @@
   },
   "138": {
     "inputs": {
-      "value": "中远景，一只蝴蝶在空中飞舞，一只小猫一跃而起腾空抓向蝴蝶，蝴蝶闪开飞走，真实感毛发，真实比例\n"
+      "value": "test"
     },
     "class_type": "PrimitiveStringMultiline",
     "_meta": {
@@ -324,8 +324,8 @@
   },
   "142": {
     "inputs": {
-      "lora_name": "MiniMax-H3-Ref2VA-Acc-8Step.safetensors",
-      "strength_model": 0.75,
+      "lora_name": "minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors",
+      "strength_model": 1.0,
       "model": [
         "127",
         0
@@ -375,7 +375,7 @@
   "147": {
     "inputs": {
       "video": [
-        "154",
+        "153",
         0
       ]
     },
@@ -387,7 +387,7 @@
   "148": {
     "inputs": {
       "video": [
-        "155",
+        "154",
         0
       ]
     },
@@ -399,7 +399,7 @@
   "149": {
     "inputs": {
       "video": [
-        "156",
+        "155",
         0
       ]
     },
@@ -435,9 +435,19 @@
       "title": "加载音频"
     }
   },
-  "154": {
+  "153": {
     "inputs": {
       "file": "hermes_dtest_refvid_0.mp4",
+      "video-preview": ""
+    },
+    "class_type": "LoadVideo",
+    "_meta": {
+      "title": "加载视频"
+    }
+  },
+  "154": {
+    "inputs": {
+      "file": "video/MiniMax_H3_00049_.mp4 [output]",
       "video-preview": ""
     },
     "class_type": "LoadVideo",
@@ -447,7 +457,7 @@
   },
   "155": {
     "inputs": {
-      "file": "hermes_dtest_refvid_0.mp4",
+      "file": "video/MiniMax_H3_00049_.mp4 [output]",
       "video-preview": ""
     },
     "class_type": "LoadVideo",
@@ -456,16 +466,6 @@
     }
   },
   "156": {
-    "inputs": {
-      "file": "hermes_dtest_refvid_0.mp4",
-      "video-preview": ""
-    },
-    "class_type": "LoadVideo",
-    "_meta": {
-      "title": "加载视频"
-    }
-  },
-  "157": {
     "inputs": {
       "attention": "comfy kitchen attention",
       "model": [
@@ -478,11 +478,11 @@
       "title": "ModelAttentionBackend"
     }
   },
-  "158": {
+  "157": {
     "inputs": {
       "head_chunks": 4,
       "model": [
-        "157",
+        "156",
         0
       ]
     },
@@ -491,12 +491,12 @@
       "title": "低显存注意力分块"
     }
   },
-  "159": {
+  "158": {
     "inputs": {
       "chunks": 1,
       "seq_threshold": 262144,
       "model": [
-        "158",
+        "157",
         0
       ]
     },

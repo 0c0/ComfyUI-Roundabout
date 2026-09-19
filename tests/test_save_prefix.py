@@ -23,6 +23,7 @@ H3_PREFIX = "video/MiniMax_H3"
 H3_LIFT_PREFIX = "video/MiniMax_H3_Lift"
 FASTH3_PREFIX = "video/FastH3"
 FASTH3_LIFT_PREFIX = "video/FastH3_Lift"
+HYPERFLOW_PREFIX = "video/HyperFlow"
 
 passed = failed = 0
 
@@ -73,8 +74,9 @@ for spec in video_specs:
     check(f"{spec.name}: {prefix!r} 在 video/ 下", str(prefix).startswith(VIDEO_PREFIX), prefix)
 
 print("\n== 3. H3 各族各自的保存目录 ==")
-# 四族分开落盘，产物目录一眼能分辨来源：
-#   MiniMax H3（常规 + 旧 SelfLift）      → video/MiniMax_H3
+# 各族分开落盘，产物目录一眼能分辨来源：
+#   MiniMax H3（常规 + turbo）             → video/MiniMax_H3
+#   HyperFlow 8 步加速档                   → video/HyperFlow
 #   MiniMax H3 SelfLift 无 LoRA 版        → video/MiniMax_H3_Lift
 #   FastVideo FastH3                      → video/FastH3
 #   FastH3 + SelfLift 放大                → video/FastH3_Lift
@@ -83,6 +85,8 @@ print("\n== 3. H3 各族各自的保存目录 ==")
 FAMILIES = (
     (H3_PREFIX, ["minimax-h3", "minimax-h3-edit", "minimax-h3-turbo", "minimax-h3-turbo-edit"],
      "4 支常规"),
+    (HYPERFLOW_PREFIX, ["minimax-h3-hyperflow"],
+     "HyperFlow 加速档（base 权重 + 8 步 LoRA，采样器 euler）"),
     (H3_LIFT_PREFIX, ["minimax-h3-self-lift", "minimax-h3-self-lift-edit"],
      "SelfLift 两支（无 LoRA，产物与常规分开落盘）"),
     (FASTH3_PREFIX, ["fasth3", "fasth3-edit"], "文生/首尾帧 + 参考生视频"),
@@ -90,7 +94,7 @@ FAMILIES = (
      "SelfLift 渐进放大的同两支"),
 )
 all_h3 = [s for s in video_specs if "h3" in s.name]
-check("h3 家族合计 10 支", len(all_h3) == 10, [s.name for s in all_h3])
+check("h3 家族合计 11 支", len(all_h3) == 11, [s.name for s in all_h3])
 covered = [name for _, names, _ in FAMILIES for name in names]
 check("名单覆盖全部 h3 模型（新增模型必须显式登记）",
       sorted(covered) == sorted(s.name for s in all_h3),

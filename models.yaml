@@ -495,12 +495,13 @@ models:
     - h3-edit
   minimax-h3-turbo:
     workflow: video_minimax_h3_turbo.json
-    description: MiniMax H3 Turbo —— 8 步快速视频生成
+    description: MiniMax H3 Turbo —— 8 步快速视频生成，低显存分块按档位自适应
     mode: video
     capabilities:
     - text-to-video
     output_node: '92'
     timeout: 1800
+    vram_adaptive: true
     references:
       aggregator: '136'
       images:
@@ -539,18 +540,22 @@ models:
       height: 136.inputs.height
       duration: 132.inputs.value
       fps: 130.inputs.fps
+      chunks: 158.inputs.chunks
+      head_chunks: 157.inputs.head_chunks
+      seq_threshold: 158.inputs.seq_threshold
     aliases:
     - minimax_h3_turbo
     - minimaxh3turbo
     - h3-turbo
   minimax-h3-turbo-edit:
     workflow: video_minimax_h3_turbo_edit.json
-    description: MiniMax H3 Turbo Edit —— 8 步快速参考 / 图生视频编辑
+    description: MiniMax H3 Turbo Edit —— 8 步快速参考 / 图生视频编辑，低显存分块按档位自适应
     mode: video
     capabilities:
     - text-to-video
     output_node: '92'
     timeout: 1800
+    vram_adaptive: true
     references:
       aggregator: '136'
       images:
@@ -589,10 +594,78 @@ models:
       height: 136.inputs.height
       duration: 132.inputs.value
       fps: 130.inputs.fps
+      chunks: 159.inputs.chunks
+      head_chunks: 158.inputs.head_chunks
+      seq_threshold: 159.inputs.seq_threshold
     aliases:
     - minimax_h3_turbo_edit
     - minimaxh3turboedit
     - h3-turbo-edit
+
+  # ===================== HyperFlow 8 步 LoRA =====================
+  # Video Rebirth 的 HyperFlow（无数据流自蒸馏）8 步 LoRA，社区有 ComfyUI 转换版。
+  # 拓扑与 turbo 同构（base 权重 minimax_h3_fl2va_int8_convrot + LoRA），差别只在：
+  #   - LoRA 换成 HyperFlow（strength 1.0，官方推荐起点）
+  #   - 采样器换成 euler（turbo 的 Acc-8Step LoRA 是配 res_multistep 调的；
+  #     HyperFlow 官方推荐 euler + simple/normal，或它自带的 9 点 manual sigma）
+  # ⚠ LoRA 文件必须与 base 形态配对：本工作流挂的是**完整版** base，
+  #   所以只能用非 pruned 文件。pruned 版是给 curve-form 权重（如 FastH3 那支
+  #   fastvideo_fasth3_8step_v2_pruned）用的；挂错会 key 不匹配 → LoRA 静默不加载。
+  # 低显存分块同 turbo（KJNodes 两支，按档位自适应）。
+  minimax-h3-hyperflow:
+    workflow: video_minimax_h3_hyperflow.json
+    description: MiniMax H3 + HyperFlow 8 步 LoRA —— 文生视频 / 参考生视频，8 步快速档（euler + simple）
+    mode: video
+    capabilities:
+    - text-to-video
+    output_node: '92'
+    timeout: 1800
+    vram_adaptive: true
+    references:
+      aggregator: '136'
+      images:
+      - '137'
+      - '139'
+      - '143'
+      - '144'
+      - '145'
+      - '146'
+      videos:
+      - '153'
+      - '154'
+      - '155'
+      audios:
+      - '150'
+      - '151'
+      - '152'
+    defaults:
+      width: 1344
+      height: 768
+      steps: 8
+      sampler_name: euler
+      scheduler: simple
+      denoise: 1
+      duration: 5
+      fps: 24
+    bindings:
+      filename_prefix: 92.inputs.filename_prefix
+      prompt: 138.inputs.value
+      seed: 129.inputs.noise_seed
+      steps: 124.inputs.steps
+      sampler_name: 123.inputs.sampler_name
+      scheduler: 124.inputs.scheduler
+      denoise: 124.inputs.denoise
+      width: 136.inputs.width
+      height: 136.inputs.height
+      duration: 132.inputs.value
+      fps: 130.inputs.fps
+      chunks: 158.inputs.chunks
+      head_chunks: 157.inputs.head_chunks
+      seq_threshold: 158.inputs.seq_threshold
+    aliases:
+    - minimax_h3_hyperflow
+    - hyperflow
+    - h3-hyperflow
 
   # ===================== MiniMax H3 SelfLift 变体 =====================
   # 拓扑与前四个 H3 不同：走 SelfLiftH3Sampler 渐进采样（低分辨率 NFE + 高分辨率 NFE），
