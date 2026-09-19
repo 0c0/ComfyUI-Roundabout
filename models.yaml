@@ -606,15 +606,19 @@ models:
   # Video Rebirth 的 HyperFlow（无数据流自蒸馏）8 步 LoRA，社区有 ComfyUI 转换版。
   # 拓扑与 turbo 同构（base 权重 minimax_h3_fl2va_int8_convrot + LoRA），差别只在：
   #   - LoRA 换成 HyperFlow（strength 1.0，官方推荐起点）
-  #   - 采样器换成 euler（turbo 的 Acc-8Step LoRA 是配 res_multistep 调的；
-  #     HyperFlow 官方推荐 euler + simple/normal，或它自带的 9 点 manual sigma）
+  #   - 采样器换成 euler，σ 换成 ManualSigmas 写死的 LoRA 官方 9 点序列。
+  #     ⚠ 不能靠 BasicScheduler(simple)：它在 shift=12 下给出的 8 步网格到第 8 步才降到 0.63
+  #     （几乎没降噪），与官方序列最大差 0.639 —— 2026-09-19 实测就是它把音频压到 -40.5 dB、
+  #     画面发糊的根因。内建 scheduler 无一能复现官方序列（最接近的 beta 也差 0.56）。
+  #     所以 124 是 ManualSigmas 而非 BasicScheduler，steps / scheduler / denoise 都没有绑定：
+  #     **本档步数由 σ 点数固定为 8，不是可调参数**（同蒸馏档的既有教训）。
   # ⚠ LoRA 文件必须与 base 形态配对：本工作流挂的是**完整版** base，
   #   所以只能用非 pruned 文件。pruned 版是给 curve-form 权重（如 FastH3 那支
   #   fastvideo_fasth3_8step_v2_pruned）用的；挂错会 key 不匹配 → LoRA 静默不加载。
   # 低显存分块同 turbo（KJNodes 两支，按档位自适应）。
   minimax-h3-hyperflow:
     workflow: video_minimax_h3_hyperflow.json
-    description: MiniMax H3 + HyperFlow 8 步 LoRA —— 文生视频 / 参考生视频，8 步快速档（euler + simple）
+    description: MiniMax H3 + HyperFlow 8 步 LoRA —— 文生视频 / 参考生视频，8 步快速档（euler + 固定 9 点 σ）
     mode: video
     capabilities:
     - text-to-video
@@ -641,20 +645,14 @@ models:
     defaults:
       width: 1344
       height: 768
-      steps: 8
       sampler_name: euler
-      scheduler: simple
-      denoise: 1
       duration: 5
       fps: 24
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
       seed: 129.inputs.noise_seed
-      steps: 124.inputs.steps
       sampler_name: 123.inputs.sampler_name
-      scheduler: 124.inputs.scheduler
-      denoise: 124.inputs.denoise
       width: 136.inputs.width
       height: 136.inputs.height
       duration: 132.inputs.value

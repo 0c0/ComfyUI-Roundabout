@@ -237,8 +237,8 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 图像编辑 | `boogu-image-edit` / `boogu-image-edit-turbo` | 擅长改写 / 添加**图内文字**，30 步 / 6 步 |
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
 | 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base 30 步 / edit 25 步），支持 6 图 + 3 视频 + 3 音频参考；低显存分块按档位自适应（`vram_adaptive`） |
-| 视频 | `minimax-h3-turbo` / `minimax-h3-turbo-edit` | 8 步快速版（Acc-8Step 蒸馏 LoRA，采样器 `res_multistep`）；低显存分块按档位自适应（`vram_adaptive`） |
-| 视频 | `minimax-h3-hyperflow` | HyperFlow 8 步加速档（Video Rebirth 无数据流自蒸馏 LoRA）。与 turbo 同构——都是「base 权重 + 8 步 LoRA」——差别只在 LoRA 换成 HyperFlow（strength 1.0）、采样器换 `euler` + `simple`；参考槽全套 6 图 + 3 视频 + 3 音频；产物落 `video/HyperFlow`；分块按档位自适应 |
+| 视频 | `minimax-h3-turbo` / `minimax-h3-turbo-edit` | 8 步快速版，采样器 `res_multistep`；低显存分块按档位自适应（`vram_adaptive`）。⚠ 工作流里挂的 `MiniMax-H3-*-Acc-8Step.safetensors` 是 **diffusers 命名**，ComfyUI 的 H3 loader 只认 `diffusion_model.blocks.*` → 728 个 key 全部 warning、**零 patch 挂上**，实际等同裸 base 跑 8 步（2026-09-19 实测）。要真加速须换 ComfyUI 命名的 LoRA（如 `minimax_h3_fl2v_turbo_4step_v0.1_comfy`，配 `er_sde`）或改用 PDD 专用节点 |
+| 视频 | `minimax-h3-hyperflow` | HyperFlow 8 步加速档（Video Rebirth 无数据流自蒸馏 LoRA）。与 turbo 同构——都是「base 权重 + 8 步 LoRA」——差别在 LoRA 换成 HyperFlow（strength 1.0）、采样器 `euler`、σ 改由 `ManualSigmas` 写死 LoRA 官方 9 点序列；参考槽全套 6 图 + 3 视频 + 3 音频；产物落 `video/HyperFlow`；分块按档位自适应。⚠ **该档的 `steps` 不是可调参数**（σ 点数已定死 8）。别换回 `BasicScheduler(simple)`：它在 shift=12 下给出的 8 步网格与官方序列最大差 0.639（第 8 步才降到 0.63，几乎没降噪），实测会把音频压到 −40.5 dB、画面发糊 |
 | 视频 | `minimax-h3-self-lift` | SelfLift 渐进采样（低分辨率 NFE + 高分辨率 NFE），基础权重直跑（**无 LoRA**，旧蒸馏 LoRA 版已于 2026-09-18 淘汰）；文生 / 首尾帧生视频靠 `reference_images` 插拔；分块按显存自动分档；`lowres_scale` 默认 `auto`；产物落 `video/MiniMax_H3_Lift`；`motion=story/fight`（story 8/8、fight 10/8） |
 | 视频 | `minimax-h3-self-lift-edit` | 同上，改用 Ref2VA 权重，参考槽保留全套 6 图 + 3 视频 + 3 音频 |
 | 视频 | `fasth3` | FastVideo FastH3 8 步蒸馏档；文生 / 首尾帧生视频（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）。首尾帧走**关键帧**槽 `first_frame` / `last_frame`，与自成一族的 `minimax-h3` 走参考图槽不是一条路 |

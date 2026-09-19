@@ -76,17 +76,11 @@
   },
   "124": {
     "inputs": {
-      "scheduler": "simple",
-      "steps": 8,
-      "denoise": 1,
-      "model": [
-        "158",
-        0
-      ]
+      "sigmas": "1.0, 0.931506, 0.839236, 0.703462, 0.5, 0.296538, 0.160764, 0.068494, 0.0"
     },
-    "class_type": "BasicScheduler",
+    "class_type": "ManualSigmas",
     "_meta": {
-      "title": "基本调度器"
+      "title": "HyperFlow 官方 9 点 sigma（固定 8 步）"
     }
   },
   "125": {

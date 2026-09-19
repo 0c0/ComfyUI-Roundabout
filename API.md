@@ -268,6 +268,8 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `async` | bool? | 兼容别名，`true` 等价于 `background:"pending"` |
 | `workflow_overrides` / `filename_prefix` | 各? | 同图像 |
 
+> ⚠ `minimax-h3-hyperflow` 的 σ 是 LoRA 官方 9 点序列（`ManualSigmas` 写死），**步数固定 8** —— 传 `steps` / `scheduler` / `denoise` 对它无效（不报错，也不会改变结果）。
+
 > **外部来源的参考素材会被复制进 ComfyUI 的 `input/`**：`http(s)` / `dataURL` / `base64`，以及**不在 `input/` 目录下**的本地路径（含 `output/`、`temp/`）都要先转存；命名形如 `{请求id}_ref{img|vid|aud}_{槽位序号}.{ext}`（如 `18ae9470d11a-0_refvid_0.mp4`，其中 `18ae9470d11a-0` 是 `请求id-批次号`）。**已经在 `input/` 内的文件免转存、沿用原名**。输入图与 mask 同理，命名为 `{请求id}_src.{ext}` / `{请求id}_mask.{ext}`。这些副本会留在 `input/` 里，需要时自行清理。
 
 **同步响应**（200）：`{ "created", "data":[{ "url" }], "seed", "references":[...] }`。
