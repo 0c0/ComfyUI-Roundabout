@@ -312,85 +312,29 @@ models:
     - image-flux2-klein-image-edit-turbo   # 旧名，向后兼容
     - flux2-edit-turbo
     - image_flux2_klein_image_edit_turbo
-  mage-flow-base:
-    workflow: image_mage_flow_base.json
-    description: MageFlow base —— 30 步文生图
-    mode: image
-    capabilities:
-    - text-to-image
-    output_node: '10'
-    timeout: 300
-    defaults:
-      width: 1024
-      height: 1024
-      steps: 30
-      cfg: 5
-      sampler_name: euler
-      scheduler: simple
-      denoise: 1
-    bindings:
-      filename_prefix: 10.inputs.filename_prefix
-      prompt: 12:5.inputs.prompt
-      negative_prompt: 12:5.inputs.negative_prompt
-      seed: 12:6.inputs.seed
-      steps: 12:6.inputs.steps
-      cfg: 12:6.inputs.cfg
-      sampler_name: 12:6.inputs.sampler_name
-      scheduler: 12:6.inputs.scheduler
-      denoise: 12:6.inputs.denoise
-      width: 12:5.inputs.width
-      height: 12:5.inputs.height
-    aliases:
-    - mageflow
-  mage-flow-turbo:
-    workflow: image_mage_flow_turbo.json
-    description: MageFlow Turbo —— 4 步快速出图
-    mode: image
-    capabilities:
-    - text-to-image
-    output_node: '10'
-    timeout: 300
-    defaults:
-      width: 1024
-      height: 1024
-      steps: 4
-      cfg: 1
-      sampler_name: euler
-      scheduler: simple
-      denoise: 1
-    bindings:
-      filename_prefix: 10.inputs.filename_prefix
-      prompt: 12:5.inputs.prompt
-      negative_prompt: 12:5.inputs.negative_prompt
-      seed: 12:6.inputs.seed
-      steps: 12:6.inputs.steps
-      cfg: 12:6.inputs.cfg
-      sampler_name: 12:6.inputs.sampler_name
-      scheduler: 12:6.inputs.scheduler
-      denoise: 12:6.inputs.denoise
-      width: 12:5.inputs.width
-      height: 12:5.inputs.height
-    aliases:
-    - mageflow-turbo
 
   # ===================== MiniMax H3 视频系列 =====================
-  # 说明：4 个工作流节点拓扑完全一致（aggregator=136 / output=92）：
+  # 说明：聚合节点固定在 136、输出在 92；两支按「权重类型」分家，节点不同：
+  #   - FL2VA（base / lift）：权重 *_fl2va_*，条件节点
+  #     MiniMaxH3ImageToVideo —— 官方 t2v / i2v 模板同款，T2VA 与首尾帧共用，
+  #     参考槽是关键帧 first_frame / last_frame（references.image_keys 覆盖键名）。
+  #   - Ref2VA（-edit / -lift-edit）：权重 *_ref2va_*，条件节点
+  #     MiniMaxH3ReferenceToVideo —— 参考槽是 6 图 / 3 视频 / 3 音频（*_ref2va_* 权重才吃这套）。
+  #   共同点：
   #   - 提示词文本在 PrimitiveStringMultiline(138).inputs.value
   #   - 时长在 PrimitiveFloat(132).inputs.value（经 ComfyMathExpression 推导 length）
   #   - 种子在 RandomNoise(129).inputs.noise_seed
   #   - steps/scheduler/denoise 在 BasicScheduler(124)；sampler_name 在 KSamplerSelect(123)
   #   - width/height 在 aggregator(136)；fps 在 CreateVideo(130)
-  #   - 参考资源：6 图(LoadImage 137/139/143/144/145/146)、3 视频(LoadVideo 153/154/155，上游经
-  #     GetVideoComponents 147/148/149 接入 aggregator)、3 音频(LoadAudio 150/151/152)。
-  #     未上传的资源由网关在发送前动态删除对应节点（删 LoadVideo 会级联删其 GetVideoComponents，
+  #   - 未上传的资源由网关在发送前动态删除对应节点（删 LoadVideo 会级联删其 GetVideoComponents，
   #     见 references 段与 gateway/pipeline.py 的 _prune_unused_references）。
-  #   - _edit 变体在当前导出模板中与 base 同构（额外节点 142 仅 turbo 有），绑定一致。
   minimax-h3:
     workflow: video_minimax_h3.json
-    description: MiniMax H3 (FL2VA) —— 文生视频 / 参考生视频，30 步，低显存分块按档位自适应
+    description: MiniMax H3 (FL2VA) —— 文生视频 / 首尾帧生视频，30 步，低显存分块按档位自适应
     mode: video
     capabilities:
     - text-to-video
+    - image-to-video
     output_node: '92'
     timeout: 1800
     references:
@@ -398,18 +342,9 @@ models:
       images:
       - '137'
       - '139'
-      - '143'
-      - '144'
-      - '145'
-      - '146'
-      videos:
-      - '153'
-      - '154'
-      - '155'
-      audios:
-      - '150'
-      - '151'
-      - '152'
+      image_keys:
+      - first_frame
+      - last_frame
     vram_adaptive: true
     defaults:
       width: 1344
@@ -420,6 +355,29 @@ models:
       denoise: 1
       duration: 5
       fps: 24
+
+    quality_presets:
+      # 画质分档（D0-D3 定案 2026-09-20，全部实测口径 rm+simple）：
+      # draft=D0 草稿 576p 最快出构图；standard=D1 日常 720p；hd=D2 交付 768p 原生顶格
+      # （多 seed 挑片由调用方传 n=3）；high=官方 30 步全步数分布（细节上限，最慢）。
+      # turbo 两支已删（Acc LoRA 在 ComfyUI 零 patch，turbo 实为裸 base@8）——8 步快跑
+      # 由 draft 档承接。
+      draft:
+        width: 1024
+        height: 576
+        steps: 8
+      standard:
+        width: 1280
+        height: 720
+        steps: 8
+      hd:
+        width: 1344
+        height: 768
+        steps: 8
+      high:
+        width: 1344
+        height: 768
+        steps: 30
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
@@ -493,347 +451,26 @@ models:
     - minimax_h3_edit
     - minimaxh3edit
     - h3-edit
-  minimax-h3-turbo:
-    workflow: video_minimax_h3_turbo.json
-    description: MiniMax H3 Turbo —— 8 步快速视频生成，低显存分块按档位自适应
-    mode: video
-    capabilities:
-    - text-to-video
-    output_node: '92'
-    timeout: 1800
-    vram_adaptive: true
-    references:
-      aggregator: '136'
-      images:
-      - '137'
-      - '139'
-      - '143'
-      - '144'
-      - '145'
-      - '146'
-      videos:
-      - '153'
-      - '154'
-      - '155'
-      audios:
-      - '150'
-      - '151'
-      - '152'
-    defaults:
-      width: 1344
-      height: 768
-      steps: 8
-      sampler_name: res_multistep
-      scheduler: simple
-      denoise: 1
-      duration: 5
-      fps: 24
-    bindings:
-      filename_prefix: 92.inputs.filename_prefix
-      prompt: 138.inputs.value
-      seed: 129.inputs.noise_seed
-      steps: 124.inputs.steps
-      sampler_name: 123.inputs.sampler_name
-      scheduler: 124.inputs.scheduler
-      denoise: 124.inputs.denoise
-      width: 136.inputs.width
-      height: 136.inputs.height
-      duration: 132.inputs.value
-      fps: 130.inputs.fps
-      chunks: 158.inputs.chunks
-      head_chunks: 157.inputs.head_chunks
-      seq_threshold: 158.inputs.seq_threshold
-    aliases:
-    - minimax_h3_turbo
-    - minimaxh3turbo
-    - h3-turbo
-  minimax-h3-turbo-edit:
-    workflow: video_minimax_h3_turbo_edit.json
-    description: MiniMax H3 Turbo Edit —— 8 步快速参考 / 图生视频编辑，低显存分块按档位自适应
-    mode: video
-    capabilities:
-    - text-to-video
-    output_node: '92'
-    timeout: 1800
-    vram_adaptive: true
-    references:
-      aggregator: '136'
-      images:
-      - '137'
-      - '139'
-      - '143'
-      - '144'
-      - '145'
-      - '146'
-      videos:
-      - '154'
-      - '155'
-      - '156'
-      audios:
-      - '150'
-      - '151'
-      - '152'
-    defaults:
-      width: 1344
-      height: 768
-      steps: 8
-      sampler_name: res_multistep
-      scheduler: simple
-      denoise: 1
-      duration: 5
-      fps: 24
-    bindings:
-      filename_prefix: 92.inputs.filename_prefix
-      prompt: 138.inputs.value
-      seed: 129.inputs.noise_seed
-      steps: 124.inputs.steps
-      sampler_name: 123.inputs.sampler_name
-      scheduler: 124.inputs.scheduler
-      denoise: 124.inputs.denoise
-      width: 136.inputs.width
-      height: 136.inputs.height
-      duration: 132.inputs.value
-      fps: 130.inputs.fps
-      chunks: 159.inputs.chunks
-      head_chunks: 158.inputs.head_chunks
-      seq_threshold: 159.inputs.seq_threshold
-    aliases:
-    - minimax_h3_turbo_edit
-    - minimaxh3turboedit
-    - h3-turbo-edit
+  # minimax-h3-hyperflow 已于 2026-09-21 下线（本地跑不通，与 turbo 一档同款处置）：
+  #   HyperFlow 8 步蒸馏档 —— 完整版 FL2VA 权重 + HyperFlow LoRA（euler + 固定 9 点 ManualSigmas）。
+  #   离线原因：drbaph 社区转换版把端点适配器 endpoint_time_embedder.* 并进了
+  #   time_embedder.proj_in/proj_out，端点条件进不了模型（画面出现非单段式晕开）；
+  #   要完整效果得上游原版（videorebirth/hyperflow）+ 专用节点包
+  #   Addis-Pulse-Studio/ComfyUI-HyperFlow，成本不划算。
+  #   8 步快跑已由 minimax-h3 的 quality=draft（1024x576@8）与 fasth3 承接。
+  #   工作流备份：.workbuddy/stash/video_minimax_h3_hyperflow.json（复原时拷回 workflows/ 并恢复本条目）。
 
-  # ===================== HyperFlow 8 步 LoRA =====================
-  # Video Rebirth 的 HyperFlow（无数据流自蒸馏）8 步 LoRA，社区有 ComfyUI 转换版。
-  # 拓扑与 turbo 同构（base 权重 minimax_h3_fl2va_int8_convrot + LoRA），差别只在：
-  #   - LoRA 换成 HyperFlow（strength 1.0，官方推荐起点）
-  #   - 采样器换成 euler，σ 换成 ManualSigmas 写死的 LoRA 官方 9 点序列。
-  #     ⚠ 不能靠 BasicScheduler(simple)：它在 shift=12 下给出的 8 步网格到第 8 步才降到 0.63
-  #     （几乎没降噪），与官方序列最大差 0.639 —— 2026-09-19 实测就是它把音频压到 -40.5 dB、
-  #     画面发糊的根因。内建 scheduler 无一能复现官方序列（最接近的 beta 也差 0.56）。
-  #     所以 124 是 ManualSigmas 而非 BasicScheduler，steps / scheduler / denoise 都没有绑定：
-  #     **本档步数由 σ 点数固定为 8，不是可调参数**（同蒸馏档的既有教训）。
-  # ⚠ LoRA 文件必须与 base 形态配对：本工作流挂的是**完整版** base，
-  #   所以只能用非 pruned 文件。pruned 版是给 curve-form 权重（如 FastH3 那支
-  #   fastvideo_fasth3_8step_v2_pruned）用的；挂错会 key 不匹配 → LoRA 静默不加载。
-  # 低显存分块同 turbo（KJNodes 两支，按档位自适应）。
-  minimax-h3-hyperflow:
-    workflow: video_minimax_h3_hyperflow.json
-    description: MiniMax H3 + HyperFlow 8 步 LoRA —— 文生视频 / 参考生视频，8 步快速档（euler + 固定 9 点 σ）
-    mode: video
-    capabilities:
-    - text-to-video
-    output_node: '92'
-    timeout: 1800
-    vram_adaptive: true
-    references:
-      aggregator: '136'
-      images:
-      - '137'
-      - '139'
-      - '143'
-      - '144'
-      - '145'
-      - '146'
-      videos:
-      - '153'
-      - '154'
-      - '155'
-      audios:
-      - '150'
-      - '151'
-      - '152'
-    defaults:
-      width: 1344
-      height: 768
-      sampler_name: euler
-      duration: 5
-      fps: 24
-    bindings:
-      filename_prefix: 92.inputs.filename_prefix
-      prompt: 138.inputs.value
-      seed: 129.inputs.noise_seed
-      sampler_name: 123.inputs.sampler_name
-      width: 136.inputs.width
-      height: 136.inputs.height
-      duration: 132.inputs.value
-      fps: 130.inputs.fps
-      chunks: 158.inputs.chunks
-      head_chunks: 157.inputs.head_chunks
-      seq_threshold: 158.inputs.seq_threshold
-    aliases:
-    - minimax_h3_hyperflow
-    - hyperflow
-    - h3-hyperflow
-
-  # ===================== MiniMax H3 SelfLift 变体 =====================
-  # 拓扑与前四个 H3 不同：走 SelfLiftH3Sampler 渐进采样（低分辨率 NFE + 高分辨率 NFE），
-  # 聚合节点仍是 MiniMaxH3ReferenceToVideo(136)，输出是 SaveVideo(238) 而非 92。
-  # 文生视频 / 首尾帧生视频靠两个 LoadImage 的插拔区分：都旁路（或在请求里不传
-  # reference_images）即文生视频；接上 ref_image_0 / ref_image_1 即带图生成。
-  # 请求未提供的图由网关在提交前删掉对应 LoadImage，见 gateway/pipeline.py 的
-  # _prune_unused_references。
-  # 分块参数（chunks / head_chunks / seq_threshold / highres_tiling）不写死在这里，
-  # 由 `vram_adaptive` 按本机显存从 defaults.vram_tiers 取档（显存探测见 gateway/vram.py）。
-  minimax-h3-self-lift:
-    workflow: video_minimax_h3_self_lift.json
-    description: MiniMax H3 SelfLift —— 文生视频 / 首尾帧生视频，基础权重直跑两阶段渐进采样（无 LoRA），参数按显存自动分档
-    mode: video
-    capabilities:
-    - text-to-video
-    - image-to-video
-    output_node: '238'
-    # SelfLift 要比常规 H3 多跑一轮高分辨率阶段，给更宽的窗口；
-    # 想要完全不限时仍可设 JOB_TIMEOUT=0。
-    timeout: 3600
-    vram_adaptive: true
-    references:
-      aggregator: '136'
-      images:
-      - '150'
-      - '164'
-    defaults:
-      width: 1344
-      height: 768
-      motion: story
-      steps: 8
-      transition_step: 8
-      extra_steps: 2
-      start_at_sigma: 0.9
-      # 基础权重直跑，一采分辨率贴住 1344 原生画布（auto = min(84/目标长边latent, 0.70)）
-      lowres_scale: auto
-      sampler_name: euler
-      scheduler: simple
-      denoise: 1
-      duration: 10
-      fps: 24
-    bindings:
-      filename_prefix: 238.inputs.filename_prefix
-      prompt: 232.inputs.value
-      seed: 235.inputs.seed
-      steps: 124.inputs.steps
-      sampler_name: 123.inputs.sampler_name
-      scheduler: 124.inputs.scheduler
-      denoise: 124.inputs.denoise
-      width: 136.inputs.width
-      height: 136.inputs.height
-      duration: 132.inputs.value
-      fps: 234.inputs.fps
-      chunks: 219.inputs.chunks
-      head_chunks: 220.inputs.head_chunks
-      seq_threshold: 219.inputs.seq_threshold
-      highres_tiling: 235.inputs.highres_tiling
-      transition_step: 235.inputs.transition_step
-      lowres_scale: 235.inputs.lowres_scale
-    # 起点沿用 fastvideo-fasth3-self-lift 的实测配方（story=8/8）；
-    # 打戏加总步数不加过渡步，避免高分阶段网状假纹理加重（ts 实验 2026-09-17）。
-    motion_presets:
-      story:
-        steps: 8
-        transition_step: 8
-      fight:
-        steps: 10
-        transition_step: 8
-    aliases:
-    - minimax_h3_self_lift
-    - minimaxh3selflift
-    - h3-selflift
-    - h3-self-lift
-    - selflift
-    - self-lift
-    # 旧「无 LoRA 版」命名与别名保留，向后兼容
-    - minimax-h3-self-lift-nolora
-    - minimax_h3_self_lift_nolora
-    - h3-selflift-nolora
-    - h3-self-lift-nolora
-
-  # Ref2VA 版 SelfLift：采样链路、低显存分块、显存分档与上面那支完全一致，
-  # 差别只在 UNET 换 ref2va 权重（同为无 LoRA 两阶段），参考槽扩为全套 6 图 + 3 视频 + 3 音频。
-  # 参考视频与其音轨同源（GetVideoComponents 的两个输出），未提供时网关成对删除。
-  minimax-h3-self-lift-edit:
-    workflow: video_minimax_h3_self_lift_edit.json
-    description: MiniMax H3 SelfLift Ref2VA —— 参考图 / 视频 / 音频生视频，基础权重直跑两阶段渐进采样（无 LoRA）
-    mode: video
-    capabilities:
-    - text-to-video
-    - image-to-video
-    - reference-to-video
-    output_node: '238'
-    # 同 self-lift，渐进采样要多跑一轮高分辨率阶段；想要完全不限时仍可设 JOB_TIMEOUT=0。
-    timeout: 3600
-    vram_adaptive: true
-    references:
-      aggregator: '136'
-      images:
-      - '300'
-      - '301'
-      - '302'
-      - '303'
-      - '304'
-      - '305'
-      videos:
-      - '306'
-      - '307'
-      - '308'
-      audios:
-      - '312'
-      - '313'
-      - '314'
-    defaults:
-      width: 1344
-      height: 768
-      motion: story
-      steps: 8
-      transition_step: 8
-      extra_steps: 2
-      start_at_sigma: 0.9
-      # 基础权重直跑，一采分辨率贴住 1344 原生画布（auto = min(84/目标长边latent, 0.70)）
-      lowres_scale: auto
-      sampler_name: euler
-      scheduler: simple
-      denoise: 1
-      duration: 10
-      fps: 24
-    bindings:
-      filename_prefix: 238.inputs.filename_prefix
-      prompt: 232.inputs.value
-      seed: 235.inputs.seed
-      steps: 124.inputs.steps
-      sampler_name: 123.inputs.sampler_name
-      scheduler: 124.inputs.scheduler
-      denoise: 124.inputs.denoise
-      width: 136.inputs.width
-      height: 136.inputs.height
-      duration: 132.inputs.value
-      fps: 234.inputs.fps
-      chunks: 219.inputs.chunks
-      head_chunks: 220.inputs.head_chunks
-      seq_threshold: 219.inputs.seq_threshold
-      highres_tiling: 235.inputs.highres_tiling
-      transition_step: 235.inputs.transition_step
-      lowres_scale: 235.inputs.lowres_scale
-    # 起点沿用 fastvideo-fasth3-self-lift 的实测配方（story=8/8）；
-    # 打戏加总步数不加过渡步，避免高分阶段网状假纹理加重（ts 实验 2026-09-17）。
-    motion_presets:
-      story:
-        steps: 8
-        transition_step: 8
-      fight:
-        steps: 10
-        transition_step: 8
-    aliases:
-    - minimax_h3_self_lift_edit
-    - minimaxh3selfliftedit
-    - h3-selflift-edit
-    - h3-self-lift-edit
-    - selflift-edit
-    - self-lift-edit
-    - ref2va-selflift
-    # 旧「无 LoRA 版」命名与别名保留，向后兼容
-    - minimax-h3-self-lift-edit-nolora
-    - minimax_h3_self_lift_edit_nolora
-    - h3-selflift-edit-nolora
-    - h3-self-lift-edit-nolora
-    - ref2va-selflift-nolora
+  # ===================== MiniMax H3 SelfLift 变体（已下线 2026-09-21） =====================
+  # minimax-h3-self-lift / minimax-h3-self-lift-edit 两支同日下线，C 拍板：
+  #   两阶段渐进采样（SelfLiftH3Sampler：低分 NFE → 高分 NFE）由 lift 的
+  #   「原生采样 → SelfLiftH3LatentLift 确定性放大」取代 —— 机制更简，且 09-20 实测
+  #   高分二采反而洗掉 lift 铺的高频（lap 54.4 vs 78.4）。
+  #   工作流备份（复原时拷回 workflows/ 并按 git 历史恢复条目）：
+  #     .workbuddy/stash/video_minimax_h3_self_lift.json
+  #     .workbuddy/stash/video_minimax_h3_self_lift_edit.json
+  #   连带：motion_presets / transition_step / lowres_scale / highres_tiling 只由这两支
+  #   声明，随之下线（请求字段是否一并撤除待定）。
+  #   旧名与别名（selflift / self-lift / h3-selflift / -nolora 等）见 git 历史。
 
   # ===================== FastVideo FastH3 =====================
   # FastVideo 的 FastH3 蒸馏档（fastvideo_fasth3_8step_v2_pruned_int8_convrot + qwen3vl int8）。
@@ -841,9 +478,15 @@ models:
   # 首尾帧走**关键帧**槽 first_frame / last_frame，而不是 Ref2VA 的 ref_image_N 参考 token；
   # 网关默认只认 ref_* 键名，所以这里用 image_keys 逐槽覆盖（见 gateway/registry.py 的 ref_key）。
   # reference_images 传 0 张=文生视频、1 张=首帧、2 张=首尾帧，未传的槽提交前由网关删除。
+  #
+  # ⚠️ 蒸馏只覆盖 fl2va（文生 + 首尾帧）：官方未发布 Ref2VA 蒸馏权重，所以 fasth3-edit
+  #    复用同一份 fl2v 权重作**占位** —— 参考节点与槽位齐全，但条件对这份权重属未训练输入，
+  #    效果未经标定。要稳的参考生视频走 minimax-h3-edit。
+  # ⚠️ 本档定位草稿 / 快周转，不是 49/50 步的等价替代：09-20 分频实测 8 步在细节量上并非
+  #    「无损」，高频段整体过量（越细越超）；要最大质量用 minimax-h3。
   fasth3:
     workflow: video_fastvideo_fasth3.json
-    description: FastVideo FastH3 —— 文生视频 / 首尾帧生视频，8 步蒸馏档（实测 10 步画质更好，可传 steps=10）
+    description: FastVideo FastH3 —— 文生视频 / 首尾帧生视频，8 步蒸馏档。定位草稿 / 快周转（官方口径 8 步最优、改步数掉质量），最大质量请用 minimax-h3
     mode: video
     capabilities:
     - text-to-video
@@ -889,9 +532,13 @@ models:
   # 参考生视频版：聚合节点换成 MiniMaxH3ReferenceToVideo(105:145)，槽位就是默认的
   # ref_images.* / ref_videos.* / ref_audios.*，与其余 H3 编辑模型一致（6 图 + 3 视频 + 3 音频），
   # 参考视频与其音轨同源（GetVideoComponents 的两路输出），未提供时网关成对删除。
+  #
+  # ⚠️ 占位档：官方未蒸馏 Ref2VA，本档与 fasth3 共用同一份 fl2v 蒸馏权重
+  #    （fastvideo_fasth3_8step_v2_pruned_int8_convrot），参考条件未训练、效果未标定。
+  #    仅作「8 步 + 参考槽」的占位可用，生产请用 minimax-h3-edit。
   fasth3-edit:
     workflow: video_fastvideo_fasth3_edit.json
-    description: FastVideo FastH3 Edit —— 参考图 / 视频 / 音频生视频，8 步蒸馏档
+    description: FastVideo FastH3 Edit —— 参考图 / 视频 / 音频生视频，8 步蒸馏档。⚠️ 占位档：官方未蒸馏 Ref2VA，复用 fl2v 权重、参考效果未标定；生产请用 minimax-h3-edit
     mode: video
     capabilities:
     - text-to-video
@@ -942,146 +589,126 @@ models:
     - fast-h3-edit
     - fasth3-reference
 
-  # ===================== FastVideo FastH3 · SelfLift 渐进放大 =====================
-  # 在 fasth3 基础上把单阶段采样换成 SelfLift：低分辨率前缀跑粗结构 → 学习式 3D conv
-  # upscaler 抬分辨率 → 高分收尾。机制与 minimax-h3-self-lift 同族，但 fasth3 链上有
-  # MiniMaxH3SigmaShift(shift_video=10)，会把 σ 网格挤向高噪端，因此 σ 标定三元组
-  # （extra_steps / start_at_sigma / transition_step）必须重算，不能照抄 self-lift 的
-  # 1 / 0.7 / 5 —— 照抄会把 σ_resume 顶到 0.77，等于让高分阶段去干低分的粗活。
-  # 默认档 = 实测推荐值：steps=8 / extra_steps=2 / start_at_sigma=0.9 / transition_step=8
-  #   → σ_resume≈0.296（低分 8 步 + 高分 2 步），画质与基线相当而耗时约 -46%。
-  # ⚠ steps 与 transition_step 是耦合的（σ 网格点数随 steps 变）：
-  #   改 steps 必须同步重算 transition_step，标定方法见 skill: selflift-progressive-upscale。
-  #   例：steps=10 时取 extra_steps=2 / start_at_sigma=0.95 / transition_step=9 → σ_resume≈0.289。
-  #   合法区间：1 <= transition_step <= steps + extra_steps - 1（网关会在提交前拦下越界值）。
-  # extra_steps / start_at_sigma 是**模板里固定**的 σ 标定值（节点 300），不在可注入白名单里 ——
-  # defaults 段里保留一份副本仅供网关做范围校验与文档说明，改它们要直接改工作流 JSON。
-  # 硬约束：采样器只能是 euler（SelfLiftH3Sampler 内部校验）；高分阶段至少留 2 步，
-  #   只给 1 步会明显发灰发软（实测反例见高显存分块调优文档）。
-  fastvideo-fasth3-self-lift:
-    workflow: video_fastvideo_fasth3_self_lift.json
-    description: FastVideo FastH3 SelfLift —— 文生视频 / 首尾帧生视频，低分前缀→高分收尾渐进采样，同档画质约省 46% 耗时
+  # ===================== MiniMax H3 · Lift 确定性放大 =====================
+  # lift 家族 = base / edit 的骨架 + 尾部一个 SelfLiftH3LatentLift(910)：
+  #   采样 125 → latent lift 910 → 解码 122 → CreateVideo 130 → SaveVideo 92
+  # 与源工作流的差别只有两处：122.inputs.samples 由 125 改接 910、保存前缀改 video/H3_Lift；
+  # 新增节点 900 / 901（抽中间帧存预览 PNG）与 910（学习式 3D conv 抬分辨率）。
+  # 两份工作流由 .workbuddy/build_lift_family.py 从 base / edit 派生——改了源图重跑脚本即可同步。
+  #
+  # 机制定位（09-20 实测）：低分一采拿结构 → lift 抬分辨率并铺学习高频 → 收尾。
+  #   - rho 是**伪影阻尼**不是保细节（默认 0；拉向像素锚 = 白放大）；
+  #   - 高分二采会洗掉 lift 的高频（54.4 vs 78.4），所以只做 lift、不做二采；
+  #   - 输出尺寸 = 画布 × scale，默认 1344x768 × 1.5 = 2016x1152。
+  # scale / rho / w_min / w_max 是**模板里固定**的值（节点 910），不在可注入白名单里：
+  #   精调走通用透传 workflow_overrides（如 910.inputs.scale=2.0），路径不存在会报 400。
+  minimax-h3-lift:
+    workflow: video_minimax_h3_lift.json
+    description: MiniMax H3 Lift —— base 骨架 + 确定性放大：原生采样→学习式 latent lift（默认 2016x1152），构图零重掷，纹理最强；支持首尾帧
     mode: video
     capabilities:
     - text-to-video
     - image-to-video
     output_node: '92'
-    # 渐进采样要多跑一轮高分辨率阶段，给更宽窗口；要完全不限时仍可设 JOB_TIMEOUT=0。
-    timeout: 3600
     references:
-      aggregator: '105:104'
+      aggregator: '136'
       images:
-      - '105:200'
-      - '105:201'
-      # 与 fasth3 一致：第 1 张=首帧、第 2 张=尾帧（关键帧槽，不是参考 token）
+      - '137'
+      - '139'
       image_keys:
       - first_frame
       - last_frame
+    # 放大阶段要解码 2016x1152，比常规 H3 慢；想要完全不限时仍可设 JOB_TIMEOUT=0。
+    timeout: 2700
+    vram_adaptive: true
     defaults:
       width: 1344
       height: 768
       steps: 8
-      # 下面三项是 SelfLift 的 σ 标定三元组，与 steps 耦合，须成组调整
-      extra_steps: 2
-      start_at_sigma: 0.9
-      transition_step: 8
-      # 低分前缀比例：auto = 按目标尺寸反推，把低分长边压在 H3 原生画布 1344 上
-      # （1080p→0.70、2K→0.525、4K→0.35；依据见 skill: selflift-progressive-upscale 的
-      # 《一采分辨率扫描》）。显式传数字仍可覆盖；>0.70 会越过原生画布，网关会告警。
-      lowres_scale: auto
-      sampler_name: euler
+      sampler_name: res_multistep
       scheduler: simple
       denoise: 1
       duration: 5
       fps: 24
-      highres_tiling: true
     bindings:
       filename_prefix: 92.inputs.filename_prefix
-      prompt: 105:104.inputs.prompt
-      seed: 302.inputs.seed
-      steps: 105:9.inputs.steps
-      sampler_name: 105:17.inputs.sampler_name
-      scheduler: 105:9.inputs.scheduler
-      denoise: 105:9.inputs.denoise
-      width: 105:104.inputs.width
-      height: 105:104.inputs.height
-      duration: 105:111.inputs.value
-      fps: 105:91.inputs.fps
-      transition_step: 302.inputs.transition_step
-      lowres_scale: 302.inputs.lowres_scale
-      highres_tiling: 302.inputs.highres_tiling
+      prompt: 138.inputs.value
+      seed: 129.inputs.noise_seed
+      steps: 124.inputs.steps
+      sampler_name: 123.inputs.sampler_name
+      scheduler: 124.inputs.scheduler
+      denoise: 124.inputs.denoise
+      width: 136.inputs.width
+      height: 136.inputs.height
+      duration: 132.inputs.value
+      fps: 130.inputs.fps
+      chunks: 158.inputs.chunks
+      head_chunks: 157.inputs.head_chunks
+      seq_threshold: 158.inputs.seq_threshold
     aliases:
-    - fastvideo_fasth3_self_lift
-    - fasth3-self-lift
-    - fasth3-selflift
-    - fasth3-lift
-    - fast-h3-self-lift
+    - minimax_h3_lift
+    - h3-lift
+    - h3lift
+    - minimax-h3-upscale
 
-  # Ref2VA 版：采样链路与上面那支完全一致，差别只在聚合节点换成
-  # MiniMaxH3ReferenceToVideo(105:145)、参考槽扩为 6 图 + 3 视频 + 3 音频，
-  # 且槽位就是默认的 ref_images.* / ref_videos.* / ref_audios.*（不需要 image_keys）。
-  # 参考视频与其音轨同源（GetVideoComponents 的两路输出），未提供时网关成对删除。
-  fastvideo-fasth3-self-lift-edit:
-    workflow: video_fastvideo_fasth3_self_lift_edit.json
-    description: FastVideo FastH3 SelfLift Edit —— 参考图 / 视频 / 音频生视频，低分前缀→高分收尾渐进采样
+  # Ref2VA 版 lift：放大机制与上面那支完全一致，差别只在工作流源于 edit ——
+  #   ref2va 权重 + MiniMaxH3ReferenceToVideo 聚合 + 参考槽全套 6 图 / 3 视频 / 3 音频。
+  # ⚠️ 未标定：步数沿用 edit 的 25 步，放大与参考的组合效果没做过 A/B。
+  minimax-h3-lift-edit:
+    workflow: video_minimax_h3_lift_edit.json
+    description: MiniMax H3 Lift Ref2VA —— edit 骨架 + 确定性放大：参考图 / 视频 / 音频生视频后过一遍学习式 latent lift
     mode: video
     capabilities:
     - text-to-video
+    - image-to-video
     - reference-to-video
     output_node: '92'
-    timeout: 3600
+    timeout: 2700
+    vram_adaptive: true
     references:
-      aggregator: '105:145'
+      aggregator: '136'
       images:
-      - '105:200'
-      - '105:201'
-      - '105:202'
-      - '105:203'
-      - '105:204'
-      - '105:205'
+      - '137'
+      - '139'
+      - '143'
+      - '144'
+      - '145'
+      - '146'
       videos:
-      - '105:206'
-      - '105:207'
-      - '105:208'
+      - '153'
+      - '154'
+      - '155'
       audios:
-      - '105:212'
-      - '105:213'
-      - '105:214'
+      - '150'
+      - '151'
+      - '152'
     defaults:
       width: 1344
       height: 768
-      steps: 8
-      extra_steps: 2
-      start_at_sigma: 0.9
-      transition_step: 8
-      # 低分前缀比例：auto = 按目标尺寸反推，把低分长边压在 H3 原生画布 1344 上
-      # （1080p→0.70、2K→0.525、4K→0.35；依据见 skill: selflift-progressive-upscale 的
-      # 《一采分辨率扫描》）。显式传数字仍可覆盖；>0.70 会越过原生画布，网关会告警。
-      lowres_scale: auto
-      sampler_name: euler
+      steps: 25
+      sampler_name: res_multistep
       scheduler: simple
       denoise: 1
       duration: 5
       fps: 24
-      highres_tiling: true
     bindings:
       filename_prefix: 92.inputs.filename_prefix
-      prompt: 105:145.inputs.prompt
-      seed: 302.inputs.seed
-      steps: 105:9.inputs.steps
-      sampler_name: 105:17.inputs.sampler_name
-      scheduler: 105:9.inputs.scheduler
-      denoise: 105:9.inputs.denoise
-      width: 105:145.inputs.width
-      height: 105:145.inputs.height
-      duration: 105:111.inputs.value
-      fps: 105:91.inputs.fps
-      transition_step: 302.inputs.transition_step
-      lowres_scale: 302.inputs.lowres_scale
-      highres_tiling: 302.inputs.highres_tiling
+      prompt: 138.inputs.value
+      seed: 129.inputs.noise_seed
+      steps: 124.inputs.steps
+      sampler_name: 123.inputs.sampler_name
+      scheduler: 124.inputs.scheduler
+      denoise: 124.inputs.denoise
+      width: 136.inputs.width
+      height: 136.inputs.height
+      duration: 132.inputs.value
+      fps: 130.inputs.fps
+      chunks: 158.inputs.chunks
+      head_chunks: 157.inputs.head_chunks
+      seq_threshold: 158.inputs.seq_threshold
     aliases:
-    - fastvideo_fasth3_self_lift_edit
-    - fasth3-self-lift-edit
-    - fasth3-selflift-edit
-    - fasth3-lift-edit
-    - fast-h3-self-lift-edit
+    - minimax_h3_lift_edit
+    - minimax-h3-edit-lift
+    - h3-lift-edit
+    - h3lift-edit
+    - ref2va-lift

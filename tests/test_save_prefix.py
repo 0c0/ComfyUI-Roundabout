@@ -1,6 +1,6 @@
 """视频工作流保存前缀约定回归测试。
 
-背景：H3 系列五份工作流一直落 `video/MiniMax_H3`，后加的两份 SelfLift 却沿用了
+背景：H3 系列五份工作流一直落 `video/MiniMax_H3`，后加的变体却沿用了
 ComfyUI 默认的 `video/ComfyUI`，产出散在两个目录里——没有任何测试盯着这条约定，
 所以漂了很久才被发现。这里把约定固定下来。
 
@@ -20,10 +20,9 @@ from gateway.schemas import VideoGenerationRequest  # noqa: E402
 
 VIDEO_PREFIX = "video/"
 H3_PREFIX = "video/MiniMax_H3"
-H3_LIFT_PREFIX = "video/MiniMax_H3_Lift"
+LIFT_UP_PREFIX = "video/H3_Lift"
 FASTH3_PREFIX = "video/FastH3"
 FASTH3_LIFT_PREFIX = "video/FastH3_Lift"
-HYPERFLOW_PREFIX = "video/HyperFlow"
 
 passed = failed = 0
 
@@ -75,26 +74,19 @@ for spec in video_specs:
 
 print("\n== 3. H3 各族各自的保存目录 ==")
 # 各族分开落盘，产物目录一眼能分辨来源：
-#   MiniMax H3（常规 + turbo）             → video/MiniMax_H3
-#   HyperFlow 8 步加速档                   → video/HyperFlow
-#   MiniMax H3 SelfLift 无 LoRA 版        → video/MiniMax_H3_Lift
+#   MiniMax H3 常规（base / edit）         → video/MiniMax_H3
 #   FastVideo FastH3                      → video/FastH3
-#   FastH3 + SelfLift 放大                → video/FastH3_Lift
-# 用**显式名单**而不是 startswith：`fastvideo-fasth3-self-lift` 并不以 `fasth3` 开头，
-# 靠前缀猜族迟早会漏；下面的「名单覆盖完整性」断言保证新增模型必须登记进来。
+#   H3 确定性放大档（lift-only）           → video/H3_Lift
+# 用**显式名单**而不是 startswith 猜族（新增模型必须登记进来）；下面的「名单覆盖完整性」断言保证新增模型必须登记进来。
 FAMILIES = (
-    (H3_PREFIX, ["minimax-h3", "minimax-h3-edit", "minimax-h3-turbo", "minimax-h3-turbo-edit"],
-     "4 支常规"),
-    (HYPERFLOW_PREFIX, ["minimax-h3-hyperflow"],
-     "HyperFlow 加速档（base 权重 + 8 步 LoRA，采样器 euler）"),
-    (H3_LIFT_PREFIX, ["minimax-h3-self-lift", "minimax-h3-self-lift-edit"],
-     "SelfLift 两支（无 LoRA，产物与常规分开落盘）"),
+    (H3_PREFIX, ["minimax-h3", "minimax-h3-edit"],
+     "2 支常规"),
     (FASTH3_PREFIX, ["fasth3", "fasth3-edit"], "文生/首尾帧 + 参考生视频"),
-    (FASTH3_LIFT_PREFIX, ["fastvideo-fasth3-self-lift", "fastvideo-fasth3-self-lift-edit"],
-     "SelfLift 渐进放大的同两支"),
+    (LIFT_UP_PREFIX, ["minimax-h3-lift", "minimax-h3-lift-edit"],
+     "lift 放大档两支（base / edit 骨架 + 尾部 latent lift，scale 精调走 workflow_overrides）"),
 )
 all_h3 = [s for s in video_specs if "h3" in s.name]
-check("h3 家族合计 11 支", len(all_h3) == 11, [s.name for s in all_h3])
+check("h3 家族合计 6 支", len(all_h3) == 6, [s.name for s in all_h3])
 covered = [name for _, names, _ in FAMILIES for name in names]
 check("名单覆盖全部 h3 模型（新增模型必须显式登记）",
       sorted(covered) == sorted(s.name for s in all_h3),
@@ -107,20 +99,20 @@ for expect_prefix, names, note in FAMILIES:
         check(f"{spec.name}: {prefix!r} == {expect_prefix!r}", prefix == expect_prefix, prefix)
 
 print("\n== 4. 不传就用模板默认（不是被网关改写成别的） ==")
-LIFT = registry.resolve("minimax-h3-self-lift")
+LIFT = registry.resolve("minimax-h3-lift")
 req = VideoGenerationRequest(prompt="x")
 values = build_video_values(req, LIFT, "x", None)
 check("请求未传时 values 里是 None（回落模板，而非网关造值）",
       values.get("filename_prefix") is None, values.get("filename_prefix"))
 wf = build_workflow(LIFT, values)
-check("注入后节点仍是模板默认 video/MiniMax_H3_Lift",
-      wf["238"]["inputs"]["filename_prefix"] == H3_LIFT_PREFIX,
-      wf["238"]["inputs"]["filename_prefix"])
+check("注入后节点仍是模板默认 video/H3_Lift",
+      wf["92"]["inputs"]["filename_prefix"] == LIFT_UP_PREFIX,
+      wf["92"]["inputs"]["filename_prefix"])
 values = build_video_values(VideoGenerationRequest(prompt="x", filename_prefix="my/dir"), LIFT, "x", None)
 wf = build_workflow(LIFT, values)
 check("显式传入时原样覆盖（可含 / 建子目录）",
-      wf["238"]["inputs"]["filename_prefix"] == "my/dir",
-      wf["238"]["inputs"]["filename_prefix"])
+      wf["92"]["inputs"]["filename_prefix"] == "my/dir",
+      wf["92"]["inputs"]["filename_prefix"])
 
 print(f"\n===== {passed} passed / {failed} failed =====")
 sys.exit(1 if failed else 0)

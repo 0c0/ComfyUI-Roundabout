@@ -34,6 +34,7 @@
   - `MCP_SHARE_PORT=true`（默认）：通过 aiohttp 原生代理把 `/mcp` 挂在 **ComfyUI 同一端口**（`http://host:8188/mcp`）。内部 uvicorn 只绑 `127.0.0.1` 回环。
   - `MCP_SHARE_PORT=false`：客户端直连 `http://MCP_HOST:<MCP_PORT>/mcp`；此时建议用 `MCP_PORT` 或 `MCP_PORT_MAP` 把端口钉死（对外可预期），否则端口由系统分配、以启动日志为准。
 - **共用**：模型注册表、生成链路、异步任务表全部共享。通过 MCP 提交的异步任务能在 REST 队列监控里看到，反之亦然。
+- **自适应层**：`gateway/` 下除注册表与生成链路外，还有三个「跟着机器 / 请求变的参数」模块 —— `vram.py`（按显存档位选分块参数）、`lowres.py`（按目标尺寸反推 SelfLift 一采分辨率；self-lift 下线后暂无消费方）、`params.py`（请求参数白名单与校验）。它们不改工作流文件，只在渲染前覆盖节点字段；配置都来自 `models.yaml`，改完 `POST /admin/reload` 生效。细节见 [README.md](README.md#配置)。
 
 ---
 
@@ -102,7 +103,7 @@ python\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-Roundabout\requ
 | `MCP_STATELESS` | `true` | **无状态模式（默认）**：每个 MCP 请求独立处理、不跟踪会话，ComfyUI 重启后 agent 无需重新 initialize（根治 `unknown or expired session ID`）。设成 `false` 即为标准有状态 streamable-http，那是唯一能拿到「异步任务完成通知」推送的模式（通知挂在会话上）——代价是 ComfyUI 一重启旧会话全失效，客户端没重新握手前所有调用都报错。两种模式都由 SDK 原生 `stateless_http` 支持，无自研逻辑 |
 | `ROUNDABOUT_RAW_AIOHTTP_LOGS` | 空 | 设 `true` 关闭 aiohttp「客户端断开」日志降噪（见 §10 排障），恢复 aiohttp 原始 ERROR |
 | `ROUNDABOUT_RAW_MCP_LOGS` | 空 | 设 `true` 关闭 MCP 日志降噪：无状态模式下 SDK 每个请求收尾都打一条 `[INFO] Terminating session: None`（agent 连续调工具即刷屏），默认丢弃 |
-| `ROUNDABOUT_VRAM_GB` | 空 | 手动钉住显存档位（GiB），用于 `vram_adaptive: true` 的模型（如 `minimax-h3-self-lift`）；不填则启动时自动探测，探测不到就不覆盖工作流自带的分块参数 |
+| `ROUNDABOUT_VRAM_GB` | 空 | 手动钉住显存档位（GiB），用于 `vram_adaptive: true` 的模型（如 `minimax-h3-lift`）；不填则启动时自动探测，探测不到就不覆盖工作流自带的分块参数 |
 | `COMFY_BASE_URL` | 自动取 ComfyUI `--listen/--port` | 覆盖后端指向（指向另一个 ComfyUI 实例） |
 | `COMFY_HTTP_TIMEOUT` | `30` | 后端请求超时（秒） |
 | `OPENAI_GATEWAY_API_KEYS` | 空 | 逗号分隔的 Bearer key；**为空则鉴权自动放行** |
@@ -255,9 +256,10 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `duration` | float? | 时长 1–15 秒 |
 | `fps` | int? | 帧率 |
 | `num_frames` | int? | 总帧数（部分工作流用帧数而非时长） |
-| `motion` | string? | **命名运动档**（仅声明了 `motion_presets` 的 `minimax-h3-self-lift*`；`fastvideo-fasth3-self-lift*` 未声明、传了会报错）：`story`=文戏（总步数 8 / 过渡步 8）、`fight`=打戏（10 / 8）。不传用模型默认；与 `steps` / `transition_step` 同传时后者胜出 |
-| `transition_step` | int? | SelfLift 渐进采样的过渡步（低分切到高分的步位），合法区间 **`1 ≤ transition_step ≤ steps + extra_steps - 1`**（`extra_steps` = 高分阶段在 σ 网格上补的点数，各支均为 2：`minimax-h3-self-lift*` / `fastvideo-fasth3-self-lift*`；越界会被网关在提交前拦下）。仅 SelfLift 系列（`minimax-h3-self-lift*` / `fastvideo-fasth3-self-lift*`）有效 |
-| `lowres_scale` | float \| `"auto"`? | SelfLift 一采（低分前缀）的相对分辨率，0.25–1.0。**`"auto"`**（SelfLift 四支的默认）= 按目标尺寸反推，把低分长边压在 H3 原生画布 1344 上：1080p→`0.70`、2K→`0.525`、4K→`0.35`。低分长边越过 1344 会掉宽谱细节并织出规则假网格，网关会告警但不拦（属于显式选择）。仅 SelfLift 系列有效 |
+| `motion` | string? | **命名运动档**（**已下线 2026-09-21**：原仅 SelfLift 两支 `minimax-h3-self-lift*` 声明，随其摘档后暂无模型声明）：`story`=文戏（总步数 8 / 过渡步 8）、`fight`=打戏（10 / 8）。不传用模型默认；与 `steps` / `transition_step` 同传时后者胜出 |
+| `transition_step` | int? | **已下线 2026-09-21**：SelfLift 渐进采样的过渡步（低分切到高分的步位），合法区间 **`1 ≤ transition_step ≤ steps + extra_steps - 1`**（`extra_steps` = 高分阶段在 σ 网格上补的点数，各支均为 2（`minimax-h3-self-lift*`）；越界会被网关在提交前拦下）。仅 SelfLift 系列（`minimax-h3-self-lift*`）有效 |
+| `lowres_scale` | float \| `"auto"`? | **已下线 2026-09-21**：SelfLift 一采（低分前缀）的相对分辨率，0.25–1.0。**`"auto"`**（SelfLift 两支的默认）= 按目标尺寸反推，把低分长边压在 H3 原生画布 1344 上：1080p→`0.70`、2K→`0.525`、4K→`0.35`。低分长边越过 1344 会掉宽谱细节并织出规则假网格，网关会告警但不拦（属于显式选择）。仅 SelfLift 系列有效 |
+| `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"910.inputs.scale": 2.0}`。`minimax-h3-lift` 的可调项：`910.inputs.scale`（放大倍率，默认 1.5 → 输出 2016x1152）、`910.inputs.rho`（SelfLift-zero 像素锚阻尼，默认 0=纯学习 lift 纹理最强；0.3 实测高频 -18%）、`910.inputs.w_min`/`w_max`（阻尼强度上下限，默认 0.5/1.0） |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |
 | `image` | string\|string[]? | 图生视频输入 |
 | `reference_images` | string[]? | 参考图，最多 6，支持 base64/URL/本地路径 |
@@ -267,8 +269,6 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `background` | `"pending"`? | **异步**触发：POST 立即返回 task 对象 |
 | `async` | bool? | 兼容别名，`true` 等价于 `background:"pending"` |
 | `workflow_overrides` / `filename_prefix` | 各? | 同图像 |
-
-> ⚠ `minimax-h3-hyperflow` 的 σ 是 LoRA 官方 9 点序列（`ManualSigmas` 写死），**步数固定 8** —— 传 `steps` / `scheduler` / `denoise` 对它无效（不报错，也不会改变结果）。
 
 > **外部来源的参考素材会被复制进 ComfyUI 的 `input/`**：`http(s)` / `dataURL` / `base64`，以及**不在 `input/` 目录下**的本地路径（含 `output/`、`temp/`）都要先转存；命名形如 `{请求id}_ref{img|vid|aud}_{槽位序号}.{ext}`（如 `18ae9470d11a-0_refvid_0.mp4`，其中 `18ae9470d11a-0` 是 `请求id-批次号`）。**已经在 `input/` 内的文件免转存、沿用原名**。输入图与 mask 同理，命名为 `{请求id}_src.{ext}` / `{请求id}_mask.{ext}`。这些副本会留在 `input/` 里，需要时自行清理。
 
@@ -332,16 +332,14 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | **`boogu-image-edit`** / **`boogu-image-edit-turbo`** | image | **image-to-image** | 单图编辑，改图内文字首选（见 5.1） |
 | **`flux2-klein-image-edit-turbo`** | image | **image-to-image** | Flux2 Klein 9B 单图编辑，语义改写/换背景首选（见 5.1） |
 | **`utility-birefnet-remove-background`** | image | **image-to-image**（promptless） | 去背景独立工具，无 prompt，透明 PNG；专属端点 `/v1/images/remove-background` |
-| `mage-flow-base` / `mage-flow-turbo` | image | text-to-image | MageFlow 文生图 |
-| `minimax-h3` / `-turbo` | video | text-to-video | H3 文生视频（30 / 8 步） |
-| `minimax-h3-edit` / `-turbo-edit` | video | text-to-video | H3 参考生视频（支持图/视频/音频参考） |
-| `minimax-h3-hyperflow` | video | text-to-video | HyperFlow 8 步加速档：base 权重 + HyperFlow LoRA（strength 1.0），采样器 `euler` + `simple`；参考槽全套 6 图 + 3 视频 + 3 音频；分块参数按本机显存自动分档 |
-| `minimax-h3-self-lift` | video | text-to-video / image-to-video | H3 SelfLift 渐进采样（低分 → 高分）；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧；分块参数按本机显存自动分档；`motion=story/fight` 一键切文戏 / 打戏步数档 |
-| `minimax-h3-self-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 Ref2VA 权重；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
-| `fasth3` | video | text-to-video / image-to-video | FastVideo FastH3 8 步蒸馏档；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（首尾帧走关键帧槽 `first_frame` / `last_frame`，见 [WORKFLOWS.md](WORKFLOWS.md)） |
-| `fasth3-edit` | video | text-to-video / reference-to-video | FastH3 参考生视频；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
-| `fastvideo-fasth3-self-lift` | video | text-to-video / image-to-video | FastH3 加 SelfLift 渐进放大；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（走关键帧槽 `first_frame` / `last_frame`）。σ 标定与 `minimax-h3-self-lift` 不通用，默认 `steps=8` / `transition_step=8` |
-| `fastvideo-fasth3-self-lift-edit` | video | text-to-video / reference-to-video | 同上改用 Ref2VA 聚合节点；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
+| `minimax-h3` | video | text-to-video | H3 文生视频（base 30 步）。**画质分档**（2026-09-20 定案）：`quality` 可选 `draft`(1024x576@8 草稿) / `standard`(1280x720@8 日常) / `hd`(1344x768@8 交付，多 seed 挑片传 `n`) / `high`(1344x768@30 官方全步数) |
+| `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频（支持图/视频/音频参考）。原 `-turbo-edit` 已于 2026-09-20 下线 |
+| ~~`minimax-h3-self-lift`~~ / ~~`-self-lift-edit`~~ | video | — | **已下线 2026-09-21**：两阶段渐进采样，被 lift 的确定性放大取代 |
+| `minimax-h3-lift` | video | text-to-video / image-to-video | base 骨架 + 确定性放大：原生采样 → 学习式 latent lift（默认 2016x1152）；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧；分块参数按本机显存自动分档 |
+| `minimax-h3-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 edit 骨架（Ref2VA 权重）；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
+| `fasth3` | video | text-to-video / image-to-video | FastVideo FastH3 8 步蒸馏档；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（首尾帧走关键帧槽 `first_frame` / `last_frame`，见 [WORKFLOWS.md](WORKFLOWS.md)）。定位**草稿 / 快周转**，非 49/50 步的等价替代 |
+| `fasth3-edit` | video | text-to-video / reference-to-video | FastH3 参考生视频；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪。⚠️ **占位档**：官方未蒸馏 Ref2VA，与 `fasth3` 共用同一份 fl2v 权重 |
+| **`minimax-h3-lift`** | video | text-to-video | **确定性放大档**：原生画布（默认 1344x768）采样 → 学习式 latent lift 无重采样抬升 → 解码。构图零重掷（corr=1.000），纹理 +152% vs 白放大。输出 = 原生画布 × scale（模板字面值 1.5 → 2016x1152），精调走 `workflow_overrides`（`910.inputs.scale` / `910.inputs.rho`，rho=0 默认纹理最强）。实测 5s 片约 9 分钟（8GB 档） |
 
 > 完整别名与绑定关系见 `models.yaml`；模型清单与用途对照也见 [README.md](README.md#内置模型)。
 
@@ -500,7 +498,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/generations \
 # 提交（异步）
 TASK=$(curl -s -X POST http://127.0.0.1:8188/v1/videos/generations \
   -H "Content-Type: application/json" \
-  -d '{"model":"minimax-h3-turbo","prompt":"a cat walking in rain","duration":5,"background":"pending"}' \
+  -d '{"model":"minimax-h3","quality":"draft","prompt":"a cat walking in rain","duration":5,"background":"pending"}' \
   | python -c "import sys,json;print(json.load(sys.stdin)['id'])")
 
 # 查询
@@ -513,7 +511,7 @@ curl -X DELETE http://127.0.0.1:8188/v1/videos/tasks/$TASK
 ### 8.3 MCP 客户端（伪代码）
 
 ```
-call generate_video(prompt="a cat walking in rain", model="minimax-h3-turbo",
+call generate_video(prompt="a cat walking in rain", model="minimax-h3", quality="draft",
                     duration=5, background="pending")  → 返回 {id, status:pending}
 # 默认（无状态模式）：轮询 get_task(id)，不依赖会话，客户端重连也不会丢
 # 若显式设了 MCP_STATELESS=false：可保持 SSE 连接，等服务端 notifications/message 推送

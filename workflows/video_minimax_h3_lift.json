@@ -1,7 +1,7 @@
 {
   "92": {
     "inputs": {
-      "filename_prefix": "video/MiniMax_H3",
+      "filename_prefix": "video/H3_Lift",
       "format": "auto",
       "format.codec": "auto",
       "codec": "auto",
@@ -52,7 +52,7 @@
   "122": {
     "inputs": {
       "samples": [
-        "125",
+        "910",
         0
       ],
       "vae": [
@@ -77,10 +77,10 @@
   "124": {
     "inputs": {
       "scheduler": "simple",
-      "steps": 8,
+      "steps": 30,
       "denoise": 1,
       "model": [
-        "159",
+        "158",
         0
       ]
     },
@@ -120,7 +120,7 @@
   "126": {
     "inputs": {
       "model": [
-        "159",
+        "158",
         0
       ],
       "conditioning": [
@@ -135,7 +135,7 @@
   },
   "127": {
     "inputs": {
-      "unet_name": "minimax_h3_ref2va_int8_convrot.safetensors",
+      "unet_name": "minimax_h3_fl2va_int8_convrot.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
@@ -206,6 +206,14 @@
   },
   "136": {
     "inputs": {
+      "clip": [
+        "128",
+        0
+      ],
+      "vae": [
+        "119",
+        0
+      ],
       "prompt": [
         "138",
         0
@@ -216,81 +224,16 @@
         "131",
         1
       ],
-      "ref_image_size": "max",
-      "clip": [
-        "128",
-        0
-      ],
-      "vae": [
-        "119",
-        0
-      ],
-      "audio_vae": [
-        "120",
-        0
-      ],
-      "ref_images.ref_image_0": [
+      "first_frame": [
         "137",
         0
       ],
-      "ref_images.ref_image_1": [
+      "last_frame": [
         "139",
-        0
-      ],
-      "ref_images.ref_image_2": [
-        "143",
-        0
-      ],
-      "ref_images.ref_image_3": [
-        "144",
-        0
-      ],
-      "ref_images.ref_image_4": [
-        "145",
-        0
-      ],
-      "ref_images.ref_image_5": [
-        "146",
-        0
-      ],
-      "ref_videos.ref_video_0": [
-        "147",
-        0
-      ],
-      "ref_videos.ref_video_1": [
-        "148",
-        0
-      ],
-      "ref_videos.ref_video_2": [
-        "149",
-        0
-      ],
-      "ref_video_audios.ref_video_audio_0": [
-        "147",
-        1
-      ],
-      "ref_video_audios.ref_video_audio_1": [
-        "148",
-        1
-      ],
-      "ref_video_audios.ref_video_audio_2": [
-        "149",
-        1
-      ],
-      "ref_audios.ref_audio_0": [
-        "150",
-        0
-      ],
-      "ref_audios.ref_audio_1": [
-        "151",
-        0
-      ],
-      "ref_audios.ref_audio_2": [
-        "152",
         0
       ]
     },
-    "class_type": "MiniMaxH3ReferenceToVideo",
+    "class_type": "MiniMaxH3ImageToVideo",
     "_meta": {
       "title": "MiniMax H3 Reference to Video"
     }
@@ -322,154 +265,11 @@
       "title": "加载图像"
     }
   },
-  "142": {
-    "inputs": {
-      "lora_name": "MiniMax-H3-Ref2VA-Acc-8Step.safetensors",
-      "strength_model": 0.75,
-      "model": [
-        "127",
-        0
-      ]
-    },
-    "class_type": "LoraLoaderModelOnly",
-    "_meta": {
-      "title": "LoRA加载器（仅模型）"
-    }
-  },
-  "143": {
-    "inputs": {
-      "image": "example.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "加载图像"
-    }
-  },
-  "144": {
-    "inputs": {
-      "image": "example.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "加载图像"
-    }
-  },
-  "145": {
-    "inputs": {
-      "image": "example.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "加载图像"
-    }
-  },
-  "146": {
-    "inputs": {
-      "image": "example.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "加载图像"
-    }
-  },
-  "147": {
-    "inputs": {
-      "video": [
-        "154",
-        0
-      ]
-    },
-    "class_type": "GetVideoComponents",
-    "_meta": {
-      "title": "获取视频元素"
-    }
-  },
-  "148": {
-    "inputs": {
-      "video": [
-        "155",
-        0
-      ]
-    },
-    "class_type": "GetVideoComponents",
-    "_meta": {
-      "title": "获取视频元素"
-    }
-  },
-  "149": {
-    "inputs": {
-      "video": [
-        "156",
-        0
-      ]
-    },
-    "class_type": "GetVideoComponents",
-    "_meta": {
-      "title": "获取视频元素"
-    }
-  },
-  "150": {
-    "inputs": {
-      "audio": "hermes_dtest_refaud_0.wav"
-    },
-    "class_type": "LoadAudio",
-    "_meta": {
-      "title": "加载音频"
-    }
-  },
-  "151": {
-    "inputs": {
-      "audio": "hermes_dtest_refaud_0.wav"
-    },
-    "class_type": "LoadAudio",
-    "_meta": {
-      "title": "加载音频"
-    }
-  },
-  "152": {
-    "inputs": {
-      "audio": "hermes_dtest_refaud_0.wav"
-    },
-    "class_type": "LoadAudio",
-    "_meta": {
-      "title": "加载音频"
-    }
-  },
-  "154": {
-    "inputs": {
-      "file": "hermes_dtest_refvid_0.mp4",
-      "video-preview": ""
-    },
-    "class_type": "LoadVideo",
-    "_meta": {
-      "title": "加载视频"
-    }
-  },
-  "155": {
-    "inputs": {
-      "file": "hermes_dtest_refvid_0.mp4",
-      "video-preview": ""
-    },
-    "class_type": "LoadVideo",
-    "_meta": {
-      "title": "加载视频"
-    }
-  },
   "156": {
     "inputs": {
-      "file": "hermes_dtest_refvid_0.mp4",
-      "video-preview": ""
-    },
-    "class_type": "LoadVideo",
-    "_meta": {
-      "title": "加载视频"
-    }
-  },
-  "157": {
-    "inputs": {
-      "attention": "comfy kitchen attention",
+      "attention": "pytorch attention",
       "model": [
-        "142",
+        "127",
         0
       ]
     },
@@ -478,11 +278,11 @@
       "title": "ModelAttentionBackend"
     }
   },
-  "158": {
+  "157": {
     "inputs": {
       "head_chunks": 4,
       "model": [
-        "157",
+        "156",
         0
       ]
     },
@@ -491,18 +291,57 @@
       "title": "低显存注意力分块"
     }
   },
-  "159": {
+  "158": {
     "inputs": {
       "chunks": 1,
       "seq_threshold": 262144,
       "model": [
-        "158",
+        "157",
         0
       ]
     },
     "class_type": "MiniMaxChunkFeedForward",
     "_meta": {
       "title": "FFN 分块"
+    }
+  },
+  "900": {
+    "class_type": "ImageFromBatch",
+    "inputs": {
+      "image": [
+        "122",
+        0
+      ],
+      "batch_index": 60,
+      "length": 1
+    }
+  },
+  "901": {
+    "class_type": "SaveImage",
+    "inputs": {
+      "images": [
+        "900",
+        0
+      ],
+      "filename_prefix": "video/png/H3_Lift"
+    }
+  },
+  "910": {
+    "class_type": "SelfLiftH3LatentLift",
+    "inputs": {
+      "latent_image": [
+        "125",
+        0
+      ],
+      "upscaler_model": "minimax_h3_latent_upscaler_3d_fp16.safetensors",
+      "scale": 1.5,
+      "rho": 0.0,
+      "w_min": 0.5,
+      "w_max": 1.0,
+      "vae": [
+        "119",
+        0
+      ]
     }
   }
 }

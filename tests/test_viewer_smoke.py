@@ -34,7 +34,7 @@ async def main() -> int:
     # 造几条假任务，验证任务面板（含成功态的 url 绝对化）
     t1 = task_store.create("task-aaaaaaaaaaaa", model="z-image-turbo")
     t1.status = "processing"
-    t2 = task_store.create("task-bbbbbbbbbbbb", model="minimax-h3-turbo")
+    t2 = task_store.create("task-bbbbbbbbbbbb", model="minimax-h3")
     task_store.complete(t2.id, {"data": [{"url": "/view?filename=x.mp4&type=output"}]})
     t3 = task_store.create("task-cccccccccccc", model="sdxl")
     task_store.fail(t3.id, "boom", 500)

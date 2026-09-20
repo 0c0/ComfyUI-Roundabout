@@ -156,6 +156,10 @@ def set_path(obj: Any, path: str, value: Any) -> bool:
         except (ValueError, IndexError):
             return False
     if isinstance(cur, dict):
+        # 严格校验：节点 inputs 是封闭集合，允许「新建 key」只会让 typo 静默无效
+        #（提交后被 ComfyUI 忽略），所以最后一跳也必须命中已存在的键。
+        if last not in cur:
+            return False
         cur[last] = value
         return True
     return False

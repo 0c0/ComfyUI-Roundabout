@@ -408,7 +408,8 @@ def build_video_values(
         "filename_prefix": req.filename_prefix,  # 透传：None 时回落模板默认前缀
     }
     values = apply_presets(values, spec, req.quality, req.style, req.motion)
-    for key in ("steps", "cfg", "sampler_name", "scheduler", "denoise", "duration", "fps", "num_frames", "transition_step"):
+    for key in ("steps", "cfg", "sampler_name", "scheduler", "denoise", "duration", "fps", "num_frames",
+                "transition_step"):
         explicit = getattr(req, key, None)
         if explicit is not None:
             values[key] = explicit
@@ -440,7 +441,7 @@ def build_video_values(
     #     最终 NFE = steps + extra_steps
     # 早期版本按 `steps - 1` 校验：对未声明 extra_steps 的 self-lift 来说上界偏严 1 步，但它的
     # 默认档（story 5/6、fight 6/8）都够用，所以长期没暴露；一旦模型声明 extra_steps >= 2
-    # （如 fastvideo-fasth3-self-lift 的 2），合法请求会被误拦。
+    # （如某支 SelfLift 变体的 2），合法请求会被误拦。
     # 违规本要等 ComfyUI 跑到采样阶段才抛错，这里仍提前拦下省一次白排队，只是把上限算准。
     if spec.binds("transition_step"):
         ts, st = values.get("transition_step"), values.get("steps")

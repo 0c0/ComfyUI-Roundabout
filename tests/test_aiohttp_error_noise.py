@@ -2,7 +2,7 @@
 
 背景（真实日志，长任务 / SSE 场景）：
 
-    [INFO]  [Roundabout] req=1b9ee2a7e95c model=minimax-h3-turbo n=1 videos=1 elapsed=148.4s
+    [INFO]  [Roundabout] req=1b9ee2a7e95c model=minimax-h3 n=1 videos=1 elapsed=148.4s
     [INFO]  [Roundabout] MCP gateway: task 5f6e9843... completion notification sent (status=succeeded)
     [ERROR] Error handling request from 192.168.1.10
     Traceback (most recent call last): ...

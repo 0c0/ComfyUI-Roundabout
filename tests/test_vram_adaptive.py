@@ -36,7 +36,7 @@ for _p in (str(ROOT), str(HERE)):
 
 logging.disable(logging.CRITICAL)  # 静音被测模块的 normal 日志，只留断言输出
 
-WF = "video_minimax_h3_self_lift.json"
+WF = "video_minimax_h3_lift.json"
 TIERS = [
     {"min_gb": 48, "chunks": 1, "head_chunks": 4, "seq_threshold": 262144, "highres_tiling": False},
     {"min_gb": 24, "chunks": 2, "head_chunks": 8, "seq_threshold": 16384, "highres_tiling": True},
@@ -132,37 +132,39 @@ def main() -> int:
             "  t:\n"
             f"    workflow: {WF}\n"
             "    mode: video\n"
-            "    output_node: '238'\n"
+            "    output_node: '92'\n"
             "    vram_adaptive: true\n"
             "    references:\n"
             "      aggregator: '136'\n"
             "      images:\n"
-            "      - '150'\n"
-            "      - '164'\n"
+            "      - '137'\n"
+            "      - '139'\n"
+            "      image_keys:\n"
+            "      - first_frame\n"
+            "      - last_frame\n"
             "    bindings:\n"
-            "      prompt: 232.inputs.value\n"
-            "      seed: 235.inputs.seed\n"
-            "      chunks: 219.inputs.chunks\n"
-            "      head_chunks: 220.inputs.head_chunks\n"
-            "      seq_threshold: 219.inputs.seq_threshold\n"
-            "      highres_tiling: 235.inputs.highres_tiling\n"
+            "      prompt: 138.inputs.value\n"
+            "      seed: 129.inputs.noise_seed\n"
+            "      chunks: 158.inputs.chunks\n"
+            "      head_chunks: 157.inputs.head_chunks\n"
+            "      seq_threshold: 158.inputs.seq_threshold\n"
             "  plain:\n"
             f"    workflow: {WF}\n"
             "    mode: video\n"
             "    bindings:\n"
-            "      prompt: 232.inputs.value\n",
+            "      prompt: 138.inputs.value\n",
             encoding="utf-8",
         )
 
-        for gb, expect in ((8.0, (6, 24, 4096, True)), (24.0, (2, 8, 16384, True)), (48.0, (1, 4, 262144, False))):
+        for gb, expect in ((8.0, (6, 24, 4096)), (24.0, (2, 8, 16384)), (48.0, (1, 4, 262144))):
             os.environ[vram.ENV_KEY] = str(gb)
             vram.reset_cache()
             reg = Registry()
             reg.load(tmpdir / "models.yaml", tmpdir / "workflows", "t")
             spec = reg.resolve("t")
             got = (spec.defaults.get("chunks"), spec.defaults.get("head_chunks"),
-                   spec.defaults.get("seq_threshold"), spec.defaults.get("highres_tiling"))
-            check(f"{gb:g} GiB -> 默认值 {expect[0]}/{expect[1]}/{expect[2]}/{expect[3]}", got == expect, f"got={got}")
+                   spec.defaults.get("seq_threshold"))
+            check(f"{gb:g} GiB -> 默认值 {expect[0]}/{expect[1]}/{expect[2]}", got == expect, f"got={got}")
             check(f"{gb:g} GiB -> vram_tier 记录在 spec 上", bool(spec.vram_tier))
             plain = reg.resolve("plain")
             check(f"{gb:g} GiB -> 未声明 vram_adaptive 的模型不受影响",
@@ -171,29 +173,28 @@ def main() -> int:
         # 注入后确实写进工作流节点
         wf = build_workflow(reg.resolve("t"), {"prompt": "p", "chunks": 1, "head_chunks": 4,
                                               "seq_threshold": 262144, "highres_tiling": False}, None)
-        check("分块参数注入到 219 / 220 / 235",
-              wf["219"]["inputs"]["chunks"] == 1 and wf["220"]["inputs"]["head_chunks"] == 4
-              and wf["219"]["inputs"]["seq_threshold"] == 262144
-              and wf["235"]["inputs"]["highres_tiling"] is False)
-        check("模板未被注入污染", reg.resolve("t").template["219"]["inputs"]["chunks"] == 2)
+        check("分块参数注入到 158 / 157",
+              wf["158"]["inputs"]["chunks"] == 1 and wf["157"]["inputs"]["head_chunks"] == 4
+              and wf["158"]["inputs"]["seq_threshold"] == 262144)
+        check("模板未被注入污染", reg.resolve("t").template["158"]["inputs"]["chunks"] == 1)
 
         # 回归：pipeline 组装出的 values 是一份白名单，永远不会带 chunks / head_chunks 这些键，
         # 所以档位值必须由 spec.defaults 兜住。早期只有「调用方主动传参」才注入，结果是
         # list_models 报 6/24、真正提交给 ComfyUI 的却还是模板里写死的 2/8。
-        for gb, expect in ((8.0, (6, 24, 4096, True)), (24.0, (2, 8, 16384, True))):
+        for gb, expect in ((8.0, (6, 24, 4096)), (24.0, (2, 8, 16384))):
             os.environ[vram.ENV_KEY] = str(gb)
             vram.reset_cache()
             reg_d = Registry()
             reg_d.load(tmpdir / "models.yaml", tmpdir / "workflows", "t")
             wf_d = build_workflow(reg_d.resolve("t"), {"prompt": "p"}, None)
-            got_d = (wf_d["219"]["inputs"]["chunks"], wf_d["220"]["inputs"]["head_chunks"],
-                     wf_d["219"]["inputs"]["seq_threshold"], wf_d["235"]["inputs"]["highres_tiling"])
+            got_d = (wf_d["158"]["inputs"]["chunks"], wf_d["157"]["inputs"]["head_chunks"],
+                     wf_d["158"]["inputs"]["seq_threshold"])
             check(f"{gb:g} GiB -> 不传分块参数也按档位注入 {expect}", got_d == expect, f"got={got_d}")
 
         os.environ[vram.ENV_KEY] = "48"
         vram.reset_cache()
         wf_x = build_workflow(reg.resolve("t"), {"prompt": "p", "chunks": 9}, None)
-        check("请求参数仍然压过档位值", wf_x["219"]["inputs"]["chunks"] == 9, f"got={wf_x['219']['inputs']['chunks']}")
+        check("请求参数仍然压过档位值", wf_x["158"]["inputs"]["chunks"] == 9, f"got={wf_x['158']['inputs']['chunks']}")
 
         # 模型自己写的 defaults 覆盖档位值
         text = (tmpdir / "models.yaml").read_text(encoding="utf-8").replace(
@@ -233,18 +234,23 @@ def main() -> int:
                         stack.append(val[0])
             return seen
 
-        for n, keep in ((0, ()), (1, ("150",)), (2, ("150", "164"))):
+        for n, keep in ((0, ()), (1, ("137",)), (2, ("137", "139"))):
             wf2 = build_workflow(spec, {"prompt": "p"}, None)
             req = VideoGenerationRequest(prompt="p", reference_images=(["a.png"] * n) or None)
             dropped = pipeline._prune_unused_references(wf2, spec, req)
-            present = tuple(nid for nid in ("150", "164") if nid in wf2)
-            keys = sorted(k for k in wf2["136"]["inputs"] if k.startswith("ref_images"))
+            present = tuple(nid for nid in ("137", "139") if nid in wf2)
+            keys = sorted(k for k in wf2["136"]["inputs"] if k in ("first_frame", "last_frame"))
             check(f"传 {n} 张图 -> 保留 {keep or '（无）'}", present == keep, f"dropped={dropped}")
-            check(f"传 {n} 张图 -> aggregator 输入键同步", keys == [f"ref_images.ref_image_{i}" for i in range(n)],
+            check(f"传 {n} 张图 -> aggregator 输入键同步", keys == ["first_frame", "last_frame"][:n],
                   f"keys={keys}")
             check(f"传 {n} 张图 -> 聚合节点 136 始终保留", "136" in wf2)
             check(f"传 {n} 张图 -> 无悬空连线", not _dangling(wf2), "; ".join(_dangling(wf2)))
-            orphans = sorted(set(wf2) - _reachable(wf2, "238"), key=int)
+            roots = [nid for nid, nd in wf2.items()
+                     if nd.get("class_type") in ("SaveVideo", "SaveImage", "PreviewImage")]
+            seen: set[str] = set()
+            for root in roots:
+                seen |= _reachable(wf2, root)
+            orphans = sorted(set(wf2) - seen, key=int)
             check(f"传 {n} 张图 -> 无不可达孤儿节点", not orphans, f"orphans={orphans}")
 
         print("\n[6] 真实 models.yaml：基础两支（minimax-h3 / -edit）已开启分块自适应")
@@ -259,9 +265,9 @@ def main() -> int:
                   set(sp.bindings) >= {"chunks", "head_chunks", "seq_threshold"}
                   and "highres_tiling" not in sp.bindings, sorted(sp.bindings))
             wf_r = build_workflow(sp, {"prompt": "p"}, None)
-            check(f"{name}: 8GB 档注入 157/220 head_chunks=24",
+            check(f"{name}: 8GB 档注入 157 head_chunks=24",
                   wf_r["157"]["inputs"]["head_chunks"] == 24, wf_r["157"]["inputs"])
-            check(f"{name}: 8GB 档注入 158/219 chunks=6、seq_threshold=4096",
+            check(f"{name}: 8GB 档注入 158 chunks=6、seq_threshold=4096",
                   wf_r["158"]["inputs"]["chunks"] == 6
                   and wf_r["158"]["inputs"]["seq_threshold"] == 4096,
                   wf_r["158"]["inputs"])

@@ -4,7 +4,7 @@ Roundabout 不自带任何"工作流导入"功能。它做的只有一件事：
 
 > 读一份 **API 格式**的工作流 JSON，按 `models.yaml` 里声明的映射，把接口参数注进对应节点的 input，然后提交给 ComfyUI。
 
-所以接入自己的流程 = **导出一个 JSON + 写一段映射**。`workflows/` 下的 15 个内置工作流只是可用样本，随时可以删。
+所以接入自己的流程 = **导出一个 JSON + 写一段映射**。`workflows/` 下的 20 个内置工作流只是可用样本，随时可以删。
 
 ---
 
@@ -50,7 +50,7 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 | `fps` | `CreateVideo.fps`、`VideoCombine.frame_rate` |
 | `duration` / `num_frames` | 你自己链路里的时长/帧数节点 |
 | `chunks` / `head_chunks` / `seq_threshold` | `MiniMaxChunkFeedForward.chunks` / `.seq_threshold`、`MiniMaxLowVRAMAttention.head_chunks`（KJNodes） |
-| `highres_tiling` | `SelfLiftH3Sampler.highres_tiling`（comfyui-SelfLift） |
+| `highres_tiling` | ~~`SelfLiftH3Sampler.highres_tiling`~~（**已下线 2026-09-21**，随 self-lift 摘档） |
 | `transition_step` | `SelfLiftH3Sampler.transition_step`（comfyui-SelfLift）—— 总步数仍走 `steps`（`BasicScheduler.steps`）。上界是 `steps + extra_steps - 1` 而非 `steps - 1`，原因见后文《SelfLift 的 σ 网格与 `extra_steps`》 |
 | `lowres_scale` | `SelfLiftH3Sampler.lowres_scale`（comfyui-SelfLift）—— 一采的相对分辨率（0.25–1.0）。`"auto"` 由网关按目标尺寸反推，见后文《一采分辨率：`lowres_scale` 与 `auto`》 |
 
@@ -186,7 +186,7 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 
 启动时会校验：`aggregator` 必须存在，各 load 节点必须存在，且聚合器上必须真有 `ref_images.ref_image_0` 这样的 input。
 
-**同一个工作流做「文生视频」和「带图生成」**：槽位本来就可选 —— 请求里不传 `reference_images`，网关就把对应 LoadImage 连节点带输入键一起删掉，模型自然只吃提示词。所以不必为两种模式各维护一份 JSON。`minimax-h3-self-lift` 就是这么用的（传 0 / 1 / 2 张图 = 纯文生 / 首帧 / 首尾帧）：
+**同一个工作流做「文生视频」和「带图生成」**：槽位本来就可选 —— 请求里不传 `reference_images`，网关就把对应 LoadImage 连节点带输入键一起删掉，模型自然只吃提示词。所以不必为两种模式各维护一份 JSON。`minimax-h3-lift` 就是这么用的（传 0 / 1 / 2 张图 = 纯文生 / 首帧 / 首尾帧）：
 
 ```yaml
     references:
@@ -196,7 +196,7 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 
 在 ComfyUI 画布上手动跑时，把不需要的 LoadImage 按 **Bypass（Ctrl+B）** 旁路掉同样等效。
 
-三类参考可以同时挂满，`minimax-h3-self-lift-edit`（Ref2VA 权重那支）就是全套槽位：
+三类参考可以同时挂满，`minimax-h3-lift-edit`（Ref2VA 权重那支）就是全套槽位：
 
 ```yaml
     references:
@@ -227,14 +227,13 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 - 不写 `*_keys` 时行为与以前完全一致（默认 `ref_images.ref_image_N`）。
 - 节点 id 含冒号（子图扁平化导出的 `105:200`）照抄，绑定路径按 `.` 切分，冒号不影响解析。
 - `fasth3` / `fasth3-edit` 就是这么接的：前者用 `image_keys` 接管首尾帧，后者聚合节点是
-  `MiniMaxH3ReferenceToVideo`，仍走默认键名。两支的 SelfLift 放大版
-  （`fastvideo-fasth3-self-lift` / `-edit`）接线完全一样 —— 只换了采样链路，`references` 段照抄即可。
+  `MiniMaxH3ReferenceToVideo`，仍走默认键名。
 
 **示例提示词的落点**：`prompt` 既可绑到独立的 `PrimitiveStringMultiline` 节点，
 也可直接绑聚合节点自己的 `prompt` 输入（`105:104.inputs.prompt`）—— 后者少一个节点，
 新工作流推荐这么做。
 
-### SelfLift 的 σ 网格与 `extra_steps`
+### SelfLift 的 σ 网格与 `extra_steps`【已下线 2026-09-21，随 self-lift 摘档】
 
 SelfLift 把一次采样拆成「低分前缀 + 高分收尾」，两阶段共用一条 σ 网格（`BasicScheduler(steps)` 生成），
 再由 `H3SigmaRefiner`（`ComfyUI-YCNodes-MiniMax-H3`）在网格尾部补 `extra_steps` 个点：
@@ -248,8 +247,7 @@ SelfLift 把一次采样拆成「低分前缀 + 高分收尾」，两阶段共�
 
 | 工作流 | `extra_steps` | `start_at_sigma` | 默认 `steps` / `transition_step` |
 |---|---|---|---|
-| `minimax-h3-self-lift` / `-edit` | 2 | 0.9 | 8 / 8（走 `motion_presets`：story 8/8、fight 10/8） |
-| `fastvideo-fasth3-self-lift` / `-edit` | 2 | 0.9 | 8 / 8 |
+| ~~`minimax-h3-self-lift` / `-edit`~~ | 2 | 0.9 | 8 / 8（走 `motion_presets`：story 8/8、fight 10/8）—— **已下线 2026-09-21** |
 
 > σ 标定**不能跨族照抄**：fasth3 链上多了 `MiniMaxH3SigmaShift(shift_video=10)`，σ 网格被挤向高噪端；
 > 旧蒸馏档（extra=1 / σ0.7，为 4 步 turbo LoRA 而设）也已于 2026-09-18 随 LoRA 一并淘汰，三族统一为 2 / 0.9。
@@ -263,7 +261,7 @@ SelfLift 把一次采样拆成「低分前缀 + 高分收尾」，两阶段共�
 **绝对**分辨率有关 —— 低分长边越过 1344 会掉宽谱细节、**并且**织出规则的斜向假网格
 （两种失效各自独立，实测曲线见 `skill: selflift-progressive-upscale`）。
 
-所以 `fastvideo-fasth3-self-lift*` 与 SelfLift 两支（`minimax-h3-self-lift*`，无 LoRA 标定）的默认档写成 `auto`，由网关按目标尺寸反推：
+所以 SelfLift 两支（`minimax-h3-self-lift*`，无 LoRA 标定，**已下线 2026-09-21**）的默认档写成 `auto`，由网关按目标尺寸反推：
 
 ```
 L = min(84 / max(W, H)_latent, 0.70)        # 84 = 1344 / 16
@@ -314,7 +312,7 @@ defaults:
       seq_threshold: 4096
       highres_tiling: true
 models:
-  minimax-h3-self-lift:
+  minimax-h3-lift:
     vram_adaptive: true
     bindings:
       chunks: 219.inputs.chunks
@@ -330,17 +328,17 @@ models:
 
 ---
 
-## 按叙事节奏切参数档：`motion_presets`
+## 按叙事节奏切参数档：`motion_presets`【已下线 2026-09-21，随 self-lift 摘档】
 
-有些参数**必须成对调整**，只改一个反而更糟。SelfLift 的「总步数 + 过渡步」就是典型：文戏 8 / 8、打戏 10 / 8（**默认文戏**）。与其每次记两个数字，不如打包成命名档，请求里写一个词即可：
+有些参数**必须成对调整**，只改一个反而更糟。SelfLift 的「总步数 + 过渡步」就是典型：文戏 8 / 8、打戏 10 / 8（**默认文戏**）。**该档已下线，目前无模型声明 `motion_presets`。**与其每次记两个数字，不如打包成命名档，请求里写一个词即可：
 
 ```json
-{"model": "minimax-h3-self-lift", "prompt": "...", "duration": 5, "motion": "story"}
+{"model": "minimax-h3-self-lift", "prompt": "...", "duration": 5, "motion": "story"}   // 该档已下线 2026-09-21
 ```
 
 ```yaml
 models:
-  minimax-h3-self-lift:
+  minimax-h3-self-lift:   # 已下线 2026-09-21
     defaults:
       motion: story           # 默认档；不传 motion 时落回这里
     motion_presets:

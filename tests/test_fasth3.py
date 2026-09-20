@@ -268,7 +268,7 @@ def main() -> int:  # noqa: C901
         check("image_keys 与 images 数量不匹配时报错", "对不上" in str(exc), str(exc))
 
     print("\n[7] 同族其它模型未受影响")
-    for name, expect_vae in (("minimax-h3", "video/save"), ("minimax-h3-turbo-edit", "video/save")):
+    for name, expect_vae in (("minimax-h3", "video/save"), ("minimax-h3-edit", "video/save")):
         s = reg.resolve(name)
         w = build_workflow(s, {"prompt": "p"}, None)
         vaes = [n["inputs"]["vae_name"] for n in w.values()
@@ -277,8 +277,8 @@ def main() -> int:  # noqa: C901
               VIDEO_VAE in vaes, f"{vaes}")
         check(f"{name}: audio VAE 仍是 fp32",
               AUDIO_VAE in vaes, f"{vaes}")
-    check("H3 系列视频模型总数为 11（5 支 MiniMax 常规——含 HyperFlow 加速档 + 2 支 MiniMax SelfLift + 2 支 FastH3 + 2 支 FastH3 SelfLift）",
-          len([s for s in reg.all() if s.mode == "video"]) == 11,
+    check("H3 系列视频模型总数为 6（2 支 MiniMax 常规 + 2 支 FastH3 + 2 支 lift 放大档）",
+          len([s for s in reg.all() if s.mode == "video"]) == 6,
           [s.name for s in reg.all() if s.mode == "video"])
 
     if saved_env is not None:

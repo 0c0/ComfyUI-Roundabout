@@ -206,6 +206,14 @@
   },
   "136": {
     "inputs": {
+      "clip": [
+        "128",
+        0
+      ],
+      "vae": [
+        "119",
+        0
+      ],
       "prompt": [
         "138",
         0
@@ -216,81 +224,16 @@
         "131",
         1
       ],
-      "ref_image_size": "max",
-      "clip": [
-        "128",
-        0
-      ],
-      "vae": [
-        "119",
-        0
-      ],
-      "audio_vae": [
-        "120",
-        0
-      ],
-      "ref_images.ref_image_0": [
+      "first_frame": [
         "137",
         0
       ],
-      "ref_images.ref_image_1": [
+      "last_frame": [
         "139",
-        0
-      ],
-      "ref_images.ref_image_2": [
-        "143",
-        0
-      ],
-      "ref_images.ref_image_3": [
-        "144",
-        0
-      ],
-      "ref_images.ref_image_4": [
-        "145",
-        0
-      ],
-      "ref_images.ref_image_5": [
-        "146",
-        0
-      ],
-      "ref_videos.ref_video_0": [
-        "147",
-        0
-      ],
-      "ref_videos.ref_video_1": [
-        "148",
-        0
-      ],
-      "ref_videos.ref_video_2": [
-        "149",
-        0
-      ],
-      "ref_video_audios.ref_video_audio_0": [
-        "147",
-        1
-      ],
-      "ref_video_audios.ref_video_audio_1": [
-        "148",
-        1
-      ],
-      "ref_video_audios.ref_video_audio_2": [
-        "149",
-        1
-      ],
-      "ref_audios.ref_audio_0": [
-        "150",
-        0
-      ],
-      "ref_audios.ref_audio_1": [
-        "151",
-        0
-      ],
-      "ref_audios.ref_audio_2": [
-        "152",
         0
       ]
     },
-    "class_type": "MiniMaxH3ReferenceToVideo",
+    "class_type": "MiniMaxH3ImageToVideo",
     "_meta": {
       "title": "MiniMax H3 Reference to Video"
     }
@@ -320,135 +263,6 @@
     "class_type": "LoadImage",
     "_meta": {
       "title": "加载图像"
-    }
-  },
-  "143": {
-    "inputs": {
-      "image": "example.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "加载图像"
-    }
-  },
-  "144": {
-    "inputs": {
-      "image": "example.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "加载图像"
-    }
-  },
-  "145": {
-    "inputs": {
-      "image": "example.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "加载图像"
-    }
-  },
-  "146": {
-    "inputs": {
-      "image": "example.png"
-    },
-    "class_type": "LoadImage",
-    "_meta": {
-      "title": "加载图像"
-    }
-  },
-  "147": {
-    "inputs": {
-      "video": [
-        "153",
-        0
-      ]
-    },
-    "class_type": "GetVideoComponents",
-    "_meta": {
-      "title": "获取视频元素"
-    }
-  },
-  "148": {
-    "inputs": {
-      "video": [
-        "154",
-        0
-      ]
-    },
-    "class_type": "GetVideoComponents",
-    "_meta": {
-      "title": "获取视频元素"
-    }
-  },
-  "149": {
-    "inputs": {
-      "video": [
-        "155",
-        0
-      ]
-    },
-    "class_type": "GetVideoComponents",
-    "_meta": {
-      "title": "获取视频元素"
-    }
-  },
-  "150": {
-    "inputs": {
-      "audio": "hermes_dtest_refaud_0.wav"
-    },
-    "class_type": "LoadAudio",
-    "_meta": {
-      "title": "加载音频"
-    }
-  },
-  "151": {
-    "inputs": {
-      "audio": "hermes_dtest_refaud_0.wav"
-    },
-    "class_type": "LoadAudio",
-    "_meta": {
-      "title": "加载音频"
-    }
-  },
-  "152": {
-    "inputs": {
-      "audio": "hermes_dtest_refaud_0.wav"
-    },
-    "class_type": "LoadAudio",
-    "_meta": {
-      "title": "加载音频"
-    }
-  },
-  "153": {
-    "inputs": {
-      "file": "hermes_dtest_refvid_0.mp4",
-      "video-preview": ""
-    },
-    "class_type": "LoadVideo",
-    "_meta": {
-      "title": "加载视频"
-    }
-  },
-  "154": {
-    "inputs": {
-      "file": "hermes_dtest_refvid_0.mp4",
-      "video-preview": ""
-    },
-    "class_type": "LoadVideo",
-    "_meta": {
-      "title": "加载视频"
-    }
-  },
-  "155": {
-    "inputs": {
-      "file": "hermes_dtest_refvid_0.mp4",
-      "video-preview": ""
-    },
-    "class_type": "LoadVideo",
-    "_meta": {
-      "title": "加载视频"
     }
   },
   "156": {

@@ -113,8 +113,8 @@ class VideoGenerationRequest(BaseModel):
         description=(
             "SelfLift 渐进采样的过渡步：低分辨率阶段结束后，在第几步切到高分辨率。"
             "合法区间 1 <= transition_step <= steps + extra_steps - 1，其中 extra_steps 是高分阶段"
-            "在 σ 网格上补的点数（随模型而定：minimax-h3-self-lift* 为 1、fastvideo-fasth3-self-lift* 为 2）；"
-            "越界时网关会在提交前拦下。仅 SelfLift 系列（minimax-h3-self-lift* / fastvideo-fasth3-self-lift*）有效。"
+            "在 σ 网格上补的点数（随模型而定：minimax-h3-self-lift* 为 1）；"
+            "越界时网关会在提交前拦下。仅 SelfLift 系列（minimax-h3-self-lift*）有效。"
         ),
     )
     lowres_scale: float | Literal["auto"] | None = Field(
@@ -126,6 +126,9 @@ class VideoGenerationRequest(BaseModel):
             "低分长边越过 1344 会掉宽谱细节并织出规则假网格，网关会告警。仅 SelfLift 系列有效。"
         ),
     )
+    # ---- H3 Lift 确定性放大（minimax-h3-lift）----
+    # scale / rho / w_min / w_max 不设请求字段：默认值（1.5 / 0.0 / 0.5 / 1.0）写死在工作流模板，
+    # 精调用厂商通用透传 workflow_overrides，如 {"910.inputs.scale": 2.0, "910.inputs.rho": 0.3}。
 
     # ---------- 扩展字段：ComfyUI 精调 ----------
     negative_prompt: str | None = Field(None, description="反向提示词")

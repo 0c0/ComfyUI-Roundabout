@@ -200,7 +200,7 @@ async def generate_image(
         description=(
             "模型选择（不传=默认 z-image-turbo）。用途：z-image-turbo=8 步快速文生图（日常首选）；"
             "z-image=30 步高质量；boogu-image-turbo / boogu-image-base-4step=4 步极速预览；"
-            "boogu-image-base=30 步高质量备选；mage-flow-base / mage-flow-turbo=MageFlow 备选。"
+            "boogu-image-base=30 步高质量备选。"
             "编辑已有图片请用 edit_image 工具，去背景用 remove_background 工具。"
         ),
     ),
@@ -331,7 +331,6 @@ async def remove_background(
         "或 \"fight\"（打戏，8 / 6）一键切档，要精调则改传 steps + transition_step；"
         "fasth3=FastVideo 8 步蒸馏档（reference_images 传 0/1/2 张 = 文生 / 首帧 / 首尾帧）；"
         "fasth3-edit=FastH3 参考生视频（6 图 + 3 视频 + 3 音频）；"
-        "fastvideo-fasth3-self-lift / -edit=FastH3 的 SelfLift 渐进放大版，槽位与对应单阶段版一致。"
         "filename_prefix 指定落盘前缀（可含 \"/\" 建子目录，不传则用模板默认）。"
         "默认同步等待（长任务建议 background=pending 异步，再轮询 get_task）。"
     ),
@@ -341,15 +340,17 @@ async def generate_video_tool(
     model: str = Field(
         default="minimax-h3",
         description=(
-            "模型选择（MiniMax H3 / FastH3 系列）：minimax-h3=30 步高质量（默认）；"
-            "minimax-h3-turbo=8 步快速；minimax-h3-edit / minimax-h3-turbo-edit=参考/编辑变体"
+            "模型选择（MiniMax H3 / FastH3 系列）：minimax-h3=base 档，quality 分档 draft(1024x576@8)/"
+            "standard(1280x720@8)/hd(1344x768@8 交付)/high(1344x768@30 官方全步数)；"
+            "minimax-h3-edit=参考/编辑变体"
             "（配合 reference_images/videos/audios 使用，最多 6 图 + 3 视频 + 3 音频）；"
             "minimax-h3-self-lift=SelfLift 渐进采样（低分→高分），reference_images 传 0/1/2 张"
             "即文生 / 首帧 / 首尾帧，分块参数按本机显存自动分档；"
             "fasth3=FastVideo FastH3 8 步蒸馏档（文生 / 首尾帧）；"
             "fasth3-edit=FastH3 参考生视频（配合 reference_images/videos/audios，最多 6 图 + 3 视频 + 3 音频）；"
-            "fastvideo-fasth3-self-lift=fasth3 的 SelfLift 渐进放大版（文生 / 首尾帧）；"
-            "fastvideo-fasth3-self-lift-edit=fasth3-edit 的 SelfLift 渐进放大版（最多 6 图 + 3 视频 + 3 音频）。"
+            "minimax-h3-lift=H3 确定性放大档（原生 1344x768 采样 → 学习式 lift，默认输出 2016x1152，"
+            "构图零重掷、纹理 +152% vs 白放大；scale/rho 精调用 workflow_overrides 点名 "
+            "910.inputs.scale / 910.inputs.rho）。"
         ),
     ),
     duration: float | None = None,
@@ -380,7 +381,7 @@ async def generate_video_tool(
         description=(
             "SelfLift 低分前缀的相对分辨率（0.25-1.0）或 \"auto\"：auto 按目标尺寸反推，"
             "把低分长边压在 H3 原生画布 1344 上（1080p->0.70、2K->0.525、4K->0.35）。"
-            "fastvideo-fasth3-self-lift* 默认 auto；minimax-h3-self-lift* 默认 0.40；"
+            "SelfLift 系列（minimax-h3-self-lift*）默认 auto；"
             "不传即用模型默认档。>0.70 会越过原生画布（掉细节 + 织假网格）。仅 SelfLift 系列有效。"
         ),
     ),

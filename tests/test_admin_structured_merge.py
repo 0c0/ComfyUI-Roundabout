@@ -33,39 +33,38 @@ def check(label: str, cond: bool, detail: object = "") -> None:
 
 
 raw = yaml.safe_load((ROOT / "models.yaml").read_text(encoding="utf-8"))
-LIFT = raw["models"]["minimax-h3-self-lift"]
+LIFT = raw["models"]["minimax-h3-lift"]
 
 # 前端实际会提交的形状：只带它渲染过的键（且 defaults / bindings 总是存在，可能为空）
 FRONTEND_PAYLOAD = {
-    "name": "minimax-h3-self-lift",
-    "workflow": "video_minimax_h3_self_lift.json",
+    "name": "minimax-h3-lift",
+    "workflow": "video_minimax_h3_lift.json",
     "description": "改过的描述",
     "mode": "video",
     "capabilities": ["text-to-video", "image-to-video"],
-    "output_node": "238",
-    "aliases": ["selflift"],
+    "output_node": "92",
+    "aliases": ["h3-lift"],
     "timeout": 1800,
     "defaults": {"steps": 8},
-    "bindings": {"prompt": "232.inputs.value"},
+    "bindings": {"prompt": "138.inputs.value"},
 }
 
 print("== 1. 前端不认识的键必须原样保留 ==")
 merged = merge_model_entry(LIFT, FRONTEND_PAYLOAD)
-for key in ("references", "vram_adaptive", "motion_presets"):
+for key in ("references", "vram_adaptive"):
     check(f"{key} 保留", merged.get(key) == LIFT.get(key), merged.get(key))
-check("motion_presets 内容未变（story 8/8、fight 10/8）",
-      merged["motion_presets"]["story"] == {"steps": 8, "transition_step": 8}
-      and merged["motion_presets"]["fight"] == {"steps": 10, "transition_step": 8},
-      merged.get("motion_presets"))
+check("references 嵌套内容未变（首尾帧槽 image_keys）",
+      (merged.get("references") or {}).get("image_keys") == ["first_frame", "last_frame"],
+      merged.get("references"))
 check("references.aggregator 仍是 136", (merged.get("references") or {}).get("aggregator") == "136")
 check("vram_adaptive 仍为 true", merged.get("vram_adaptive") is True)
 
 print("\n== 2. 前端提交的键要生效 ==")
 check("description 被更新", merged["description"] == "改过的描述")
 check("timeout 被更新", merged["timeout"] == 1800)
-check("aliases 被整块替换", merged["aliases"] == ["selflift"])
+check("aliases 被整块替换", merged["aliases"] == ["h3-lift"])
 check("bindings 被整块替换（改 binding 能生效）",
-      merged["bindings"] == {"prompt": "232.inputs.value"}, merged["bindings"])
+      merged["bindings"] == {"prompt": "138.inputs.value"}, merged["bindings"])
 check("defaults 被整块替换", merged["defaults"] == {"steps": 8})
 
 print("\n== 3. 空 dict / 空 list 不当作清空 ==")
