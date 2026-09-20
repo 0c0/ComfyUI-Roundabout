@@ -21,7 +21,6 @@ class ImageGenerationRequest(BaseModel):
     model: str | None = Field(None, description="映射到某个 ComfyUI workflow 模板")
     n: int = Field(1, ge=1, description="生成张数")
     size: str | None = Field(None, description='如 "1024x1024" / "auto"')
-    quality: str | None = Field(None, description="low / medium / high / standard / hd / auto")
     style: str | None = Field(None, description="vivid / natural（可在 models.yaml 里映射为提示词后缀）")
     response_format: Literal["b64_json", "url", "file", "path"] | None = Field(None)
     user: str | None = Field(None)
@@ -84,21 +83,12 @@ class VideoGenerationRequest(BaseModel):
     size: str | None = Field(
         None,
         description=(
-            '分辨率预设键 `<tier>p-<ratio>` 或 `<ratio>@<tier>p`，tier∈{480p,720p,768p,1080p}，'
+            '分辨率预设键 `<tier>p-<ratio>` 或 `<ratio>@<tier>p`，tier∈{480p,576p,720p,768p,1080p}，'
             'ratio∈{1:1,3:4,4:3,16:9,9:16}（如 "720p-16:9" / "1080p-16:9" / "9:16@480p"）；'
             '也可直接写 WxH（如 "1280x720"）。auto/None 用模型默认。'
         ),
     )
-    quality: str | None = Field(None, description="low / medium / high / standard / hd / auto")
     style: str | None = Field(None, description="vivid / natural")
-    motion: str | None = Field(
-        None,
-        description=(
-            "命名运动档，一次展开成多组参数（由模型在 models.yaml 的 motion_presets 中声明）。"
-            "SelfLift 系列支持 story=文戏（总步数 8 / 过渡步 8）与 fight=打戏（10 / 8）；"
-            "需要精调时改传 `steps` + `transition_step`。"
-        ),
-    )
     response_format: Literal["b64_json", "url", "file", "path"] | None = Field(None, description="视频默认 url")
     user: str | None = None
 
@@ -106,26 +96,6 @@ class VideoGenerationRequest(BaseModel):
     duration: float | None = Field(None, description="视频时长（秒），允许 1–15")
     fps: int | None = Field(None, description="帧率")
     num_frames: int | None = Field(None, description="总帧数（部分工作流用帧数而非时长）")
-    transition_step: int | None = Field(
-        None,
-        ge=1,
-        le=200,
-        description=(
-            "SelfLift 渐进采样的过渡步：低分辨率阶段结束后，在第几步切到高分辨率。"
-            "合法区间 1 <= transition_step <= steps + extra_steps - 1，其中 extra_steps 是高分阶段"
-            "在 σ 网格上补的点数（随模型而定：minimax-h3-self-lift* 为 1）；"
-            "越界时网关会在提交前拦下。仅 SelfLift 系列（minimax-h3-self-lift*）有效。"
-        ),
-    )
-    lowres_scale: float | Literal["auto"] | None = Field(
-        None,
-        description=(
-            "SelfLift 低分前缀的相对分辨率（0.25–1.0），或 \"auto\"：按目标尺寸反推，"
-            "把低分长边压在 H3 原生画布 1344 上（1080p→0.70、2K→0.525、4K→0.35）。"
-            "SelfLift 系列四支默认均为 auto；显式传 0.25–1.0 可覆盖。"
-            "低分长边越过 1344 会掉宽谱细节并织出规则假网格，网关会告警。仅 SelfLift 系列有效。"
-        ),
-    )
     # ---- H3 Lift 确定性放大（minimax-h3-lift）----
     # scale / rho / w_min / w_max 不设请求字段：默认值（1.5 / 0.0 / 0.5 / 1.0）写死在工作流模板，
     # 精调用厂商通用透传 workflow_overrides，如 {"910.inputs.scale": 2.0, "910.inputs.rho": 0.3}。

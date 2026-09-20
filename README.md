@@ -55,15 +55,13 @@ agent 全程**看不到也用不着**工作流 JSON。它只传语义参数，�
 
 **4. 硬件与画质经验值下沉到配置层，换机器不换工作流**
 
-同一份工作流 JSON，在 8 GiB 笔记本卡和 24 GiB 台式卡上最合适的分块参数差好几倍；同一个 SelfLift 模板，目标 1080p 和 4K 最合适的一采分辨率也不同。这些值写死在 JSON 里，换机器就得改图。Roundabout 把它们提到配置层，由网关按实际情况代入：
+同一份工作流 JSON，在 8 GiB 笔记本卡和 24 GiB 台式卡上最合适的分块参数差好几倍。这些值写死在 JSON 里，换机器就得改图。Roundabout 把它们提到配置层，由网关按实际情况代入：
 
 | 机制 | 跟着什么变 | 网关做什么 | 配置位置 |
 |---|---|---|---|
 | `vram_adaptive` | 显卡显存 | 启动时探测显存，取「`min_gb` 不超过本机显存」的最大一档，覆盖分块参数 | `defaults.vram_tiers` |
-| `motion_presets` | 剧情节奏 | 请求写 `motion: story` / `fight`，成对代入「总步数 + 过渡步」 | `motion_presets` |
-| `lowres_scale: auto` | 目标分辨率 | 按目标尺寸反推一采画布，把低分锚在模型原生分辨率以内 | 模型 `defaults` |
 
-三者都只改 YAML，改完热加载；工作流 JSON 保持一份模板，显存与分辨率差异全部在网关侧消化。细节见[按显卡自动调参](#按显卡自动调参vram_adaptive)、[按剧情节奏切档](#按剧情节奏切档motion_presets)、[一采分辨率自动反推](#一采分辨率自动反推lowres_scale-auto)。
+它只改 YAML，改完热加载；工作流 JSON 保持一份模板，显存差异全部在网关侧消化。细节见[按显卡自动调参](#按显卡自动调参vram_adaptive)。
 
 ---
 
@@ -94,9 +92,8 @@ agent 全程**看不到也用不着**工作流 JSON。它只传语义参数，�
 **按机器 / 按剧情自适应**
 
 - **显存自适应**（`vram_adaptive`）：启动时探测显存，自动为 H3 系列选取分块档位，8 / 12 / 24 GiB 卡共用同一份工作流。
-- ~~**剧情档位**（`motion_presets`）~~：`motion=story/fight` 一键成对切换 SelfLift 的总步数与过渡步 —— **已下线 2026-09-21**，随 self-lift 两支一起摘档。
-- **一采自动反推**（`lowres_scale: auto`）：按目标分辨率算出低分画布，避免高分辨率下低分越过原生尺寸掉细节。
-- 三者都可在单次请求里显式覆盖，改档表不用动代码。
+- ~~**剧情档位**（`motion_presets`）~~ / ~~**一采自动反推**（`lowres_scale: auto`）~~：**已移除 2026-09-21** —— 只由 self-lift 两支声明，随其下线后成为孤儿，机制代码已删除（不再是"无模型声明"的空壳）。
+- 分块参数可在单次请求里显式覆盖，改档表不用动代码。
 
 **看得见、管得了**
 
@@ -191,12 +188,12 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 # 提交
 curl -X POST http://127.0.0.1:8188/v1/videos/generations \
   -H "Content-Type: application/json" \
-  -d '{"model":"minimax-h3","quality":"draft","prompt":"a cat walking in rain","duration":5,"background":"pending"}'
+  -d '{"model":"minimax-h3","size":"576p-16:9","steps":8,"prompt":"a cat walking in rain","duration":5,"background":"pending"}'
 # 查结果（id 来自上一步返回）
 curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 ```
 
-`size` 支持档位预设 `<tier>p-<ratio>`：tier ∈ `480p` / `720p` / `768p` / `1080p`，ratio ∈ `1:1` / `3:4` / `4:3` / `16:9` / `9:16`（如 `768p-16:9` = 1360×768、`1080p-16:9` = 1920×1088）；也接受反向写法 `<ratio>@<tier>p`（如 `9:16@768p`）与直接 `WxH`。不传或 `auto` 用模型默认。
+`size` 支持档位预设 `<tier>p-<ratio>`：tier ∈ `480p` / `576p` / `720p` / `768p` / `1080p`，ratio ∈ `1:1` / `3:4` / `4:3` / `16:9` / `9:16`（如 `768p-16:9` = 1360×768、`1080p-16:9` = 1920×1088）；也接受反向写法 `<ratio>@<tier>p`（如 `9:16@768p`）与直接 `WxH`。不传或 `auto` 用模型默认。
 
 ### 3. MCP（给 agent 用）
 
@@ -257,9 +254,9 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 图像编辑 | `boogu-image-edit` / `boogu-image-edit-turbo` | 擅长改写 / 添加**图内文字**，30 步 / 6 步 |
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
 | 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base 30 步 / edit 25 步），支持 6 图 + 3 视频 + 3 音频参考；低显存分块按档位自适应（`vram_adaptive`） |
-| 视频 | ~~`minimax-h3-turbo`~~ / ~~`-turbo-edit`~~（**已下线 2026-09-20**） | Acc LoRA 是 diffusers 命名 → 728 key 零 patch，实际=裸 base@8（2026-09-19 实测）；8 步快跑由 `minimax-h3` 的 `quality: draft` 承接。要真加速见下方 Acc LoRA 注记 |
-| 视频 | ~~`minimax-h3-hyperflow`~~（**已下线 2026-09-21**） | HyperFlow 8 步加速档（base 权重 + HyperFlow LoRA，`euler` + `ManualSigmas` 官方 9 点 σ）。**本地跑不通**：社区转换版把端点适配器 `endpoint_time_embedder.*` 并进了 `time_embedder.proj_in/proj_out`，端点条件进不了模型（画面非单段式晕开）；要完整效果需上游原版 + `Addis-Pulse-Studio/ComfyUI-HyperFlow` 节点包。8 步快跑由 `minimax-h3` 的 `quality: draft` 与 `fasth3` 承接 |
-| 视频 | ~~`minimax-h3-self-lift`~~ / ~~`-self-lift-edit`~~（**已下线 2026-09-21**） | SelfLift 两阶段渐进采样（低分 NFE + 高分 NFE）。被 lift 的「原生采样 → 确定性 latent lift」取代；工作流备份在 `.workbuddy/stash/`，`motion` / `lowres_scale` 两档随之下线 |
+| 视频 | ~~`minimax-h3-turbo`~~ / ~~`-turbo-edit`~~（**已下线 2026-09-20**） | Acc LoRA 是 diffusers 命名 → 728 key 零 patch，实际=裸 base@8（2026-09-19 实测）；8 步快跑由 `minimax-h3` 直接传 `size:"576p-16:9"` + `steps:8` 承接。要真加速见下方 Acc LoRA 注记 |
+| 视频 | ~~`minimax-h3-hyperflow`~~（**已下线 2026-09-21**） | HyperFlow 8 步加速档（base 权重 + HyperFlow LoRA，`euler` + `ManualSigmas` 官方 9 点 σ）。**本地跑不通**：社区转换版把端点适配器 `endpoint_time_embedder.*` 并进了 `time_embedder.proj_in/proj_out`，端点条件进不了模型（画面非单段式晕开）；要完整效果需上游原版 + `Addis-Pulse-Studio/ComfyUI-HyperFlow` 节点包。8 步快跑由 `minimax-h3` 直接传 `steps:8` 与 `fasth3` 承接 |
+| 视频 | ~~`minimax-h3-self-lift`~~ / ~~`-self-lift-edit`~~（**已下线 2026-09-21**） | SelfLift 两阶段渐进采样（低分 NFE + 高分 NFE）。被 lift 的「原生采样 → 确定性 latent lift」取代；工作流备份在 `.workbuddy/stash/`，`motion` / `transition_step` / `lowres_scale` 三档的机制代码已于 2026-09-21 删除 |
 | 视频 | `minimax-h3-lift` | **base 骨架 + 确定性放大**：原生采样 → 学习式 latent lift（1344x768 × scale 1.5 = 2016x1152），构图零重掷、纹理最强；支持首尾帧（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）；产物落 `video/H3_Lift`；`scale` / `rho` 精调走 `workflow_overrides`（如 `910.inputs.scale=2.0`） |
 | 视频 | `minimax-h3-lift-edit` | 同上，改用 **edit 骨架**：Ref2VA 权重 + 参考槽全套 6 图 / 3 视频 / 3 音频。⚠️ **未标定**：步数沿用 edit 的 25 步，放大与参考的组合效果没做过 A/B |
 | 视频 | `fasth3` | FastVideo FastH3 8 步蒸馏档；文生 / 首尾帧生视频（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）。首尾帧走**关键帧**槽 `first_frame` / `last_frame`，与自成一族的 `minimax-h3` 走参考图槽不是一条路。**定位草稿 / 快周转**：官方口径 8 步最优、改步数掉质量，且 09-20 分频实测其高频段整体过量（**不是 49/50 步的无损替代**），要最大质量用 `minimax-h3` |
@@ -509,19 +506,15 @@ models:
 - 探测不到显存（纯 CPU / 无 torch）时不覆盖，行为与不声明 `vram_adaptive` 一致。
 - 档位表在 YAML 里，改档位不用动代码；`ROUNDABOUT_VRAM_GB` 可手动钉住。
 
-### 按剧情节奏切档（`motion_presets`）—— 已下线 2026-09-21
+### 剧情档位 / 一采反推（`motion_presets` / `lowres_scale`）—— 已移除 2026-09-21
 
-`motion=story/fight` 只由 `minimax-h3-self-lift` / `-self-lift-edit` 声明，两支同日下线 ——
-两阶段渐进采样被 lift 的「原生采样 → 确定性 latent lift」取代（09-20 实测高分二采会洗掉
-lift 铺的高频：lap 54.4 vs 78.4）。目前**没有任何模型声明档位**，传 `motion` 会报「不支持」
-而不是静默忽略。机制与 `motion_presets` 配置保留，有模型重新声明即可复用。
+`motion=story|fight` 与 `lowres_scale: auto` 只由 self-lift 两支声明，两支同日下线（两阶段渐进采样
+被 lift 的「原生采样 → 确定性 latent lift」取代；09-20 实测高分二采会洗掉 lift 铺的高频：lap 54.4 vs 78.4）。
+**机制代码已整条删除**：`motion` / `transition_step` / `lowres_scale` 请求字段、`motion_presets` 配置段、
+`gateway/lowres.py`。反推公式 `L = min(84 / max(W,H)_latent, 0.70)` 与实测曲线仍保留在
+`skill: selflift-progressive-upscale`。
 
-### 一采分辨率自动反推（`lowres_scale: auto`）—— 已下线 2026-09-21
 
-`lowres_scale` 是 SelfLift **两阶段**采样的一采（低分前缀）比例，只由 self-lift 两支声明，随之下线。
-lift 走的是「原生采样 → latent lift」单阶段，没有一采概念。
-反推公式 `L = min(84 / max(W,H)_latent, 0.70)` 与实测曲线仍保留在
-[WORKFLOWS.md](WORKFLOWS.md) 与 `skill: selflift-progressive-upscale`。
 
 ### 同机跑多个 ComfyUI 实例
 
@@ -552,7 +545,6 @@ ComfyUI-Roundabout/
 │   ├── analyze.py         # 上传工作流时的参数映射自动分析
 │   ├── tasks.py           # 任务表
 │   ├── vram.py            # 显存探测 + 低显存分块档位选取（vram_adaptive）
-│   ├── lowres.py          # SelfLift 一采分辨率策略（lowres_scale 的 auto 反推；self-lift 下线后暂无消费方）
 │   ├── log_filters.py     # 把 aiohttp「客户端断开」的 ERROR 降级为 DEBUG
 │   └── ...
 ├── web/                   # 前端（可视化页面 + 设置面板）

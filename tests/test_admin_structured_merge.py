@@ -85,7 +85,7 @@ check("新模型没有凭空多出 references", "references" not in merged)
 check("新模型 description 正常", merged["description"] == "改过的描述")
 
 print("\n== 6. 易丢字段都在白名单里 ==")
-for key in ("references", "vram_adaptive", "promptless", "motion_presets", "quality_presets", "style_presets"):
+for key in ("references", "vram_adaptive", "promptless", "style_presets"):
     check(f"_MODEL_ENTRY_KEYS 含 {key}", key in _MODEL_ENTRY_KEYS)
 
 print(f"\n===== {passed} passed / {failed} failed =====")

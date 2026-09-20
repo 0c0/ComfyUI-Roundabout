@@ -51,8 +51,7 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 | `duration` / `num_frames` | 你自己链路里的时长/帧数节点 |
 | `chunks` / `head_chunks` / `seq_threshold` | `MiniMaxChunkFeedForward.chunks` / `.seq_threshold`、`MiniMaxLowVRAMAttention.head_chunks`（KJNodes） |
 | `highres_tiling` | ~~`SelfLiftH3Sampler.highres_tiling`~~（**已下线 2026-09-21**，随 self-lift 摘档） |
-| `transition_step` | `SelfLiftH3Sampler.transition_step`（comfyui-SelfLift）—— 总步数仍走 `steps`（`BasicScheduler.steps`）。上界是 `steps + extra_steps - 1` 而非 `steps - 1`，原因见后文《SelfLift 的 σ 网格与 `extra_steps`》 |
-| `lowres_scale` | `SelfLiftH3Sampler.lowres_scale`（comfyui-SelfLift）—— 一采的相对分辨率（0.25–1.0）。`"auto"` 由网关按目标尺寸反推，见后文《一采分辨率：`lowres_scale` 与 `auto`》 |
+| ~~`transition_step`~~ / ~~`lowres_scale`~~ | **已移除 2026-09-21**（原 `SelfLiftH3Sampler` 的两阶段参数，随 self-lift 摘档；已从可注入白名单删除） |
 
 ### 写映射的三条铁律
 
@@ -233,56 +232,13 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 也可直接绑聚合节点自己的 `prompt` 输入（`105:104.inputs.prompt`）—— 后者少一个节点，
 新工作流推荐这么做。
 
-### SelfLift 的 σ 网格与 `extra_steps`【已下线 2026-09-21，随 self-lift 摘档】
+### SelfLift 的 σ 网格与 `extra_steps`【已移除 2026-09-21】
 
-SelfLift 把一次采样拆成「低分前缀 + 高分收尾」，两阶段共用一条 σ 网格（`BasicScheduler(steps)` 生成），
-再由 `H3SigmaRefiner`（`ComfyUI-YCNodes-MiniMax-H3`）在网格尾部补 `extra_steps` 个点：
+`transition_step` / `lowres_scale` / `motion` 三个形参连同 `gateway/lowres.py` 已**从代码里删除**
+（不再只是"无模型声明"）。σ 标定历史（最终 NFE = `steps + extra_steps`、上界
+`steps + extra_steps - 1`）保留在 `skill: selflift-progressive-upscale`。
 
-- **最终 NFE = `steps + extra_steps`** —— `steps` 只是低分阶段的步数。
-- 高分阶段至少留 2 步，只给 1 步会明显发灰发软。
-- 于是 `transition_step` 的合法上界是 `steps + extra_steps - 1`，**不是 `steps - 1`**。
-- `extra_steps` / `start_at_sigma` **不在可注入白名单里**（见上）——它们是工作流 JSON 里写死的标定值，
-  写进 `bindings` 是死链、写进 `defaults` 也只供网关做范围校验。改步数请用
-  `skill: selflift-progressive-upscale` 的方法重算这两个数。
 
-| 工作流 | `extra_steps` | `start_at_sigma` | 默认 `steps` / `transition_step` |
-|---|---|---|---|
-| ~~`minimax-h3-self-lift` / `-edit`~~ | 2 | 0.9 | 8 / 8（走 `motion_presets`：story 8/8、fight 10/8）—— **已下线 2026-09-21** |
-
-> σ 标定**不能跨族照抄**：fasth3 链上多了 `MiniMaxH3SigmaShift(shift_video=10)`，σ 网格被挤向高噪端；
-> 旧蒸馏档（extra=1 / σ0.7，为 4 步 turbo LoRA 而设）也已于 2026-09-18 随 LoRA 一并淘汰，三族统一为 2 / 0.9。
-
-### 一采分辨率：`lowres_scale` 与 `auto`
-
-`lowres_scale` 决定一采（低分前缀）跑在多大的画布上：`low_latent = round(dim_latent * L / 2) * 2`。
-
-**它是相对比例，同一个数值在不同目标尺寸下含义不同**：`0.70` 在 1920x1088 上得到
-1344x768（正好 H3 原生画布），在 2560x1440 上却是 1792x992（超原生 33%）。而画质只跟低分的
-**绝对**分辨率有关 —— 低分长边越过 1344 会掉宽谱细节、**并且**织出规则的斜向假网格
-（两种失效各自独立，实测曲线见 `skill: selflift-progressive-upscale`）。
-
-所以 SelfLift 两支（`minimax-h3-self-lift*`，无 LoRA 标定，**已下线 2026-09-21**）的默认档写成 `auto`，由网关按目标尺寸反推：
-
-```
-L = min(84 / max(W, H)_latent, 0.70)        # 84 = 1344 / 16
-```
-
-| 目标 | `auto` | 低分 latent / 像素 |
-|---|---|---|
-| 1920x1088（1080p） | 0.70 | 84x48 = 1344x768 |
-| 2560x1440（2K） | 0.525 | 84x48 = 1344x768 |
-| 3840x2160（4K） | 0.35 | 84x48 = 1344x768 |
-
-- 反推必须等 `width` / `height` 定稿，所以在 `pipeline.build_video_values` 里、尺寸解析
-  **之后**才算（实现见 `gateway/lowres.py`）；`build_workflow` 另留一道安全网，避免字符串
-  `"auto"` 被塞进节点的 FLOAT 输入框。
-- 上限 0.70 兼任「至少放大 1.43 倍」的下限：目标本身小于原生画布时也保持这个相对放大率，
-  不退化成恒等放大。尺寸未知时退回 0.70。
-- 旧蒸馏 LoRA 版曾默认模板字面值 `0.40`；换为无 LoRA 标定后（2026-09-18）已默认 `auto`。
-- 显式给 `> 0.70` 不拦（属于调用方的选择），但网关会打一条告警说明代价。
-- 一采分辨率是**相对**的，所以「L 的最优值」不能跨目标尺寸照搬，这是它被做成 auto 的原因。
-
----
 
 ## 大模型按显卡自动调参：`vram_adaptive`
 
@@ -328,36 +284,12 @@ models:
 
 ---
 
-## 按叙事节奏切参数档：`motion_presets`【已下线 2026-09-21，随 self-lift 摘档】
+## 按叙事节奏切参数档：`motion_presets`【已移除 2026-09-21】
 
-有些参数**必须成对调整**，只改一个反而更糟。SelfLift 的「总步数 + 过渡步」就是典型：文戏 8 / 8、打戏 10 / 8（**默认文戏**）。**该档已下线，目前无模型声明 `motion_presets`。**与其每次记两个数字，不如打包成命名档，请求里写一个词即可：
+随 self-lift 下线后无模型声明，机制已整条删除：`ModelSpec.motion_presets`、`apply_presets` 的
+motion 分支、请求字段 `motion`、结构化配置里的 `motion_presets` 读写——不再保留"有模型重新声明
+即可复用"的空壳。要恢复请从 git 历史取回，别照着旧文档补一半。
 
-```json
-{"model": "minimax-h3-self-lift", "prompt": "...", "duration": 5, "motion": "story"}   // 该档已下线 2026-09-21
-```
-
-```yaml
-models:
-  minimax-h3-self-lift:   # 已下线 2026-09-21
-    defaults:
-      motion: story           # 默认档；不传 motion 时落回这里
-    motion_presets:
-      story:                  # 文戏：对话、静态、慢动作（默认）
-        steps: 6
-        transition_step: 5
-      fight:                  # 打戏：奔跑、追逐、快节奏
-        steps: 8
-        transition_step: 6
-    bindings:
-      transition_step: 235.inputs.transition_step   # 档位值靠 bindings 才注得进节点
-```
-
-- **默认档只写档名**（`defaults.motion: story`），数值一律从档表取——避免「档表改了、defaults 里那串数字没改」的两处漂移。
-- 档里的键就是普通参数名，**必须先在 `bindings` 里绑好**，否则档位值算得出来却写不到节点上。
-- **优先级**：模型 `defaults` < 命名档 < 同请求里的显式参数。`{"motion": "story", "steps": 9}` 得到 9 / 5，方便在档位基础上微调。
-- 未声明 `motion_presets` 的模型收到 `motion` 会**报错并列出可用值**，不会静默忽略——档名拼错能立刻发现。
-
----
 
 ## 排错表
 

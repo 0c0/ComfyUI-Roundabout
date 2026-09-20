@@ -43,17 +43,10 @@ defaults:
       head_chunks: 28
       seq_threshold: 4096
       highres_tiling: true
-  quality_presets:
-    low:
-      steps: 12
-    standard:
-      steps: 25
-    medium:
-      steps: 25
-    hd:
-      steps: 40
-    high:
-      steps: 40
+  # 注：这里**没有** quality_presets —— 2026-09-21 已整条移除。
+  # 原分档只能表达 size + steps，与调用方直接传 `size` / `steps` 完全等价，
+  # 多一层间接反而遮住真实参数（且曾让视频档误继承图像档把步数改成 40）。
+  # 以后要快/慢切换：直接传 size + steps，别再引入 quality。
   style_presets:
     vivid:
       prompt_suffix: vivid saturated colors, high contrast, dramatic cinematic lighting,
@@ -356,28 +349,6 @@ models:
       duration: 5
       fps: 24
 
-    quality_presets:
-      # 画质分档（D0-D3 定案 2026-09-20，全部实测口径 rm+simple）：
-      # draft=D0 草稿 576p 最快出构图；standard=D1 日常 720p；hd=D2 交付 768p 原生顶格
-      # （多 seed 挑片由调用方传 n=3）；high=官方 30 步全步数分布（细节上限，最慢）。
-      # turbo 两支已删（Acc LoRA 在 ComfyUI 零 patch，turbo 实为裸 base@8）——8 步快跑
-      # 由 draft 档承接。
-      draft:
-        width: 1024
-        height: 576
-        steps: 8
-      standard:
-        width: 1280
-        height: 720
-        steps: 8
-      hd:
-        width: 1344
-        height: 768
-        steps: 8
-      high:
-        width: 1344
-        height: 768
-        steps: 30
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
@@ -403,6 +374,7 @@ models:
     mode: video
     capabilities:
     - text-to-video
+    - reference-to-video
     output_node: '92'
     timeout: 1800
     references:
@@ -457,7 +429,7 @@ models:
   #   time_embedder.proj_in/proj_out，端点条件进不了模型（画面出现非单段式晕开）；
   #   要完整效果得上游原版（videorebirth/hyperflow）+ 专用节点包
   #   Addis-Pulse-Studio/ComfyUI-HyperFlow，成本不划算。
-  #   8 步快跑已由 minimax-h3 的 quality=draft（1024x576@8）与 fasth3 承接。
+  #   8 步快跑由 fasth3 承接（8 步蒸馏档，定位草稿 / 快周转）。
   #   工作流备份：.workbuddy/stash/video_minimax_h3_hyperflow.json（复原时拷回 workflows/ 并恢复本条目）。
 
   # ===================== MiniMax H3 SelfLift 变体（已下线 2026-09-21） =====================
@@ -468,8 +440,9 @@ models:
   #   工作流备份（复原时拷回 workflows/ 并按 git 历史恢复条目）：
   #     .workbuddy/stash/video_minimax_h3_self_lift.json
   #     .workbuddy/stash/video_minimax_h3_self_lift_edit.json
-  #   连带：motion_presets / transition_step / lowres_scale / highres_tiling 只由这两支
-  #   声明，随之下线（请求字段是否一并撤除待定）。
+  #   连带：motion / transition_step / lowres_scale 三个请求字段与 motion_presets 机制、
+  #   gateway/lowres.py 已于 09-21 一并删除（复原时须从 git 历史取回，不是补个配置就行）。
+  #   仅 highres_tiling 仍留在 vram_tiers 里（无节点绑定，lift 的潜在 tiling 旋钮）。
   #   旧名与别名（selflift / self-lift / h3-selflift / -nolora 等）见 git 历史。
 
   # ===================== FastVideo FastH3 =====================

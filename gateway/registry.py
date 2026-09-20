@@ -20,7 +20,6 @@ from typing import Any
 import yaml
 
 from .errors import APIError, ModelNotFound
-from .lowres import resolve_lowres_scale
 from . import vram
 
 log = logging.getLogger("roundabout.registry")
@@ -47,11 +46,6 @@ KNOWN_PARAMS = {
     "duration",
     "fps",
     "num_frames",
-    # SelfLift 渐进采样：总步数复用 steps，这里是「低分辨率 → 高分辨率」的过渡步
-    "transition_step",
-    # SelfLift 低分前缀的相对分辨率：数字（0.25–1.0）或 "auto"
-    # （auto = 按目标尺寸反推，把低分长边压在 H3 原生画布上，见 gateway/lowres.py）
-    "lowres_scale",
     # ---- 低显存分块（按显卡档位自动填默认值，见 gateway/vram.py）----
     "chunks",
     "head_chunks",
@@ -74,11 +68,7 @@ class ModelSpec:
     output_node: str | None = None
     description: str = ""
     mode: str = "image"  # "image" | "video"
-    quality_presets: dict[str, dict[str, Any]] = field(default_factory=dict)
     style_presets: dict[str, dict[str, Any]] = field(default_factory=dict)
-    # 命名运动档（如 story=文戏 / fight=打戏）：请求传一个词，展开成多组参数注入节点。
-    # 适合「总步数 + 过渡步」这类必须成对调整、单独调容易配错的参数。未声明的模型传了报错。
-    motion_presets: dict[str, dict[str, Any]] = field(default_factory=dict)
     size_choices: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
     timeout: float | None = None
@@ -284,9 +274,7 @@ class Registry:
                 output_node=str(cfg["output_node"]) if cfg.get("output_node") is not None else None,
                 description=cfg.get("description", ""),
                 mode=mode,
-                quality_presets=cfg.get("quality_presets") or shared_defaults.get("quality_presets") or {},
                 style_presets=cfg.get("style_presets") or shared_defaults.get("style_presets") or {},
-                motion_presets=cfg.get("motion_presets") or shared_defaults.get("motion_presets") or {},
                 size_choices=[str(s) for s in (cfg.get("sizes") or [])],
                 aliases=[str(a) for a in (cfg.get("aliases") or [])],
                 timeout=float(cfg["timeout"]) if cfg.get("timeout") else None,
@@ -465,14 +453,6 @@ def build_workflow(spec: ModelSpec, values: dict[str, Any], overrides: dict[str,
 
     effective: dict[str, Any] = {k: v for k, v in spec.defaults.items() if k in spec.bindings}
     effective.update(values)
-
-    # 安全网：`lowres_scale: auto` 依赖最终 width/height，而正常路径（pipeline 的
-    # build_video_values）早一步就算成了浮点数。这里兜住直接调 build_workflow 的调用方
-    # （测试、手工预演），别把字符串 "auto" 塞进节点的 FLOAT 输入框。
-    if isinstance(effective.get("lowres_scale"), str):
-        effective["lowres_scale"] = resolve_lowres_scale(
-            effective["lowres_scale"], effective.get("width"), effective.get("height")
-        )
 
     for key, value in effective.items():
         if value is None:

@@ -56,15 +56,15 @@ ALLOWED_MISSING = {
     # 省略标准占位参数 + 采样器类精调（MCP 面向对话式调用，保持 schema 精简）
     "generate_image": {"style", "user", "background", "output_format", "moderation",
                        "sampler_name", "scheduler", "denoise"},
-    "edit_image": {"size", "quality", "style", "user", "background", "output_format",
+    "edit_image": {"size", "style", "user", "background", "output_format",
                    "moderation", "steps", "cfg", "sampler_name", "scheduler",
                    "denoise", "mode"},
     # 去背景是 promptless 工具，只留最小面
-    "remove_background": {"prompt", "model", "n", "size", "quality", "style", "user",
+    "remove_background": {"prompt", "model", "n", "size", "style", "user",
                           "background", "output_format", "moderation", "negative_prompt",
                           "seed", "steps", "cfg", "sampler_name", "scheduler",
                           "denoise", "mode", "mask", "workflow_overrides"},
-    "generate_video": {"n", "quality", "style", "user", "num_frames", "cfg",
+    "generate_video": {"n", "style", "user", "num_frames", "cfg",
                        "sampler_name", "scheduler", "denoise", "image",
                        "workflow_overrides", "async_mode"},
 }

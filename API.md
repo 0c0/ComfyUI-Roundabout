@@ -34,7 +34,7 @@
   - `MCP_SHARE_PORT=true`（默认）：通过 aiohttp 原生代理把 `/mcp` 挂在 **ComfyUI 同一端口**（`http://host:8188/mcp`）。内部 uvicorn 只绑 `127.0.0.1` 回环。
   - `MCP_SHARE_PORT=false`：客户端直连 `http://MCP_HOST:<MCP_PORT>/mcp`；此时建议用 `MCP_PORT` 或 `MCP_PORT_MAP` 把端口钉死（对外可预期），否则端口由系统分配、以启动日志为准。
 - **共用**：模型注册表、生成链路、异步任务表全部共享。通过 MCP 提交的异步任务能在 REST 队列监控里看到，反之亦然。
-- **自适应层**：`gateway/` 下除注册表与生成链路外，还有三个「跟着机器 / 请求变的参数」模块 —— `vram.py`（按显存档位选分块参数）、`lowres.py`（按目标尺寸反推 SelfLift 一采分辨率；self-lift 下线后暂无消费方）、`params.py`（请求参数白名单与校验）。它们不改工作流文件，只在渲染前覆盖节点字段；配置都来自 `models.yaml`，改完 `POST /admin/reload` 生效。细节见 [README.md](README.md#配置)。
+- **自适应层**：`gateway/` 下除注册表与生成链路外，还有两个「跟着机器 / 请求变的参数」模块 —— `vram.py`（按显存档位选分块参数）、`params.py`（请求参数白名单与校验）。它们不改工作流文件，只在渲染前覆盖节点字段；配置都来自 `models.yaml`，改完 `POST /admin/reload` 生效。细节见 [README.md](README.md#配置)。
 
 ---
 
@@ -181,7 +181,7 @@ MCP 客户端配置（`mcp.json`）：
 | `model` | string? | 模型名/别名；空用默认；**视频模型会自动路由到视频链路** |
 | `n` | int | 张数，1–`MAX_N`（默认 1） |
 | `size` | string? | `"1024x1024"` / `"auto"` / 空=模型默认 |
-| `quality` / `style` | string? | `low|medium|high|standard|hd|auto` / `vivid|natural`（映射为提示词后缀） |
+| `style` | string? | `vivid|natural`（在 models.yaml 的 `style_presets` 里映射为提示词后缀） |
 | `response_format` | enum? | `b64_json` / `url` / `file` / `path` |
 | `negative_prompt` | string? | 反向提示词 |
 | `seed` | int? | 不传/`-1` 随机；`0` 与正整数固定 |
@@ -205,7 +205,7 @@ MCP 客户端配置（`mcp.json`）：
 
 #### `POST /v1/images/edits`
 
-OpenAI 标准 multipart 图生图。字段：`image`（文件，可多张）、`mask`（文件，可选）、`prompt`、`model`、`n`、`size`、`quality`、`response_format`、`user`、`negative_prompt`、`seed`、`steps`、`cfg`、`denoise`。
+OpenAI 标准 multipart 图生图。字段：`image`（文件，可多张）、`mask`（文件，可选）、`prompt`、`model`、`n`、`size`、`response_format`、`user`、`negative_prompt`、`seed`、`steps`、`cfg`、`denoise`。
 
 **单图编辑模型**（改图内文字首选 boogu 系列；风格/内容改写首选 flux2 klein）：
 
@@ -252,13 +252,11 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 |---|---|---|
 | `prompt` | string | 正向提示词（必填） |
 | `model` | string? | 默认 `minimax-h3`；视频模型 |
-| `size` | string? | `<tier>p-<ratio>` 或 `<ratio>@<tier>`，tier∈{`480p`,`720p`,`768p`,`1080p`}，ratio∈{`1:1`,`3:4`,`4:3`,`16:9`,`9:16`}；或直接 `WxH`；空=模型默认 |
+| `size` | string? | `<tier>p-<ratio>` 或 `<ratio>@<tier>`，tier∈{`480p`,`576p`,`720p`,`768p`,`1080p`}，ratio∈{`1:1`,`3:4`,`4:3`,`16:9`,`9:16`}；或直接 `WxH`；空=模型默认 |
 | `duration` | float? | 时长 1–15 秒 |
 | `fps` | int? | 帧率 |
 | `num_frames` | int? | 总帧数（部分工作流用帧数而非时长） |
-| `motion` | string? | **命名运动档**（**已下线 2026-09-21**：原仅 SelfLift 两支 `minimax-h3-self-lift*` 声明，随其摘档后暂无模型声明）：`story`=文戏（总步数 8 / 过渡步 8）、`fight`=打戏（10 / 8）。不传用模型默认；与 `steps` / `transition_step` 同传时后者胜出 |
-| `transition_step` | int? | **已下线 2026-09-21**：SelfLift 渐进采样的过渡步（低分切到高分的步位），合法区间 **`1 ≤ transition_step ≤ steps + extra_steps - 1`**（`extra_steps` = 高分阶段在 σ 网格上补的点数，各支均为 2（`minimax-h3-self-lift*`）；越界会被网关在提交前拦下）。仅 SelfLift 系列（`minimax-h3-self-lift*`）有效 |
-| `lowres_scale` | float \| `"auto"`? | **已下线 2026-09-21**：SelfLift 一采（低分前缀）的相对分辨率，0.25–1.0。**`"auto"`**（SelfLift 两支的默认）= 按目标尺寸反推，把低分长边压在 H3 原生画布 1344 上：1080p→`0.70`、2K→`0.525`、4K→`0.35`。低分长边越过 1344 会掉宽谱细节并织出规则假网格，网关会告警但不拦（属于显式选择）。仅 SelfLift 系列有效 |
+| ~~`motion`~~ / ~~`transition_step`~~ / ~~`lowres_scale`~~ | — | **已移除 2026-09-21**：原仅 SelfLift 两支声明，随其下线后成为孤儿形参；机制代码（请求字段 / `motion_presets` 配置 / `gateway/lowres.py`）一并删除，传了会被当作未知字段忽略 |
 | `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"910.inputs.scale": 2.0}`。`minimax-h3-lift` 的可调项：`910.inputs.scale`（放大倍率，默认 1.5 → 输出 2016x1152）、`910.inputs.rho`（SelfLift-zero 像素锚阻尼，默认 0=纯学习 lift 纹理最强；0.3 实测高频 -18%）、`910.inputs.w_min`/`w_max`（阻尼强度上下限，默认 0.5/1.0） |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |
 | `image` | string\|string[]? | 图生视频输入 |
@@ -332,7 +330,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | **`boogu-image-edit`** / **`boogu-image-edit-turbo`** | image | **image-to-image** | 单图编辑，改图内文字首选（见 5.1） |
 | **`flux2-klein-image-edit-turbo`** | image | **image-to-image** | Flux2 Klein 9B 单图编辑，语义改写/换背景首选（见 5.1） |
 | **`utility-birefnet-remove-background`** | image | **image-to-image**（promptless） | 去背景独立工具，无 prompt，透明 PNG；专属端点 `/v1/images/remove-background` |
-| `minimax-h3` | video | text-to-video | H3 文生视频（base 30 步）。**画质分档**（2026-09-20 定案）：`quality` 可选 `draft`(1024x576@8 草稿) / `standard`(1280x720@8 日常) / `hd`(1344x768@8 交付，多 seed 挑片传 `n`) / `high`(1344x768@30 官方全步数) |
+| `minimax-h3` | video | text-to-video | H3 文生视频（base 30 步）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@30（网关已移除 `quality` 分档：分档只表达 size + steps，与直接传参等价） |
 | `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频（支持图/视频/音频参考）。原 `-turbo-edit` 已于 2026-09-20 下线 |
 | ~~`minimax-h3-self-lift`~~ / ~~`-self-lift-edit`~~ | video | — | **已下线 2026-09-21**：两阶段渐进采样，被 lift 的确定性放大取代 |
 | `minimax-h3-lift` | video | text-to-video / image-to-video | base 骨架 + 确定性放大：原生采样 → 学习式 latent lift（默认 2016x1152）；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧；分块参数按本机显存自动分档 |
@@ -420,7 +418,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `list_models` | 列出可用模型及其能力 / 模式 / 默认参数 / 别名 |
 | `generate_image` | 文生图；支持 `negative_prompt`/`seed`/`size`/`steps`/`cfg`/`workflow_overrides`(JSON 字符串)/`filename_prefix`/`mode`；返回 OpenAI 风格响应（含 `seed` 回显，url 已绝对化）；视频模型自动转视频链路。**编辑图片不要用本工具**（用 `edit_image` / `remove_background`） |
 | `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写），改图内文字传 `boogu-image-edit-turbo` / `boogu-image-edit`；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
-| `generate_video` | 文生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`reference_images|videos|audios`/`motion`/`steps`/`transition_step`/`lowres_scale`/`filename_prefix`/`background`；`background:"pending"` 异步，再查 `get_task` |
+| `generate_video` | 文生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`reference_images|videos|audios`/`steps`/`filename_prefix`/`background`；`background:"pending"` 异步，再查 `get_task` |
 | `remove_background` | 图片去背景（BiRefNet，独立工具，无需提示词）；参数 `image`(本地路径/URL/dataURL/base64)、`response_format`(默认 url)、`filename_prefix` |
 | `get_task` | 查询异步任务状态与产物（含 `prompt_id`、是否有工作流快照、`output`、`error`） |
 | `cancel_task` | 取消任务：`task_id` 非空取消指定任务（pending 移出队列 / running 中断）；**空则中断 ComfyUI 当前执行任务** |
@@ -498,7 +496,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/generations \
 # 提交（异步）
 TASK=$(curl -s -X POST http://127.0.0.1:8188/v1/videos/generations \
   -H "Content-Type: application/json" \
-  -d '{"model":"minimax-h3","quality":"draft","prompt":"a cat walking in rain","duration":5,"background":"pending"}' \
+  -d '{"model":"minimax-h3","size":"576p-16:9","steps":8,"prompt":"a cat walking in rain","duration":5,"background":"pending"}' \
   | python -c "import sys,json;print(json.load(sys.stdin)['id'])")
 
 # 查询
@@ -511,8 +509,8 @@ curl -X DELETE http://127.0.0.1:8188/v1/videos/tasks/$TASK
 ### 8.3 MCP 客户端（伪代码）
 
 ```
-call generate_video(prompt="a cat walking in rain", model="minimax-h3", quality="draft",
-                    duration=5, background="pending")  → 返回 {id, status:pending}
+call generate_video(prompt="a cat walking in rain", model="minimax-h3", size="576p-16:9",
+                    steps=8, duration=5, background="pending")  → 返回 {id, status:pending}
 # 默认（无状态模式）：轮询 get_task(id)，不依赖会话，客户端重连也不会丢
 # 若显式设了 MCP_STATELESS=false：可保持 SSE 连接，等服务端 notifications/message 推送
 ```

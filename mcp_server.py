@@ -40,7 +40,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import Field
 
@@ -206,7 +206,6 @@ async def generate_image(
     ),
     n: int = 1,
     size: str = "",
-    quality: str = "",
     response_format: str = "",
     negative_prompt: str = "",
     seed: int | None = None,
@@ -224,7 +223,6 @@ async def generate_image(
         model=model or None,
         n=n,
         size=size or None,
-        quality=quality or None,
         response_format=response_format or None,  # type: ignore[arg-type]
         negative_prompt=negative_prompt or None,
         seed=seed,
@@ -325,10 +323,9 @@ async def remove_background(
     name="generate_video",
     description=(
         "生成视频（文生视频 / 参考生视频）。model 默认 minimax-h3；支持 duration(1-15s) / "
-        "fps / size(如 720p-16:9 / 768p-16:9 / 1080p-16:9) / seed / reference_images(参考图，最多 6 张，"
+        "fps / size(如 576p-16:9 / 720p-16:9 / 768p-16:9 / 1080p-16:9) / seed / reference_images(参考图，最多 6 张，"
         "支持 base64/URL/本地路径) / reference_videos / reference_audios。"
-        "SelfLift 的 self-lift / -self-lift-edit 可用 motion=\"story\"（文戏，6 步 / 过渡 5，默认）"
-        "或 \"fight\"（打戏，8 / 6）一键切档，要精调则改传 steps + transition_step；"
+        "minimax-h3-lift / -lift-edit = base / edit 骨架 + 尾部确定性潜空间放大（输出画布 x1.5）；"
         "fasth3=FastVideo 8 步蒸馏档（reference_images 传 0/1/2 张 = 文生 / 首帧 / 首尾帧）；"
         "fasth3-edit=FastH3 参考生视频（6 图 + 3 视频 + 3 音频）；"
         "filename_prefix 指定落盘前缀（可含 \"/\" 建子目录，不传则用模板默认）。"
@@ -340,12 +337,10 @@ async def generate_video_tool(
     model: str = Field(
         default="minimax-h3",
         description=(
-            "模型选择（MiniMax H3 / FastH3 系列）：minimax-h3=base 档，quality 分档 draft(1024x576@8)/"
-            "standard(1280x720@8)/hd(1344x768@8 交付)/high(1344x768@30 官方全步数)；"
+            "模型选择（MiniMax H3 / FastH3 系列）：minimax-h3=base 档（默认 1344x768@30；"
+            "草稿传 size=\"576p-16:9\" + steps=8）；"
             "minimax-h3-edit=参考/编辑变体"
             "（配合 reference_images/videos/audios 使用，最多 6 图 + 3 视频 + 3 音频）；"
-            "minimax-h3-self-lift=SelfLift 渐进采样（低分→高分），reference_images 传 0/1/2 张"
-            "即文生 / 首帧 / 首尾帧，分块参数按本机显存自动分档；"
             "fasth3=FastVideo FastH3 8 步蒸馏档（文生 / 首尾帧）；"
             "fasth3-edit=FastH3 参考生视频（配合 reference_images/videos/audios，最多 6 图 + 3 视频 + 3 音频）；"
             "minimax-h3-lift=H3 确定性放大档（原生 1344x768 采样 → 学习式 lift，默认输出 2016x1152，"
@@ -361,30 +356,7 @@ async def generate_video_tool(
     reference_images: list[str] | None = None,
     reference_videos: list[str] | None = None,
     reference_audios: list[str] | None = None,
-    motion: str = Field(
-        default="",
-        description=(
-            "命名运动档（仅 SelfLift 系列）：story=文戏（总步数 6 / 过渡步 5，默认）、"
-            "fight=打戏（8 / 6）。不传即用模型默认档。与 steps / transition_step 同时传时，后者胜出。"
-        ),
-    ),
     steps: int | None = None,
-    transition_step: int | None = Field(
-        default=None,
-        description=(
-            "SelfLift 过渡步（低分辨率切到高分辨率的步位），合法区间 1..steps+extra_steps-1；"
-            "仅 SelfLift 系列有效。"
-        ),
-    ),
-    lowres_scale: float | Literal["auto"] | None = Field(
-        default=None,
-        description=(
-            "SelfLift 低分前缀的相对分辨率（0.25-1.0）或 \"auto\"：auto 按目标尺寸反推，"
-            "把低分长边压在 H3 原生画布 1344 上（1080p->0.70、2K->0.525、4K->0.35）。"
-            "SelfLift 系列（minimax-h3-self-lift*）默认 auto；"
-            "不传即用模型默认档。>0.70 会越过原生画布（掉细节 + 织假网格）。仅 SelfLift 系列有效。"
-        ),
-    ),
     background: str = "",  # "pending" 触发异步
     response_format: str = "",
     filename_prefix: str = "",
@@ -401,10 +373,7 @@ async def generate_video_tool(
         reference_images=reference_images,
         reference_videos=reference_videos,
         reference_audios=reference_audios,
-        motion=motion or None,
         steps=steps,
-        transition_step=transition_step,
-        lowres_scale=lowres_scale,
         background=background or None,
         response_format=response_format or None,  # type: ignore[arg-type]
         filename_prefix=filename_prefix or None,

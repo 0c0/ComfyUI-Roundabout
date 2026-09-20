@@ -355,8 +355,8 @@ async def put_models_config(request: web.Request) -> web.Response:
 # ------------------------------------------------------------------ 结构化模型配置（替代原始 YAML 文本编辑）
 _MODEL_ENTRY_KEYS = (
     "workflow", "description", "mode", "capabilities", "output_node", "timeout",
-    "defaults", "bindings", "aliases", "mode_choices", "quality_presets",
-    "style_presets", "motion_presets", "size_choices",
+    "defaults", "bindings", "aliases", "mode_choices",
+    "style_presets", "size_choices",
     # 下面三类前端不渲染，但要允许结构化 API 改：参考槽拓扑 / 显存自适应 / 无提示词工具流。
     "references", "vram_adaptive", "promptless",
 )
@@ -384,9 +384,7 @@ async def get_models_structured(request: web.Request) -> web.Response:
             "defaults": cfg.get("defaults") or {},
             "bindings": cfg.get("bindings") or {},
             # 回传「前端不渲染但保存时必须保留」的字段，便于排查与结构化编辑。
-            "quality_presets": cfg.get("quality_presets") or {},
             "style_presets": cfg.get("style_presets") or {},
-            "motion_presets": cfg.get("motion_presets") or {},
             "references": cfg.get("references") or {},
             "vram_adaptive": bool(cfg.get("vram_adaptive")),
             "promptless": bool(cfg.get("promptless")),
@@ -395,7 +393,6 @@ async def get_models_structured(request: web.Request) -> web.Response:
         "default_model": raw.get("default_model"),
         "shared": {
             "params": shared.get("params") or {},
-            "quality_presets": shared.get("quality_presets") or {},
             "style_presets": shared.get("style_presets") or {},
         },
         "models": models,
@@ -443,8 +440,6 @@ async def put_models_structured(request: web.Request) -> web.Response:
     defaults: dict[str, Any] = {}
     if shared.get("params"):
         defaults["params"] = shared["params"]
-    if shared.get("quality_presets"):
-        defaults["quality_presets"] = shared["quality_presets"]
     if shared.get("style_presets"):
         defaults["style_presets"] = shared["style_presets"]
     if defaults:

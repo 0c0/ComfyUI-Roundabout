@@ -193,7 +193,6 @@ async def images_edits(request: web.Request) -> web.Response:
         model=fields.get("model"),
         n=_int_or_none(fields.get("n")) or 1,
         size=fields.get("size"),
-        quality=fields.get("quality"),
         response_format=fields.get("response_format"),  # type: ignore[arg-type]
         user=fields.get("user"),
         negative_prompt=fields.get("negative_prompt"),

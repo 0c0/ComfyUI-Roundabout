@@ -90,7 +90,9 @@ def _round8(v: int) -> int:
 #
 # 约定：「p」指该档位的基准边——横向比例(16:9/4:3/1:1)取 height=档位，纵向比例(9:16/3:4)
 # 取 width=档位。例如 480p-16:9 = 848×480，720p-9:16 = 720×1280，1080p-16:9 = 1920×1088。
-# 档位：480 / 720 / 768 / 1080。基准边不是 16 倍数时（1080）就近上取，保证所有维度都对齐。
+# 档位：480 / 576 / 720 / 768 / 1080。基准边不是 16 倍数时（1080）就近上取，保证所有维度都对齐。
+# 576 是 16 的倍数（576/16=36），五档比例全部自然对齐，无需上取——它就是给
+# 「快速调试」用的低档（576p-16:9 = 1024×576，像素量约为 768p 的 55%）。
 VIDEO_RES_PRESETS: dict[int, dict[str, tuple[int, int]]] = {
     480: {
         "1:1": (480, 480),
@@ -98,6 +100,13 @@ VIDEO_RES_PRESETS: dict[int, dict[str, tuple[int, int]]] = {
         "3:4": (480, 640),
         "16:9": (848, 480),
         "9:16": (480, 848),
+    },
+    576: {
+        "1:1": (576, 576),
+        "4:3": (768, 576),
+        "3:4": (576, 768),
+        "16:9": (1024, 576),
+        "9:16": (576, 1024),
     },
     720: {
         "1:1": (720, 720),
@@ -123,7 +132,7 @@ VIDEO_RES_PRESETS: dict[int, dict[str, tuple[int, int]]] = {
         "9:16": (1088, 1920),
     },
 }
-_RES_TIERS = {480, 720, 768, 1080}
+_RES_TIERS = {480, 576, 720, 768, 1080}
 _RES_RATIOS = {"1:1", "3:4", "4:3", "16:9", "9:16"}
 _RES_PRESET_RE = re.compile(
     r"^(?P<tier>[0-9]+)p[-_](?P<ratio>[0-9]+:[0-9]+)$"
@@ -187,44 +196,9 @@ def resolve_seed(seed: int | None, index: int = 0) -> int:
 def apply_presets(
     values: dict[str, Any],
     spec: ModelSpec,
-    quality: str | None,
     style: str | None,
-    motion: str | None = None,
 ) -> dict[str, Any]:
     out = dict(values)
-
-    if quality:
-        preset = spec.quality_presets.get(quality) or spec.quality_presets.get(quality.lower())
-        if preset is None and spec.quality_presets and quality.lower() not in {"auto", "standard"}:
-            raise APIError(
-                f"Unsupported `quality` {quality!r} for model `{spec.name}`. "
-                f"Supported: {', '.join(spec.quality_presets)}.",
-                param="quality",
-            )
-        for k, v in (preset or {}).items():
-            out[k] = v  # 预设优先级低于显式入参，调用方在后面再覆盖
-
-    # 未显式传 motion 时回落到模型声明的默认档（`defaults.motion`）。
-    # 默认档只写档名、不重复写数值：档表是唯一来源，避免两处各说一套而漂移。
-    motion = motion or spec.defaults.get("motion")
-    if motion:
-        motion = str(motion)
-        key = motion.strip().lower()
-        preset = spec.motion_presets.get(key) or spec.motion_presets.get(motion)
-        if preset is None:
-            supported = ", ".join(spec.motion_presets)
-            if supported:
-                raise APIError(
-                    f"Unsupported `motion` {motion!r} for model `{spec.name}`. Supported: {supported}.",
-                    param="motion",
-                )
-            raise APIError(
-                f"Model `{spec.name}` has no `motion` presets. "
-                "Set the underlying params (e.g. `steps` / `transition_step`) directly instead.",
-                param="motion",
-            )
-        for k, v in preset.items():
-            out[k] = v
 
     if style:
         preset = spec.style_presets.get(style) or spec.style_presets.get(style.lower()) or {}
