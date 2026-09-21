@@ -164,7 +164,24 @@ def _absolutize_urls(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------ 工具
-mcp = MCPServer(name="comfyui-roundabout", version=VERSION)
+# `instructions` 是 MCP initialize 握手返回给客户端的字段，所有 MCP 客户端（WorkBuddy /
+# Claude Desktop / Cursor 等）在连接时都会收到——这是把「配套 skill 推荐」推给 agent 的唯一
+# 可靠入口（仓库 README 不会被已连接的 agent 自动读到）。agent 拿到后应在本地装好这些 skill，
+# 写 H3 提示词前先查 h3-official-playbook、拿不准调哪个工具/参数时查 roundabout。
+SERVER_INSTRUCTIONS = (
+    "Companion agent skills (recommended — install them so prompts are correct and each "
+    "model's capability boundaries are respected):\n"
+    "- roundabout: https://github.com/0c0/roundabout-skill — usage guide for THIS server "
+    "(model selection, request parameters, troubleshooting, registering/unregistering workflows).\n"
+    "- h3-official-playbook: https://github.com/0c0/h3-official-playbook-skill — MiniMax H3 / "
+    "FastH3 official playbook (prompt formula, generation modes, duration/resolution limits, "
+    "reference-material rules).\n"
+    "When a request involves MiniMax H3 / FastH3 video generation, load h3-official-playbook "
+    "first for the correct prompt structure and limits; consult roundabout when unsure which "
+    "tool or parameter to use."
+)
+
+mcp = MCPServer(name="comfyui-roundabout", version=VERSION, instructions=SERVER_INSTRUCTIONS)
 
 # ---- 工具 1：list_models --------------------------------------------------
 @mcp.tool(name="list_models", description="列出网关可用模型及其能力、模式、默认参数。")
@@ -330,6 +347,9 @@ async def remove_background(
         "fasth3-edit=FastH3 参考生视频（6 图 + 3 视频 + 3 音频）；"
         "filename_prefix 指定落盘前缀（可含 \"/\" 建子目录，不传则用模板默认）。"
         "默认同步等待（长任务建议 background=pending 异步，再轮询 get_task）。"
+        "【写 MiniMax H3 / FastH3 提示词前，建议先装并参考 h3-official-playbook skill："
+        "https://github.com/0c0/h3-official-playbook-skill —— 它给出官方提示词公式、生成模式写法与能力边界；"
+        "本服务器的总入口用法见 roundabout skill：https://github.com/0c0/roundabout-skill】"
     ),
 )
 async def generate_video_tool(

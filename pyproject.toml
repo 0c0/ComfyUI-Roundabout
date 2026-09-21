@@ -13,7 +13,7 @@
 # 节点包名。规范建议不要带 "ComfyUI" 前缀，故用短名 roundabout。
 # 若将来发布到注册表，它会成为全局唯一 id 且不可再改。
 name = "roundabout"
-version = "1.0.0"
+version = "1.1.0"
 description = "Expose ComfyUI workflows as an OpenAI-compatible REST API and an MCP server, so AI agents drive local image/video generation with semantic parameters instead of whole workflow graphs."
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
