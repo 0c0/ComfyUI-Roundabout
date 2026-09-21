@@ -77,6 +77,28 @@ agent 全程**看不到也用不着**工作流 JSON。它只传语义参数，�
 
 ---
 
+## 配套 skills
+
+本仓库的三份文档是**给人读**的；配套 skill 是同一套知识的**给 agent 读**版本 —— 把调用姿势、注册流程、权重坑位压成 agent 能直接加载的操作手册。装了 skill 的 agent 不必先通读文档，也不会照着过期印象乱传参。
+
+| skill | 内容 | 什么时候用 |
+|---|---|---|
+| [`roundabout-skill`](https://github.com/0c0/roundabout-skill) | 本插件的**总入口**：选模型、走 REST / MCP 生成、把工作流接进网关或下线、权重下载、排障运维、核对「文档与实现是否一致」 | agent 要驱动本机 ComfyUI 出图出视频，或要改 `models.yaml` / 加工作流时 |
+| [`h3-official-playbook-skill`](https://github.com/0c0/h3-official-playbook-skill) | MiniMax H3 的官方口径：提示词公式、三类生成模式（文生 / 首尾帧 / 全能参考）的写法差异、素材用途标签、时长与宽高比边界 | 写 / 改 H3 提示词，或判断某个需求 H3 能不能做时 |
+
+装法就是把这个目录放进 agent 的 skills 目录（目录名与 skill 的 `name` 保持一致）：
+
+```bash
+# 目标路径按你自己的 agent 调整，例如 ~/.workbuddy/skills/
+git clone https://github.com/0c0/roundabout-skill.git ~/.workbuddy/skills/roundabout
+git clone https://github.com/0c0/h3-official-playbook-skill.git ~/.workbuddy/skills/h3-official-playbook
+```
+
+> 两个 skill 都按「先自己探、探不到再问」的方式取 ComfyUI 路径与端口，**不含硬编的内网地址**，换机器可直接用。
+> `roundabout-skill` 内部还会按任务转交给几个更专的 skill（注意力档位、SelfLift 放大、Z-Image 中文提示词、子图工作流 JSON 改写）—— 那些是本机自用件，未随本仓库发布。
+
+---
+
 ## 功能
 
 **两套接入层，共享同一个引擎**
@@ -234,6 +256,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 > 工具参数、完成推送（`notifications/message`，需显式 `MCP_STATELESS=false`）与助手侧注意事项见 [API.md §7](API.md)。
 
 **agent 典型流程**：`list_models` 看有什么 → `generate_image` / `generate_video` 生成 → 异步任务用 `get_task` 轮询（默认无状态模式；设了 `MCP_STATELESS=false` 才可等服务端推送）→ 产物地址交给用户 → `get_view_url` 给出可视化页面。
+> agent 侧的操作手册（调用姿势、注册与下档、权重坑位、排障）见上方[配套 skills](#配套-skills) —— 装了 skill 的 agent 不必通读本仓库文档。
 
 ### 4. 可视化页面
 
