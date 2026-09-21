@@ -77,7 +77,7 @@ class ModelSpec:
     size_choices: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
     timeout: float | None = None
-    mode_choices: list[str] = field(default_factory=list)  # 如 Ideogram4 的 [Quality, Default, Turbo]
+    mode_choices: list[str] = field(default_factory=list)  # 模型自定义候选（如 [Quality, Default, Turbo]）；当前内置模型均未声明
     # 视频参考资源拓扑（动态删除未上传节点用）：aggregator + 各资源类别的 load 节点 id 列表
     references: dict[str, Any] | None = None
     # 工具类工作流（去背景等）没有提示词概念：声明后可不绑 prompt，

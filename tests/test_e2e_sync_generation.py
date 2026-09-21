@@ -1,6 +1,6 @@
 """端到端：独立实例跑真代码，验证「同步生成也会记进任务表、产物链接真能打开」。
 
-会真的提交一次生图（z-image-turbo 512x512，约 10~30s GPU），因此不进常规测试集；
+会真的提交一次生图（z-image-turbo 512x512，真实占用 GPU），因此不进常规测试集；
 改动了任务记录（handlers.generate_tracked / viewer.tasks）时手动跑一遍。
 """
 

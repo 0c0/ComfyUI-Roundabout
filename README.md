@@ -4,7 +4,7 @@
 
 **不碰画布、不改代码。** 你在 ComfyUI 里搭好的流程，导出一个 JSON、在 `models.yaml` 写一段参数映射，就变成了一个可被任意客户端调用的 `model`。
 
-不止是「把 ComfyUI 接到 MCP 上」。大模型工作流的**显存分块、剧情节奏、一采分辨率**这些「跟着硬件和目标变的经验值」，都提到配置层由网关自动代入 —— 换张卡、换个分辨率，工作流 JSON 一个字都不用改。
+不止是「把 ComfyUI 接到 MCP 上」。大模型工作流的**显存分块、分辨率档位、注意力档位**这些「跟着硬件和目标变的经验值」都不写进工作流 JSON，而由网关在渲染前代入 —— 换张卡、换个分辨率，工作流 JSON 一个字都不用改。**只是「配置化」的深浅不同**：分块档位在 `models.yaml`（改 YAML 热加载即生效），分辨率与注意力档位的取值是 `gateway/params.py` 里的常量（改了要重启）。
 
 ---
 
@@ -55,13 +55,15 @@ agent 全程**看不到也用不着**工作流 JSON。它只传语义参数，�
 
 **4. 硬件与画质经验值下沉到配置层，换机器不换工作流**
 
-同一份工作流 JSON，在 8 GiB 笔记本卡和 24 GiB 台式卡上最合适的分块参数差好几倍。这些值写死在 JSON 里，换机器就得改图。Roundabout 把它们提到配置层，由网关按实际情况代入：
+同一份工作流 JSON，在 8 GiB 笔记本卡和 24 GiB 台式卡上最合适的分块参数差好几倍。这些值写死在 JSON 里，换机器就得改图。Roundabout 把它们从工作流里提出来，由网关在渲染前代入：
 
-| 机制 | 跟着什么变 | 网关做什么 | 配置位置 |
+| 机制 | 跟着什么变 | 网关做什么 | 取值在哪 |
 |---|---|---|---|
-| `vram_adaptive` | 显卡显存 | 启动时探测显存，取「`min_gb` 不超过本机显存」的最大一档，覆盖分块参数 | `defaults.vram_tiers` |
+| `vram_adaptive` | 显卡显存 | 启动时探测显存，取「`min_gb` 不超过本机显存」的最大一档，覆盖分块参数 | `models.yaml` 的 `defaults.vram_tiers` |
+| 分辨率档位 | 请求里的 `size` | 把 `576p-16:9` 这类档位名解析成具体宽高（六档 × 五种比例） | `gateway/params.py` 的 `VIDEO_RES_PRESETS`（**代码常量**） |
+| 注意力档位 | 请求里的 `attention` | `sparse` / `dense` → `BlockSparseAttention.start_percent` | `gateway/params.py` 的 `ATTENTION_SPARSE_START`（**代码常量**） |
 
-它只改 YAML，改完热加载；工作流 JSON 保持一份模板，显存差异全部在网关侧消化。细节见[按显卡自动调参](#按显卡自动调参vram_adaptive)。
+第一行改 YAML、热加载即生效；后两行是代码常量，改了要重启 ComfyUI。三者都不进工作流 JSON—— 工作流永远只有一份模板。细节见[按显卡自动调参](#按显卡自动调参vram_adaptive)。
 
 ---
 
@@ -87,12 +89,11 @@ agent 全程**看不到也用不着**工作流 JSON。它只传语义参数，�
 
 - `models.yaml` 登记模型：工作流文件 + 参数绑定路径 + 默认值 + 别名 + 能力（文生图 / 图生图 / 视频）。
 - 新增、修改模型只改 YAML，`POST /admin/reload` 热加载，**不用重启 ComfyUI、不用写代码**。
-- 内置 20 个开箱可用的工作流（9 图像 + 11 视频），也全部可以作为你写映射时的参照。
+- 内置 15 个开箱可用的工作流（8 图像 + 6 视频 + 1 工具），也全部可以作为你写映射时的参照。
 
-**按机器 / 按剧情自适应**
+**按机器自适应**
 
 - **显存自适应**（`vram_adaptive`）：启动时探测显存，自动为 H3 系列选取分块档位，8 / 12 / 24 GiB 卡共用同一份工作流。
-- ~~**剧情档位**（`motion_presets`）~~ / ~~**一采自动反推**（`lowres_scale: auto`）~~：**已移除 2026-09-21** —— 只由 self-lift 两支声明，随其下线后成为孤儿，机制代码已删除（不再是"无模型声明"的空壳）。
 - 分块参数可在单次请求里显式覆盖，改档表不用动代码。
 
 **看得见、管得了**
@@ -135,7 +136,9 @@ https://github.com/0c0/ComfyUI-Roundabout
 
 3. 配置（可选）：把 `.env.example` 复制成 `.env`，按需修改。**MCP 默认已启用**，不用额外设置；要关掉就把 `MCP_ENABLED` 改成 `false`。
 
-4. **准备模型权重**：仓库不含权重。内置 20 个工作流共需 23 个文件（约 205 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 77 GB**，可以先只下这一族。
+4. **准备模型权重**：仓库不含权重。内置 15 个工作流共引用 20 个权重文件（清单另列 3 个非内置引用的 LoRA，共 23 行 / 约 205 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 77 GB**，可以先只下这一族。
+
+   > **视频档还需要两个第三方节点包**：KJNodes（`MiniMaxChunkFeedForward`，6 支视频档全用）与 `comfyui-SelfLift`（lift 两支的 latent 上采样节点 `SelfLiftH3LatentLift`）。清单见下方[第三方节点依赖](#第三方节点依赖)。
 
 5. 重启 ComfyUI。启动日志出现 `OpenAI gateway routes registered ... models=...` 即成功。
 
@@ -255,12 +258,12 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 图像编辑 | `flux2-klein-image-edit-turbo` | 语义改写首选：换背景 / 换材质 / 增删物体（`edit_image` 默认） |
 | 图像编辑 | `boogu-image-edit` / `boogu-image-edit-turbo` | 擅长改写 / 添加**图内文字**，30 步 / 6 步 |
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
-| 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base 30 步 / edit 25 步），支持 6 图 + 3 视频 + 3 音频参考；低显存分块按档位自适应（`vram_adaptive`） |
+| 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base / edit 均 30 步），支持 6 图 + 3 视频 + 3 音频参考；低显存分块按档位自适应（`vram_adaptive`） |
 | 视频 | ~~`minimax-h3-turbo`~~ / ~~`-turbo-edit`~~（**已下线 2026-09-20**） | Acc LoRA 是 diffusers 命名 → 728 key 零 patch，实际=裸 base@8（2026-09-19 实测）；8 步快跑由 `minimax-h3` 直接传 `size:"576p-16:9"` + `steps:8` 承接。要真加速见下方 Acc LoRA 注记 |
 | 视频 | ~~`minimax-h3-hyperflow`~~（**已下线 2026-09-21**） | HyperFlow 8 步加速档（base 权重 + HyperFlow LoRA，`euler` + `ManualSigmas` 官方 9 点 σ）。**本地跑不通**：社区转换版把端点适配器 `endpoint_time_embedder.*` 并进了 `time_embedder.proj_in/proj_out`，端点条件进不了模型（画面非单段式晕开）；要完整效果需上游原版 + `Addis-Pulse-Studio/ComfyUI-HyperFlow` 节点包。8 步快跑由 `minimax-h3` 直接传 `steps:8` 与 `fasth3` 承接 |
-| 视频 | ~~`minimax-h3-self-lift`~~ / ~~`-self-lift-edit`~~（**已下线 2026-09-21**） | SelfLift 两阶段渐进采样（低分 NFE + 高分 NFE）。被 lift 的「原生采样 → 确定性 latent lift」取代；工作流备份在 `.workbuddy/stash/`，`motion` / `transition_step` / `lowres_scale` 三档的机制代码已于 2026-09-21 删除 |
-| 视频 | `minimax-h3-lift` | **base 骨架 + 确定性放大**：原生采样 → 学习式 latent lift（1344x768 × scale 1.5 = 2016x1152），构图零重掷、纹理最强；支持首尾帧（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）；产物落 `video/H3_Lift`；`scale` / `rho` 精调走 `workflow_overrides`（如 `910.inputs.scale=2.0`） |
-| 视频 | `minimax-h3-lift-edit` | 同上，改用 **edit 骨架**：Ref2VA 权重 + 参考槽全套 6 图 / 3 视频 / 3 音频。⚠️ **未标定**：步数沿用 edit 的 25 步，放大与参考的组合效果没做过 A/B |
+| 视频 | ~~`minimax-h3-self-lift`~~ / ~~`-self-lift-edit`~~（**已下线 2026-09-21**） | SelfLift 两阶段渐进采样（低分 NFE + 高分 NFE）。被 lift 的「原生采样 → 确定性 latent lift」取代；工作流备份在 `.workbuddy/stash/`，配套的采样档参数机制已随之删除 |
+| 视频 | `minimax-h3-lift` | **base 骨架 + 确定性放大**：30 步原生采样 → 学习式 latent lift（1344x768 × scale 1.5 = 2016x1152），构图零重掷、纹理最强；支持首尾帧（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）；产物落 `video/H3_Lift`；`scale` / `rho` 精调走 `workflow_overrides`（如 `910.inputs.scale=2.0`） |
+| 视频 | `minimax-h3-lift-edit` | 同上，改用 **edit 骨架**：Ref2VA 权重 + 参考槽全套 6 图 / 3 视频 / 3 音频。⚠️ **未标定**：步数 30（随 edit 统一），放大与参考的组合效果没做过 A/B |
 | 视频 | `fasth3` | FastVideo FastH3 8 步蒸馏档；文生 / 首尾帧生视频（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）。首尾帧走**关键帧**槽 `first_frame` / `last_frame`，与自成一族的 `minimax-h3` 走参考图槽不是一条路。**定位草稿 / 快周转**：官方口径 8 步最优、改步数掉质量，且 09-20 分频实测其高频段整体过量（**不是 49/50 步的无损替代**），要最大质量用 `minimax-h3` |
 | 视频 | `fasth3-edit` | 同权重改用 Ref2VA 聚合节点做参考生视频，参考槽全套 6 图 + 3 视频 + 3 音频；产物落 `video/FastH3`（不混进 `video/MiniMax_H3`）。⚠️ **占位档**：官方未蒸馏 Ref2VA，与 `fasth3` 共用同一份 fl2v 权重，参考效果未标定 |
 
@@ -272,7 +275,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 
 ## 权重清单（内置工作流的全部依赖）
 
-**本仓库不包含任何权重文件**（体积与许可原因）。内置的 20 个工作流共引用 **23 个**权重文件，合计约 **205 GB**（图像档约 77 GB / 视频档约 128 GB）；缺文件时报错形如 `value not in list: <字段>: <文件名>`。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入这 23 个。）
+**本仓库不包含任何权重文件**（体积与许可原因）。内置的 15 个工作流共引用 **20 个**权重文件，合计约 **198 GB**（图像档约 77 GB / 视频档约 121 GB）；下面两张清单表共 **23 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个已下线档 LoRA），仅作参考，计入则约 205 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>`。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入这 20 个。）
 
 这些文件基本都在 **HuggingFace 的 Comfy-Org 官方仓库**里（少数为模型原厂或社区仓库，已在表中标注）。国区建议把端点换成镜像，repo ID 与 repo 内路径完全一致：
 
@@ -327,7 +330,7 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 - `flux-2-klein-9b-kv-fp8.safetensors` 来自 Black Forest Labs 官方仓库（不在 Comfy-Org）；Comfy-Org 只提供了它的 VAE 与文本编码器仓库（`vae-text-encorder-for-flux-klein-9b`，官方拼写如此）。
 - 想省显存可以换更小的量化版（`nvfp4` / `pruned_int8_convrot` 等，同仓库同目录下有），但**要同步改工作流 JSON 里的文件名**。
 
-### 视频档（10 个文件，约 128 GB）
+### 视频档（10 行：7 个内置引用 + 3 个参考项，约 128 GB）
 
 | 文件 | 目标目录 | 体积 | 下载源（HF repo） | repo 内路径 |
 |---|---|---|---|---|
@@ -486,12 +489,12 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 
 ### 按显卡自动调参（`vram_adaptive`）
 
-大模型工作流（SelfLift 权重合计 ~65 GiB）靠节点级分块在显存吃紧的卡上跑，而分块参数的合适取值只取决于显存大小。在 `models.yaml` 给模型加一行 `vram_adaptive: true`，网关启动时探测本机显存，从 `defaults.vram_tiers` 取「`min_gb` 不超过本机显存」的最大一档，作为该模型分块参数的默认值：
+大模型工作流（H3 一支的权重合计 ~65 GiB）靠节点级分块在显存吃紧的卡上跑，而分块参数的合适取值只取决于显存大小。在 `models.yaml` 给模型加一行 `vram_adaptive: true`，网关启动时探测本机显存，从 `defaults.vram_tiers` 取「`min_gb` 不超过本机显存」的最大一档，作为该模型分块参数的默认值：
 
 ```yaml
 defaults:
   vram_tiers:
-    - min_gb: 24        # 24 GiB 及以上
+    - min_gb: 24        # 24 ~ 31 GiB（32 GiB 及以上有单独的档）
       chunks: 2
       seq_threshold: 16384
       head_chunks: 8         # ← 当前无节点绑定（见第三方节点依赖节）
@@ -508,16 +511,6 @@ models:
 - 优先级：**档位值 < 模型自己写的 `defaults` < 请求参数**（请求里传 `chunks` 等可按单次任务覆盖）。
 - 探测不到显存（纯 CPU / 无 torch）时不覆盖，行为与不声明 `vram_adaptive` 一致。
 - 档位表在 YAML 里，改档位不用动代码；`ROUNDABOUT_VRAM_GB` 可手动钉住。
-
-### 剧情档位 / 一采反推（`motion_presets` / `lowres_scale`）—— 已移除 2026-09-21
-
-`motion=story|fight` 与 `lowres_scale: auto` 只由 self-lift 两支声明，两支同日下线（两阶段渐进采样
-被 lift 的「原生采样 → 确定性 latent lift」取代；09-20 实测高分二采会洗掉 lift 铺的高频：lap 54.4 vs 78.4）。
-**机制代码已整条删除**：`motion` / `transition_step` / `lowres_scale` 请求字段、`motion_presets` 配置段、
-`gateway/lowres.py`。反推公式 `L = min(84 / max(W,H)_latent, 0.70)` 与实测曲线仍保留在
-`skill: selflift-progressive-upscale`。
-
-
 
 ### 同机跑多个 ComfyUI 实例
 
@@ -576,7 +569,7 @@ node tests/test_view_frontend.cjs                             # 前端 jsdom（�
 
 | 用例 | 行为 |
 |---|---|
-| `test_e2e_sync_generation.py` | 真提交一次生图（z-image-turbo 512x512，约 10–30s GPU） |
+| `test_e2e_sync_generation.py` | 真提交一次生图（z-image-turbo 512x512，真实占用 GPU） |
 | `test_removebg_e2e.py` | 真跑 BiRefNet 去背景 |
 
 `tests/run_tests.py` 默认跳过它们（名字含 `e2e`，或列在脚本顶部的 `GPU_TESTS` 里），要跑得显式加 `--all`。

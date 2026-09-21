@@ -61,7 +61,7 @@ defaults:
 models:
   z-image:
     workflow: image_z_image_base.json
-    description: Z-Image base —— AuraFlow 架构完整模型，30 步高精度
+    description: Z-Image base —— S3-DiT（单流扩散 Transformer）完整模型，30 步高精度
     mode: image
     capabilities:
     - text-to-image
@@ -93,7 +93,7 @@ models:
     - z-image-base
   z-image-turbo:
     workflow: image_z_image_turbo.json
-    description: Z-Image Turbo —— AuraFlow 架构 int8 蒸馏模型，8 步出图
+    description: Z-Image Turbo —— S3-DiT（单流扩散 Transformer）的 int8 蒸馏版，8 步出图
     mode: image
     capabilities:
     - text-to-image
@@ -332,8 +332,9 @@ models:
   #     ⛔ **不能再接** KJNodes 的 MiniMaxLowVRAMAttention：它替换 `block.forward`，而稀疏的 block
   #     patch 会无条件补传 `attention=` 关键字（comfy/ldm/minimax/model.py:753），签名对不上
   #     ⇒ 实测 TypeError。base 四支原先的 LowVRAM 节点已按此撤除（09-21）。
-  #     ⚠️ 稀疏参数（tau / start_percent / min_tokens …）不在可注入白名单，且 `selection.tau`
-  #     键名含点号、路径按 `.` 切分无法寻址 ⇒ 调整只能改工作流 JSON + `/admin/reload`。
+  #     ⚠️ 稀疏参数里只有 `start_percent` 进了可注入白名单（内部名 `sparse_start_percent`，
+  #     对外即请求参数 `attention`）；`tau` / `min_tokens` 等未注册，且 `selection.tau` 键名
+  #     含点号、路径按 `.` 切分无法寻址 ⇒ 调它们只能改工作流 JSON + `/admin/reload`。
   minimax-h3:
     workflow: video_minimax_h3.json
     description: MiniMax H3 (FL2VA) —— 文生视频 / 首尾帧生视频，30 步，低显存分块按档位自适应
@@ -383,7 +384,7 @@ models:
     - h3
   minimax-h3-edit:
     workflow: video_minimax_h3_edit.json
-    description: MiniMax H3 Edit —— 参考 / 图生视频编辑，25 步，低显存分块按档位自适应
+    description: MiniMax H3 Edit —— 参考 / 图生视频编辑，30 步，低显存分块按档位自适应
     mode: video
     capabilities:
     - text-to-video
@@ -411,7 +412,7 @@ models:
     defaults:
       width: 1344
       height: 768
-      steps: 25
+      steps: 30
       sampler_name: res_multistep
       scheduler: simple
       denoise: 1
@@ -471,7 +472,7 @@ models:
   #
   # 低显存：BlockSparseAttention(105:127，vsa / keep 10%) + MiniMaxChunkFeedForward(105:221)，
   #   两级与 base 四支同构。档位只生效 chunks / seq_threshold（head_chunks 无节点、highres_tiling
-  #   无绑定）。576p@8 实测 FFN 分块开/关耗时无差（349s vs 357s）—— 分块收益在峰值显存不在速度。
+  #   无绑定）。FFN 分块开/关耗时无差 —— 分块收益在峰值显存、不在速度。
   # ⚠️ 本档定位草稿 / 快周转，不是 49/50 步的等价替代：09-20 分频实测 8 步在细节量上并非
   #    「无损」，高频段整体过量（越细越超）；要最大质量用 minimax-h3。
   fasth3:
@@ -596,11 +597,12 @@ models:
   #   - rho 是**伪影阻尼**不是保细节（默认 0；拉向像素锚 = 白放大）；
   #   - 高分二采会洗掉 lift 的高频（54.4 vs 78.4），所以只做 lift、不做二采；
   #   - 输出尺寸 = 画布 × scale，默认 1344x768 × 1.5 = 2016x1152。
+  #   - 步数 30（09-21 与 base / edit 统一）：原 defaults 的 8 是初始导入的漏值。
   # scale / rho / w_min / w_max 是**模板里固定**的值（节点 910），不在可注入白名单里：
   #   精调走通用透传 workflow_overrides（如 910.inputs.scale=2.0），路径不存在会报 400。
   minimax-h3-lift:
     workflow: video_minimax_h3_lift.json
-    description: MiniMax H3 Lift —— base 骨架 + 确定性放大：原生采样→学习式 latent lift（默认 2016x1152），构图零重掷，纹理最强；支持首尾帧
+    description: MiniMax H3 Lift —— base 骨架 + 确定性放大：30 步原生采样→学习式 latent lift（默认 2016x1152），构图零重掷，纹理最强；支持首尾帧
     mode: video
     capabilities:
     - text-to-video
@@ -620,7 +622,7 @@ models:
     defaults:
       width: 1344
       height: 768
-      steps: 8
+      steps: 30
       sampler_name: res_multistep
       scheduler: simple
       denoise: 1
@@ -649,10 +651,10 @@ models:
 
   # Ref2VA 版 lift：放大机制与上面那支完全一致，差别只在工作流源于 edit ——
   #   ref2va 权重 + MiniMaxH3ReferenceToVideo 聚合 + 参考槽全套 6 图 / 3 视频 / 3 音频。
-  # ⚠️ 未标定：步数沿用 edit 的 25 步，放大与参考的组合效果没做过 A/B。
+  # ⚠️ 未标定：步数 30（随 edit 统一），放大与参考的组合效果没做过 A/B。
   minimax-h3-lift-edit:
     workflow: video_minimax_h3_lift_edit.json
-    description: MiniMax H3 Lift Ref2VA —— edit 骨架 + 确定性放大：参考图 / 视频 / 音频生视频后过一遍学习式 latent lift
+    description: MiniMax H3 Lift Ref2VA —— edit 骨架（30 步）+ 确定性放大：参考图 / 视频 / 音频生视频后过一遍学习式 latent lift
     mode: video
     capabilities:
     - text-to-video
@@ -681,7 +683,7 @@ models:
     defaults:
       width: 1344
       height: 768
-      steps: 25
+      steps: 30
       sampler_name: res_multistep
       scheduler: simple
       denoise: 1

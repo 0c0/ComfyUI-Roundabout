@@ -4,7 +4,7 @@ Roundabout 不自带任何"工作流导入"功能。它做的只有一件事：
 
 > 读一份 **API 格式**的工作流 JSON，按 `models.yaml` 里声明的映射，把接口参数注进对应节点的 input，然后提交给 ComfyUI。
 
-所以接入自己的流程 = **导出一个 JSON + 写一段映射**。`workflows/` 下的 20 个内置工作流只是可用样本，随时可以删。
+所以接入自己的流程 = **导出一个 JSON + 写一段映射**。`workflows/` 下的 16 个 JSON 只是可用样本（15 支已注册 + 1 个接入样本 `example_txt2img.json`），随时可以删。
 
 ---
 
@@ -275,7 +275,7 @@ models:
     bindings:
       chunks: 158.inputs.chunks              # base 四支同构：MiniMaxChunkFeedForward
       seq_threshold: 158.inputs.seq_threshold
-  fastvideo-fasth3:
+  fasth3:
     vram_adaptive: true
     bindings:
       chunks: '105:221.inputs.chunks'        # FastH3 两支的分块节点在子图内

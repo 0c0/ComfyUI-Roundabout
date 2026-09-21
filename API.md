@@ -34,7 +34,7 @@
   - `MCP_SHARE_PORT=true`（默认）：通过 aiohttp 原生代理把 `/mcp` 挂在 **ComfyUI 同一端口**（`http://host:8188/mcp`）。内部 uvicorn 只绑 `127.0.0.1` 回环。
   - `MCP_SHARE_PORT=false`：客户端直连 `http://MCP_HOST:<MCP_PORT>/mcp`；此时建议用 `MCP_PORT` 或 `MCP_PORT_MAP` 把端口钉死（对外可预期），否则端口由系统分配、以启动日志为准。
 - **共用**：模型注册表、生成链路、异步任务表全部共享。通过 MCP 提交的异步任务能在 REST 队列监控里看到，反之亦然。
-- **自适应层**：`gateway/` 下除注册表与生成链路外，还有两个「跟着机器 / 请求变的参数」模块 —— `vram.py`（按显存档位选分块参数）、`params.py`（请求参数白名单与校验）。它们不改工作流文件，只在渲染前覆盖节点字段；配置都来自 `models.yaml`，改完 `POST /admin/reload` 生效。细节见 [README.md](README.md#配置)。
+- **自适应层**：`gateway/` 下除注册表与生成链路外，还有两个「跟着机器 / 请求变的参数」模块 —— `vram.py`（按显存档位选分块参数）、`params.py`（请求参数白名单与校验）。它们不改工作流文件，只在渲染前覆盖节点字段。**只有分块档位来自 `models.yaml`**（改完 `POST /admin/reload` 生效）；白名单与档位取值是 `params.py` 里的常量，改了要重启。细节见 [README.md](README.md#配置)。
 
 ---
 
@@ -188,7 +188,7 @@ MCP 客户端配置（`mcp.json`）：
 | `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 采样精调；`denoise` 为图生图重绘幅度 |
 | `image` | string\|string[]? | 图生图输入（base64 / dataURL / URL / 本地路径） |
 | `mask` | string? | 局部重绘遮罩 |
-| `mode` | string? | 生图模式（部分模型，受 `mode_choices` 约束，如 Ideogram4） |
+| `mode` | string? | 生图模式；仅当模型在 `models.yaml` 声明了 `mode_choices` 时生效（当前内置模型均未声明） |
 | `workflow_overrides` | object? | 直接改写节点，如 `{"3.inputs.cfg": 4.5}` |
 | `filename_prefix` | string? | 落盘前缀，可含 `/` 建子目录；空则用该模型工作流模板里的前缀（H3 视频统一为 `video/MiniMax_H3`） |
 
@@ -209,11 +209,11 @@ OpenAI 标准 multipart 图生图。字段：`image`（文件，可多张）、`
 
 **单图编辑模型**（改图内文字首选 boogu 系列；风格/内容改写首选 flux2 klein）：
 
-| 模型 | 别名 | 默认步数 / cfg / 采样器 | 实测算力（1MP 输入，本机 4090 级） |
-|---|---|---|---|
-| `boogu-image-edit` | `boogu-edit` | 30 / 3.5 / `dpmpp_2m` + `simple` | 约 3.5 分钟 |
-| `boogu-image-edit-turbo` | `boogu-edit-turbo` | 6 / 1 / `euler` + `sgm_uniform` | 约 45 秒 |
-| `flux2-klein-image-edit-turbo` | `flux2-edit-turbo` | 6 / 1 / `euler` | 约 40 秒 |
+| 模型 | 别名 | 默认步数 / cfg / 采样器 |
+|---|---|---|
+| `boogu-image-edit` | `boogu-edit` | 30 / 3.5 / `dpmpp_2m` + `simple` |
+| `boogu-image-edit-turbo` | `boogu-edit-turbo` | 6 / 1 / `euler` + `sgm_uniform` |
+| `flux2-klein-image-edit-turbo` | `flux2-edit-turbo` | 6 / 1 / `euler` |
 
 ```bash
 curl -X POST http://127.0.0.1:8188/v1/images/edits \
@@ -236,11 +236,11 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
   -F image=@input/source.png
 ```
 
-返回结构与其他 images 端点一致。`model` 字段可覆盖为其他 **promptless** 工具类模型（传普通生图模型会被 400 拒绝）；缺 `image` 也直接 400。实测约几秒级（4090 级，1MP 输入）。
+返回结构与其他 images 端点一致。`model` 字段可覆盖为其他 **promptless** 工具类模型（传普通生图模型会被 400 拒绝）；缺 `image` 也直接 400。
 
 **promptless 模型**：`models.yaml` 里声明 `promptless: true` 的模型不绑 prompt、请求也不需要 prompt——适合纯工具类工作流（去背景、放大、转格式等）。走通用 `/v1/images/edits` 调用也可以（`prompt` 已改为可选字段），但绑定 prompt 的模型缺 prompt 仍会 400。
 
-**`flux2-klein-image-edit-turbo`（Flux2 Klein 9B）**：Qwen3-VL 文本编码 + ReferenceLatent 单参考图编辑，语义改写能力强（换背景/换材质/增删物体，指令跟随好），不擅长往图里写字。尺寸跟随输入图（`GetImageSize` → `EmptyFlux2LatentImage`），输入会先被 `ImageScaleToTotalPixels` 缩到 1MP，所以 `size` 不生效、输出约 1MP；负向提示词默认空（cfg=1 时负向不参与）。工作流模板由 4 参考图版本经 `flux2_api_refs.py --count 1` 收敛而来（4 参考图原件在 `user/default/workflows/`，其 `92:145.image` 的断链已修复）；**2–4 张参考图已在工作流层实测通过**（52s / 64s / 80s，参考图主体的色彩/物体会被引入画面，prompt 需明确各参考图用途），但网关单次只收一张 `image`，多参考图需用该脚本直接提交 ComfyUI，或等网关支持多图入参。
+**`flux2-klein-image-edit-turbo`（Flux2 Klein 9B）**：Qwen3-VL 文本编码 + ReferenceLatent 单参考图编辑，语义改写能力强（换背景/换材质/增删物体，指令跟随好），不擅长往图里写字。尺寸跟随输入图（`GetImageSize` → `EmptyFlux2LatentImage`），输入会先被 `ImageScaleToTotalPixels` 缩到 1MP，所以 `size` 不生效、输出约 1MP；负向提示词默认空（cfg=1 时负向不参与）。工作流模板由 4 参考图版本经 `flux2_api_refs.py --count 1` 收敛而来（4 参考图原件在 `user/default/workflows/`，其 `92:145.image` 的断链已修复）；**2–4 张参考图已在工作流层实测通过**（参考图主体的色彩/物体会被引入画面，prompt 需明确各参考图用途），但网关单次只收一张 `image`，多参考图需用该脚本直接提交 ComfyUI，或等网关支持多图入参。
 
 ### 5.2 视频生成
 
@@ -332,13 +332,12 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | **`flux2-klein-image-edit-turbo`** | image | **image-to-image** | Flux2 Klein 9B 单图编辑，语义改写/换背景首选（见 5.1） |
 | **`utility-birefnet-remove-background`** | image | **image-to-image**（promptless） | 去背景独立工具，无 prompt，透明 PNG；专属端点 `/v1/images/remove-background` |
 | `minimax-h3` | video | text-to-video | H3 文生视频（base 30 步）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@30（网关已移除 `quality` 分档：分档只表达 size + steps，与直接传参等价） |
-| `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频（支持图/视频/音频参考）。原 `-turbo-edit` 已于 2026-09-20 下线 |
+| `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，30 步（支持图/视频/音频参考）。原 `-turbo-edit` 已于 2026-09-20 下线 |
 | ~~`minimax-h3-self-lift`~~ / ~~`-self-lift-edit`~~ | video | — | **已下线 2026-09-21**：两阶段渐进采样，被 lift 的确定性放大取代 |
-| `minimax-h3-lift` | video | text-to-video / image-to-video | base 骨架 + 确定性放大：原生采样 → 学习式 latent lift（默认 2016x1152）；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧；分块参数按本机显存自动分档 |
-| `minimax-h3-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 edit 骨架（Ref2VA 权重）；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
+| `minimax-h3-lift` | video | text-to-video / image-to-video | base 骨架 + 确定性放大：30 步原生采样 → 学习式 latent lift（默认 2016x1152）；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧；分块参数按本机显存自动分档 |
+| `minimax-h3-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 edit 骨架（Ref2VA 权重，30 步）；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
 | `fasth3` | video | text-to-video / image-to-video | FastVideo FastH3 8 步蒸馏档；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（首尾帧走关键帧槽 `first_frame` / `last_frame`，见 [WORKFLOWS.md](WORKFLOWS.md)）。定位**草稿 / 快周转**，非 49/50 步的等价替代 |
 | `fasth3-edit` | video | text-to-video / reference-to-video | FastH3 参考生视频；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪。⚠️ **占位档**：官方未蒸馏 Ref2VA，与 `fasth3` 共用同一份 fl2v 权重 |
-| **`minimax-h3-lift`** | video | text-to-video | **确定性放大档**：原生画布（默认 1344x768）采样 → 学习式 latent lift 无重采样抬升 → 解码。构图零重掷（corr=1.000），纹理 +152% vs 白放大。输出 = 原生画布 × scale（模板字面值 1.5 → 2016x1152），精调走 `workflow_overrides`（`910.inputs.scale` / `910.inputs.rho`，rho=0 默认纹理最强）。实测 5s 片约 9 分钟（8GB 档） |
 
 > 完整别名与绑定关系见 `models.yaml`；模型清单与用途对照也见 [README.md](README.md#内置模型)。
 
@@ -419,7 +418,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `list_models` | 列出可用模型及其能力 / 模式 / 默认参数 / 别名 |
 | `generate_image` | 文生图；支持 `negative_prompt`/`seed`/`size`/`steps`/`cfg`/`workflow_overrides`(JSON 字符串)/`filename_prefix`/`mode`；返回 OpenAI 风格响应（含 `seed` 回显，url 已绝对化）；视频模型自动转视频链路。**编辑图片不要用本工具**（用 `edit_image` / `remove_background`） |
 | `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写），改图内文字传 `boogu-image-edit-turbo` / `boogu-image-edit`；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
-| `generate_video` | 文生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`reference_images|videos|audios`/`steps`/`filename_prefix`/`background`；`background:"pending"` 异步，再查 `get_task` |
+| `generate_video` | 文生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`reference_images|videos|audios`/`steps`/`attention`/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
 | `remove_background` | 图片去背景（BiRefNet，独立工具，无需提示词）；参数 `image`(本地路径/URL/dataURL/base64)、`response_format`(默认 url)、`filename_prefix` |
 | `get_task` | 查询异步任务状态与产物（含 `prompt_id`、是否有工作流快照、`output`、`error`） |
 | `cancel_task` | 取消任务：`task_id` 非空取消指定任务（pending 移出队列 / running 中断）；**空则中断 ComfyUI 当前执行任务** |

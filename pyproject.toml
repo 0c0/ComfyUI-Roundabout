@@ -43,5 +43,5 @@ Icon = ""
 # Banner = ""
 # 未设 requires-comfyui —— 网关本身只用 PromptServer 的通用路由 API，没有硬版本门槛；
 # 而内置工作流引用了较新的 comfy_extras 节点（如 MiniMaxH3 / LoadBackgroundRemovalModel），
-# 设了反而会把只想用自有工作流的用户挡在门外。建议版本写在 README「环境要求」里。
+# 设了反而会把只想用自有工作流的用户挡在门外。版本要求写在 README 的「第三方节点依赖」节里。
 # requires-comfyui = ">=0.3.0"

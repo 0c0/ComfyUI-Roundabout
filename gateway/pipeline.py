@@ -285,7 +285,7 @@ async def generate(
         "mode": req.mode,
     }
 
-    # 模型专属 mode 校验（如 Ideogram4 的 Quality / Default / Turbo）
+    # 模型专属 mode 校验（候选值由模型自己在 models.yaml 声明）
     if req.mode is not None and spec.mode_choices and req.mode not in spec.mode_choices:
         raise APIError(
             f"Model `{spec.name}`: invalid `mode` {req.mode!r}. "

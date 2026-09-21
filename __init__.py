@@ -7,7 +7,7 @@ ComfyUI 自身：作为 custom node 在 PromptServer 上注册 /v1/* 路由，�
 启动方式：正常启动 ComfyUI 即可（--listen 监听地址即网关地址）。
   curl http://<host>:<port>/health
   curl -X POST http://<host>:<port>/v1/images/generations -H "Content-Type: application/json" \
-       -d '{"model":"sdxl","prompt":"a red fox in snow","size":"1024x1024"}'
+       -d '{"model":"z-image-turbo","prompt":"a red fox in snow","size":"1024x1024"}'
 """
 
 import logging

@@ -99,14 +99,14 @@ class VideoGenerationRequest(BaseModel):
     num_frames: int | None = Field(None, description="总帧数（部分工作流用帧数而非时长）")
 
     # ---- 注意力档位（仅 base 四支 H3 视频档；FastH3 恒稀疏、无档位）----
-    # sol-attn 稀疏实测耗时 0.76~0.79x，画质与致密高度一致、差异只在高频细节。
+    # sol-attn 稀疏更快、显存更省；画质与致密高度一致，差异只在高频细节。
     # dense 档把 BlockSparseAttention.start_percent 顶到 1.0（percent_to_sigma(1.0)=0
     # ⇒ 每一步都判 dense）等效全程关闭稀疏 —— 换回致密画质，耗时回满。
     attention: Literal["sparse", "dense"] | None = Field(
         None,
         description=(
-            "注意力档位：`sparse`（默认，块稀疏加速，8 步 768p 实测约 0.76x 耗时）/"
-            "`dense`（关闭稀疏，画质优先，耗时回满）。不传则保持工作流模板默认（稀疏）。"
+            "注意力档位：`sparse`（默认，块稀疏加速，更快、更省显存）/"
+            "`dense`（关闭稀疏，画质优先，更慢、更吃显存）。不传则保持工作流模板默认（稀疏）。"
             "仅 base 四支 H3 视频档（minimax-h3 / -edit / -lift / -lift-edit）支持；"
             "FastH3 两支恒定稀疏（其 vsa 与蒸馏权重配对训练，无 dense 对照，传了报 400），"
             "其它模型传了同样报 400。"
