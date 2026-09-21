@@ -230,7 +230,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 }
 ```
 
-> URL 里的主机端口 = 你访问 ComfyUI 的地址，路径固定 `/mcp`。远程访问换成 `http://192.168.1.10:20003/mcp` 即可，其余不变。
+> URL 里的主机端口 = 你访问 ComfyUI 的地址，路径固定 `/mcp`。远程访问换成 `http://192.168.1.10:8188/mcp` 即可，其余不变。
 > 工具参数、完成推送（`notifications/message`，需显式 `MCP_STATELESS=false`）与助手侧注意事项见 [API.md §7](API.md)。
 
 **agent 典型流程**：`list_models` 看有什么 → `generate_image` / `generate_video` 生成 → 异步任务用 `get_task` 轮询（默认无状态模式；设了 `MCP_STATELESS=false` 才可等服务端推送）→ 产物地址交给用户 → `get_view_url` 给出可视化页面。

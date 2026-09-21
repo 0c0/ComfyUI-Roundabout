@@ -87,7 +87,7 @@ python\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-Roundabout\requ
 
 节点在 ComfyUI 启动时自动：加载 `models.yaml` → 注册 `/v1/*` 路由 → 拉起 MCP 后端并挂载代理（`MCP_ENABLED` 默认 `true`；设为 `false` 则跳过）。
 
-> **MCP 地址 = ComfyUI 自身的地址 + `/mcp`**，没有独立端口。ComfyUI 跑在 `192.168.1.10:20003`（经 `--port 20003` 或反代），MCP 端点就是 `http://192.168.1.10:20003/mcp`。
+> **MCP 地址 = ComfyUI 自身的地址 + `/mcp`**，没有独立端口。ComfyUI 跑在 `192.168.1.10:8188`（默认端口，或经反代），MCP 端点就是 `http://192.168.1.10:8188/mcp`。
 > 共享端口模式下内部后端不对外暴露——它只绑 `127.0.0.1` 回环，端口由 `MCP_PORT` / `MCP_PORT_MAP` 决定（默认交给系统分配），客户端一律只连 ComfyUI 端口。
 
 ### 2.3 节点根目录 `.env`（手写最小 dotenv，仅补充未设置的环境变量）
@@ -137,7 +137,7 @@ MCP 客户端配置（`mcp.json`）：
 
 > `url` 里的主机与端口就是 ComfyUI 的访问地址，路径固定 `/mcp`：
 > - 本机默认：`http://127.0.0.1:8188/mcp`
-> - 远程/自定义端口（如 ComfyUI 跑在 20003）：换成 `http://192.168.1.10:20003/mcp`，其余不变。
+> - 远程访问（如局域网内另一台机）：换成 `http://192.168.1.10:8188/mcp`，其余不变。
 >
 > 在连接器管理中对该服务器点「信任」后启用即可。
 
@@ -536,7 +536,7 @@ call generate_video(prompt="a cat walking in rain", model="minimax-h3", size="57
 | ComfyUI 重启后 agent 侧报 `Rejected request with unknown or expired session ID: <hex>`（仅 `MCP_STATELESS=false` 的有状态模式） | **不是故障，也与端口无关**。MCP streamable-http 的会话只存在后端进程内存里（`Mcp-Session-Id` → `_server_instances`），ComfyUI 重启即全部清空；agent 仍拿着旧 session ID 发请求，SDK 按 MCP 规范回 404 `Session not found` 并打这条 INFO（logger `mcp.server.streamable_http_manager`）。URL 走的是 ComfyUI 固定端口 `/mcp`，所以请求能到达服务器——若真是端口问题，症状会是「连接被拒」而不是「session 未知」 | agent 侧重新 initialize 即可（多数 MCP 客户端下次调用时自动重连；不自动重连的，重启该 agent 的 MCP 连接）。**默认的无状态模式不会出现这条**——见到它就说明有人把 `MCP_STATELESS` 显式设成了 `false`（为了换异步完成推送）：要么接受「重启后手动重连」，要么去掉这个配置改回默认 |
 | 日志反复出现 `Created new transport with session ID: <hex>`（仅 `MCP_STATELESS=false` 的有状态模式） | 请求**没带 `Mcp-Session-Id`**（或带了已失效的），SDK 就为每个这样的请求新建一个会话——`streamable_http_manager.py` 有状态路径的「New session case」，INFO 级。典型原因是客户端不保存 initialize 响应里的 `Mcp-Session-Id`、每次工具调用都重新 initialize / 新建连接（即客户端按无状态方式在用它）。**注意**：SDK 默认 `session_idle_timeout=None`，空闲会话**不会被回收**，会话及其后台任务会持续堆积（`_server_instances` + 每会话一个 `run_server` task），不会自己释放 | 服务端无 bug，是客户端没有复用会话。能改客户端就让它保存并回带 `Mcp-Session-Id`；改不动就设 `MCP_STATELESS=true`（**已经是默认值**）——服务端不再建任何会话，这条日志消失，也顺带根治上面那条 `unknown or expired session ID`（代价同上：完成通知改为轮询） |
 | MCP 握手成功但工具列表为空 | 后端 uvicorn 未起来（上一行日志） | 同上；确认启动日志出现 `MCP gateway: embedded streamable-http shared on ComfyUI port` |
-| 访问远程 IP 不通（如 `:20003`）但本机 `127.0.0.1` 正常 | ComfyUI 未加 `--listen 0.0.0.0`，或反代未放行 SSE（`text/event-stream`）长连接 | 启动加 `--listen 0.0.0.0`；反代关闭缓冲、放行 `Accept: text/event-stream` |
+| 访问远程 IP 不通（如 `:8188`）但本机 `127.0.0.1` 正常 | ComfyUI 未加 `--listen 0.0.0.0`，或反代未放行 SSE（`text/event-stream`）长连接 | 启动加 `--listen 0.0.0.0`；反代关闭缓冲、放行 `Accept: text/event-stream` |
 | 生成后 `url` 是相对路径 | 未设 `PUBLIC_BASE_URL` 且请求 host 不可达客户端 | 设 `PUBLIC_BASE_URL=http://<对外地址>` |
 | MCP `list_models` 看不到刚加的模型 / 新改的 `models.yaml` | 旧版 `mcp_server.py` 用绝对导入 `gateway.*`，与节点侧相对导入形成**两份 registry** | 升级代码后重启（已修，见 `tests/test_mcp_import_identity.py`）；平时加模型后 `POST /admin/reload` 即可 |
 | MCP 创建的异步任务在 `/v1/videos/tasks/{id}` 或任务面板里查不到 | 同上（`task_store` 也是两份） | 同上 |
