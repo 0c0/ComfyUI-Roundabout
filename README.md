@@ -89,19 +89,16 @@ agent 全程**看不到也用不着**工作流 JSON。它只传语义参数，�
 装法就是把这个目录放进 agent 的 skills 目录（目录名与 skill 的 `name` 保持一致）：
 
 ```bash
-# WorkBuddy 用户级 skills 目录；Claude Code 等其它 agent 换成各自的 skills 路径（如 ~/.claude/skills/）
-git clone https://github.com/0c0/roundabout-skill.git ~/.workbuddy/skills/roundabout
-git clone https://github.com/0c0/h3-official-playbook-skill.git ~/.workbuddy/skills/h3-official-playbook
+git clone https://github.com/0c0/roundabout-skill.git <agent 的 skills 目录>/roundabout
+git clone https://github.com/0c0/h3-official-playbook-skill.git <agent 的 skills 目录>/h3-official-playbook
 ```
 
-**一句话安装**：把下面这句直接丢给 agent，剩下的它自己会做（clone、落位、重启会话后加载）：
+**一句话安装**（把这句丢给 agent 即可，装在哪、怎么落位由它按自家约定处理）：
 
 ```text
-安装 skill：git clone https://github.com/0c0/roundabout-skill.git ~/.workbuddy/skills/roundabout
-安装 skill：git clone https://github.com/0c0/h3-official-playbook-skill.git ~/.workbuddy/skills/h3-official-playbook
+安装这个skill https://github.com/0c0/roundabout-skill
+安装这个skill https://github.com/0c0/h3-official-playbook-skill
 ```
-
-> 路径约定：`~/.workbuddy/skills/` 是 WorkBuddy 的用户级 skills 目录（`~` 即用户主目录，Windows 下为 `C:\Users\<用户名>`）；skill 目录名必须与 SKILL.md 里的 `name` 一致，装完重启 agent 会话即生效。
 
 > 两个 skill 都按「先自己探、探不到再问」的方式取 ComfyUI 路径与端口，**不含硬编的内网地址**，换机器可直接用。
 > `roundabout-skill` 内部还会按任务转交给几个更专的 skill（注意力档位、SelfLift 放大、Z-Image 中文提示词、子图工作流 JSON 改写）—— 那些是本机自用件，未随本仓库发布。
