@@ -29,6 +29,7 @@ task_store 异步任务表、ComfyClient 后端客户端），本文件只做协
     get_workflow      三层查找任务的工作流 JSON（队列 / history / 任务快照）
     reload            热加载 models.yaml 模型配置
     health            网关与后端健康状态
+    get_skills        返回配套 agent-skill 清单（安装 URL + 何时用），生成/注册前应先调用
 """
 
 from __future__ import annotations
@@ -169,16 +170,18 @@ def _absolutize_urls(payload: dict[str, Any]) -> dict[str, Any]:
 # 可靠入口（仓库 README 不会被已连接的 agent 自动读到）。agent 拿到后应在本地装好这些 skill，
 # 写 H3 提示词前先查 h3-official-playbook、拿不准调哪个工具/参数时查 roundabout。
 SERVER_INSTRUCTIONS = (
-    "Companion agent skills (recommended — install them so prompts are correct and each "
-    "model's capability boundaries are respected):\n"
-    "- roundabout: https://github.com/0c0/roundabout-skill — usage guide for THIS server "
-    "(model selection, request parameters, troubleshooting, registering/unregistering workflows).\n"
-    "- h3-official-playbook: https://github.com/0c0/h3-official-playbook-skill — MiniMax H3 / "
-    "FastH3 official playbook (prompt formula, generation modes, duration/resolution limits, "
+    "This MCP server (comfyui-roundabout) ships companion agent-skills that you MUST install to "
+    "use it correctly. BEFORE handling ANY image/video generation, H3 prompt writing, model "
+    "registration, or 'which tool/parameter should I use' question, CALL the `get_skills` tool — "
+    "it returns the skill list with install URLs. Install each skill, then consult it:\n"
+    "- roundabout skill (https://github.com/0c0/roundabout-skill): the usage guide for THIS "
+    "server (model selection, request parameters, troubleshooting, registering/unregistering "
+    "workflows).\n"
+    "- h3-official-playbook skill (https://github.com/0c0/h3-official-playbook-skill): MiniMax "
+    "H3 / FastH3 official playbook (prompt formula, generation modes, duration/resolution limits, "
     "reference-material rules).\n"
-    "When a request involves MiniMax H3 / FastH3 video generation, load h3-official-playbook "
-    "first for the correct prompt structure and limits; consult roundabout when unsure which "
-    "tool or parameter to use."
+    "For MiniMax H3 / FastH3 video prompts, load h3-official-playbook FIRST for the correct "
+    "prompt structure and limits; consult roundabout when unsure which tool or parameter to use."
 )
 
 mcp = MCPServer(name="comfyui-roundabout", version=VERSION, instructions=SERVER_INSTRUCTIONS)
@@ -347,9 +350,8 @@ async def remove_background(
         "fasth3-edit=FastH3 参考生视频（6 图 + 3 视频 + 3 音频）；"
         "filename_prefix 指定落盘前缀（可含 \"/\" 建子目录，不传则用模板默认）。"
         "默认同步等待（长任务建议 background=pending 异步，再轮询 get_task）。"
-        "【写 MiniMax H3 / FastH3 提示词前，建议先装并参考 h3-official-playbook skill："
-        "https://github.com/0c0/h3-official-playbook-skill —— 它给出官方提示词公式、生成模式写法与能力边界；"
-        "本服务器的总入口用法见 roundabout skill：https://github.com/0c0/roundabout-skill】"
+        "【写 MiniMax H3 / FastH3 提示词前，先调用 get_skills 工具拿到配套 skill 并安装，"
+        "再按 skill 里的官方口径写提示词】"
     ),
 )
 async def generate_video_tool(
@@ -531,6 +533,48 @@ async def get_view_url() -> dict[str, Any]:
         payload["url"] = f"{url}?key={settings.api_keys[0]}"
         payload["auth_required"] = True
     return payload
+
+
+# ---- 工具 13：get_skills -------------------------------------------------
+@mcp.tool(
+    name="get_skills",
+    description=(
+        "Returns the companion agent-skills that make this MCP server correct and safe to use. "
+        "CALL THIS FIRST whenever the user asks for image/video generation, H3 prompt writing, "
+        "model registration, or 'which tool/parameter should I use'. Each entry carries an "
+        "install_url and a when_to_use field — install the skill (bare URL is enough, no target "
+        "dir needed) before proceeding. The skills hold the official prompt formulas, capability "
+        "boundaries, and per-model guidance that this server's tool descriptions cannot embed "
+        "without bloating every one of them."
+    ),
+)
+async def get_skills() -> dict[str, Any]:
+    """配套 agent-skill 清单。agent 接到图像/视频生成、H3 提示词、模型注册等请求时，
+    应先调用本工具拿到 skill 列表并安装，再继续。返回结构化 dict（server / version / skills[]）。
+    """
+    return {
+        "server": "comfyui-roundabout",
+        "version": VERSION,
+        "skills": [
+            {
+                "name": "roundabout",
+                "install_url": "https://github.com/0c0/roundabout-skill",
+                "purpose": "本 MCP 服务器的总入口用法：模型选择、请求参数、排障、注册/下线工作流。",
+                "when_to_use": "拿不准用哪个工具/参数、要注册或排查工作流、或想看某模型能力边界时查它。",
+                "published": True,
+            },
+            {
+                "name": "h3-official-playbook",
+                "install_url": "https://github.com/0c0/h3-official-playbook-skill",
+                "purpose": "MiniMax H3 / FastH3 官方使用手册口径：提示词三段式公式、三类生成模式写法差异、"
+                           "时长/分辨率/宽高比/输入上限。",
+                "when_to_use": "写 MiniMax H3 / FastH3 视频提示词前必查，确保提示词结构正确、不踩能力边界。",
+                "published": True,
+            },
+        ],
+        "note": "两 skill 均公开发布；其余专精 skill（如 github-publish-from-blocked-net）仅本地使用，"
+                "不在此列出。安装方式：把 install_url 交给 agent 的 skill 安装流程（裸 URL 即可，无需指定目录）。",
+    }
 
 
 # ------------------------------------------------------------------ 内部辅助
