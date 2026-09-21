@@ -596,13 +596,13 @@ models:
   # 机制定位（09-20 实测）：低分一采拿结构 → lift 抬分辨率并铺学习高频 → 收尾。
   #   - rho 是**伪影阻尼**不是保细节（默认 0；拉向像素锚 = 白放大）；
   #   - 高分二采会洗掉 lift 的高频（54.4 vs 78.4），所以只做 lift、不做二采；
-  #   - 输出尺寸 = 画布 × scale，默认 1344x768 × 1.5 = 2016x1152。
+  #   - 输出尺寸 = 画布 × scale，默认 1344x768 × 1.875 = 2520x1440。
   #   - 步数 30（09-21 与 base / edit 统一）：原 defaults 的 8 是初始导入的漏值。
-  # scale / rho / w_min / w_max 是**模板里固定**的值（节点 910），不在可注入白名单里：
-  #   精调走通用透传 workflow_overrides（如 910.inputs.scale=2.0），路径不存在会报 400。
+  # scale 是正式请求参数（仅 lift 两支有绑定）：默认 1.875 = 768p 画布 × 1.875 = 2520x1440。
+  # rho / w_min / w_max 仍是模板固定值（节点 910），精调走 workflow_overrides（如 910.inputs.rho=0.3）。
   minimax-h3-lift:
     workflow: video_minimax_h3_lift.json
-    description: MiniMax H3 Lift —— base 骨架 + 确定性放大：30 步原生采样→学习式 latent lift（默认 2016x1152），构图零重掷，纹理最强；支持首尾帧
+    description: MiniMax H3 Lift —— base 骨架 + 确定性放大：30 步原生采样→学习式 latent lift（默认 2520x1440），构图零重掷，纹理最强；支持首尾帧
     mode: video
     capabilities:
     - text-to-video
@@ -616,7 +616,7 @@ models:
       image_keys:
       - first_frame
       - last_frame
-    # 放大阶段要解码 2016x1152，比常规 H3 慢；想要完全不限时仍可设 JOB_TIMEOUT=0。
+    # 放大阶段要解码 2520x1440，比常规 H3 慢；想要完全不限时仍可设 JOB_TIMEOUT=0。
     timeout: 2700
     vram_adaptive: true
     defaults:
@@ -628,6 +628,7 @@ models:
       denoise: 1
       duration: 5
       fps: 24
+      scale: 1.875
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
@@ -643,6 +644,7 @@ models:
       chunks: 158.inputs.chunks
       seq_threshold: 158.inputs.seq_threshold
       sparse_start_percent: '159.inputs.start_percent'
+      scale: '910.inputs.scale'
     aliases:
     - minimax_h3_lift
     - h3-lift
@@ -689,6 +691,7 @@ models:
       denoise: 1
       duration: 5
       fps: 24
+      scale: 1.875
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
@@ -704,6 +707,7 @@ models:
       chunks: 158.inputs.chunks
       seq_threshold: 158.inputs.seq_threshold
       sparse_start_percent: '159.inputs.start_percent'
+      scale: '910.inputs.scale'
     aliases:
     - minimax_h3_lift_edit
     - minimax-h3-edit-lift

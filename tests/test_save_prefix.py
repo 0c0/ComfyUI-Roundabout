@@ -83,7 +83,7 @@ FAMILIES = (
      "2 支常规"),
     (FASTH3_PREFIX, ["fasth3", "fasth3-edit"], "文生/首尾帧 + 参考生视频"),
     (LIFT_UP_PREFIX, ["minimax-h3-lift", "minimax-h3-lift-edit"],
-     "lift 放大档两支（base / edit 骨架 + 尾部 latent lift，scale 精调走 workflow_overrides）"),
+     "lift 放大档两支（base / edit 骨架 + 尾部 latent lift，scale 为请求参数）"),
 )
 all_h3 = [s for s in video_specs if "h3" in s.name]
 check("h3 家族合计 6 支", len(all_h3) == 6, [s.name for s in all_h3])

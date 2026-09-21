@@ -112,9 +112,18 @@ class VideoGenerationRequest(BaseModel):
             "其它模型传了同样报 400。"
         ),
     )
-    # ---- H3 Lift 确定性放大（minimax-h3-lift）----
-    # scale / rho / w_min / w_max 不设请求字段：默认值（1.5 / 0.0 / 0.5 / 1.0）写死在工作流模板，
-    # 精调用厂商通用透传 workflow_overrides，如 {"910.inputs.scale": 2.0, "910.inputs.rho": 0.3}。
+    # ---- H3 Lift 确定性放大（minimax-h3-lift 两支）----
+    scale: float | None = Field(
+        None,
+        ge=1.0,
+        le=4.0,
+        description=(
+            "放大倍率（仅 minimax-h3-lift / -lift-edit）：输出 = 768p 画布 × scale，"
+            "默认 1.875 → 2520x1440。其它模型传了报 400。"
+        ),
+    )
+    # rho / w_min / w_max 仍不设请求字段：默认（0.0 / 0.5 / 1.0）写死在工作流模板，
+    # 精调用厂商通用透传 workflow_overrides，如 {"910.inputs.rho": 0.3}。
 
     # ---------- 扩展字段：ComfyUI 精调 ----------
     negative_prompt: str | None = Field(None, description="反向提示词")

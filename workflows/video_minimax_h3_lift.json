@@ -292,6 +292,27 @@
       "title": "FFN 分块"
     }
   },
+  "159": {
+    "inputs": {
+      "selection": "sol-attn",
+      "selection.tau": 1.3,
+      "start_percent": 0.2,
+      "end_percent": 1,
+      "dense_blocks": "",
+      "min_tokens": 12288,
+      "extra_tokens": 256,
+      "sink_conditioning": "exact_kv_and_rows",
+      "verbose": false,
+      "model": [
+        "156",
+        0
+      ]
+    },
+    "class_type": "BlockSparseAttention",
+    "_meta": {
+      "title": "块稀疏注意力(sol-attn)"
+    }
+  },
   "900": {
     "class_type": "ImageFromBatch",
     "inputs": {
@@ -321,7 +342,7 @@
         0
       ],
       "upscaler_model": "minimax_h3_latent_upscaler_3d_fp16.safetensors",
-      "scale": 1.5,
+      "scale": 1.875,
       "rho": 0.0,
       "w_min": 0.5,
       "w_max": 1.0,
@@ -329,27 +350,6 @@
         "119",
         0
       ]
-    }
-  },
-  "159": {
-    "inputs": {
-      "selection": "sol-attn",
-      "selection.tau": 1.3,
-      "start_percent": 0.2,
-      "end_percent": 1,
-      "dense_blocks": "",
-      "min_tokens": 12288,
-      "extra_tokens": 256,
-      "sink_conditioning": "exact_kv_and_rows",
-      "verbose": false,
-      "model": [
-        "156",
-        0
-      ]
-    },
-    "class_type": "BlockSparseAttention",
-    "_meta": {
-      "title": "块稀疏注意力(sol-attn)"
     }
   }
 }

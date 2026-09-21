@@ -404,7 +404,7 @@ def build_video_values(
         "filename_prefix": req.filename_prefix,  # 透传：None 时回落模板默认前缀
     }
     values = apply_presets(values, spec, req.style)
-    for key in ("steps", "cfg", "sampler_name", "scheduler", "denoise", "duration", "fps", "num_frames"):
+    for key in ("steps", "cfg", "sampler_name", "scheduler", "denoise", "duration", "fps", "num_frames", "scale"):
         explicit = getattr(req, key, None)
         if explicit is not None:
             values[key] = explicit
@@ -435,6 +435,13 @@ def build_video_values(
                 param="attention",
             )
         values["sparse_start_percent"] = resolve_attention(req.attention)
+    # Lift 放大倍率：仅 lift 两支有 `scale` 绑定；其它模型显式拒绝，别静默忽略。
+    if getattr(req, "scale", None) is not None and "scale" not in spec.bindings:
+        raise APIError(
+            f"Model `{spec.name}` has no latent-lift stage, so `scale` has nothing to "
+            "scale. It is only supported by minimax-h3-lift / minimax-h3-lift-edit.",
+            param="scale",
+        )
     return values
 
 

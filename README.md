@@ -220,7 +220,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 
 `size` 支持档位预设 `<tier>p-<ratio>`：tier ∈ `480p` / `576p` / `720p` / `768p` / `1080p` / `1440p`，ratio ∈ `1:1` / `3:4` / `4:3` / `16:9` / `9:16`（如 `768p-16:9` = 1360×768、`1080p-16:9` = 1920×1088、`1440p-16:9` = 2560×1440）；也接受反向写法 `<ratio>@<tier>p`（如 `9:16@768p`）与直接 `WxH`。不传或 `auto` 用模型默认。
 
-⚠️ **`1440p` 是大显存档**（2560×1440 ≈ 768p 的 3.6 倍像素）：8GB 卡**直接生跑不动**，要更大画面请优先走 `minimax-h3-lift`（768p 画布 × 1.5 = 2016×1152）。
+⚠️ **`1440p` 是大显存档**（2560×1440 ≈ 768p 的 3.6 倍像素）：8GB 卡**直接生跑不动**，要更大画面请优先走 `minimax-h3-lift`（768p 画布 × 1.875 = 2520×1440）。
 
 ### 3. MCP（给 agent 用）
 
@@ -285,7 +285,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 视频 | ~~`minimax-h3-turbo`~~ / ~~`-turbo-edit`~~（**已下线 2026-09-20**） | Acc LoRA 是 diffusers 命名 → 728 key 零 patch，实际=裸 base@8（2026-09-19 实测）；8 步快跑由 `minimax-h3` 直接传 `size:"576p-16:9"` + `steps:8` 承接。要真加速见下方 Acc LoRA 注记 |
 | 视频 | ~~`minimax-h3-hyperflow`~~（**已下线 2026-09-21**） | HyperFlow 8 步加速档（base 权重 + HyperFlow LoRA，`euler` + `ManualSigmas` 官方 9 点 σ）。**本地跑不通**：社区转换版把端点适配器 `endpoint_time_embedder.*` 并进了 `time_embedder.proj_in/proj_out`，端点条件进不了模型（画面非单段式晕开）；要完整效果需上游原版 + `Addis-Pulse-Studio/ComfyUI-HyperFlow` 节点包。8 步快跑由 `minimax-h3` 直接传 `steps:8` 与 `fasth3` 承接 |
 | 视频 | ~~`minimax-h3-self-lift`~~ / ~~`-self-lift-edit`~~（**已下线 2026-09-21**） | SelfLift 两阶段渐进采样（低分 NFE + 高分 NFE）。被 lift 的「原生采样 → 确定性 latent lift」取代；工作流备份在 `.workbuddy/stash/`，配套的采样档参数机制已随之删除 |
-| 视频 | `minimax-h3-lift` | **base 骨架 + 确定性放大**：30 步原生采样 → 学习式 latent lift（1344x768 × scale 1.5 = 2016x1152），构图零重掷、纹理最强；支持首尾帧（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）；产物落 `video/H3_Lift`；`scale` / `rho` 精调走 `workflow_overrides`（如 `910.inputs.scale=2.0`） |
+| 视频 | `minimax-h3-lift` | **base 骨架 + 确定性放大**：30 步原生采样 → 学习式 latent lift（1344x768 × scale 1.875 = 2520x1440），构图零重掷、纹理最强；支持首尾帧（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）；产物落 `video/H3_Lift`；`scale` 是请求参数（默认 1.875 → 2520x1440）；`rho` 精调走 `workflow_overrides`（`910.inputs.rho`） |
 | 视频 | `minimax-h3-lift-edit` | 同上，改用 **edit 骨架**：Ref2VA 权重 + 参考槽全套 6 图 / 3 视频 / 3 音频。⚠️ **未标定**：步数 30（随 edit 统一），放大与参考的组合效果没做过 A/B |
 | 视频 | `fasth3` | FastVideo FastH3 8 步蒸馏档；文生 / 首尾帧生视频（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）。首尾帧走**关键帧**槽 `first_frame` / `last_frame`，与自成一族的 `minimax-h3` 走参考图槽不是一条路。**定位草稿 / 快周转**：官方口径 8 步最优、改步数掉质量，且 09-20 分频实测其高频段整体过量（**不是 49/50 步的无损替代**），要最大质量用 `minimax-h3` |
 | 视频 | `fasth3-edit` | 同权重改用 Ref2VA 聚合节点做参考生视频，参考槽全套 6 图 + 3 视频 + 3 音频；产物落 `video/FastH3`（不混进 `video/MiniMax_H3`）。⚠️ **占位档**：官方未蒸馏 Ref2VA，与 `fasth3` 共用同一份 fl2v 权重，参考效果未标定 |

@@ -46,6 +46,8 @@ KNOWN_PARAMS = {
     "duration",
     "fps",
     "num_frames",
+    # ---- H3 Lift 放大倍率（仅 minimax-h3-lift 两支有绑定）----
+    "scale",
     # ---- 低显存分块（按显卡档位自动填默认值，见 gateway/vram.py）----
     "chunks",
     "head_chunks",
