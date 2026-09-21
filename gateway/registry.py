@@ -51,6 +51,11 @@ KNOWN_PARAMS = {
     "head_chunks",
     "seq_threshold",
     "highres_tiling",
+    # ---- 注意力档位 ----
+    # 对外是 `attention: sparse|dense`（见 schemas.VideoGenerationRequest），由
+    # params.resolve_attention 翻译成「稀疏起始点」后落到 BlockSparseAttention.start_percent。
+    # 内部名与对外枚举分开，是为了让 defaults / 档位表里存的始终是数值，不混入枚举语义。
+    "sparse_start_percent",
 }
 
 CAP_TXT2IMG = "text-to-image"

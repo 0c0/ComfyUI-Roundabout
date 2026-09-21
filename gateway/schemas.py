@@ -83,8 +83,9 @@ class VideoGenerationRequest(BaseModel):
     size: str | None = Field(
         None,
         description=(
-            '分辨率预设键 `<tier>p-<ratio>` 或 `<ratio>@<tier>p`，tier∈{480p,576p,720p,768p,1080p}，'
+            '分辨率预设键 `<tier>p-<ratio>` 或 `<ratio>@<tier>p`，tier∈{480p,576p,720p,768p,1080p,1440p}，'
             'ratio∈{1:1,3:4,4:3,16:9,9:16}（如 "720p-16:9" / "1080p-16:9" / "9:16@480p"）；'
+            '1440p 需大显存（8GB 直接生跑不动，改用 lift 放大）；'
             '也可直接写 WxH（如 "1280x720"）。auto/None 用模型默认。'
         ),
     )
@@ -96,6 +97,21 @@ class VideoGenerationRequest(BaseModel):
     duration: float | None = Field(None, description="视频时长（秒），允许 1–15")
     fps: int | None = Field(None, description="帧率")
     num_frames: int | None = Field(None, description="总帧数（部分工作流用帧数而非时长）")
+
+    # ---- 注意力档位（仅 base 四支 H3 视频档；FastH3 恒稀疏、无档位）----
+    # sol-attn 稀疏实测耗时 0.76~0.79x，画质与致密高度一致、差异只在高频细节。
+    # dense 档把 BlockSparseAttention.start_percent 顶到 1.0（percent_to_sigma(1.0)=0
+    # ⇒ 每一步都判 dense）等效全程关闭稀疏 —— 换回致密画质，耗时回满。
+    attention: Literal["sparse", "dense"] | None = Field(
+        None,
+        description=(
+            "注意力档位：`sparse`（默认，块稀疏加速，8 步 768p 实测约 0.76x 耗时）/"
+            "`dense`（关闭稀疏，画质优先，耗时回满）。不传则保持工作流模板默认（稀疏）。"
+            "仅 base 四支 H3 视频档（minimax-h3 / -edit / -lift / -lift-edit）支持；"
+            "FastH3 两支恒定稀疏（其 vsa 与蒸馏权重配对训练，无 dense 对照，传了报 400），"
+            "其它模型传了同样报 400。"
+        ),
+    )
     # ---- H3 Lift 确定性放大（minimax-h3-lift）----
     # scale / rho / w_min / w_max 不设请求字段：默认值（1.5 / 0.0 / 0.5 / 1.0）写死在工作流模板，
     # 精调用厂商通用透传 workflow_overrides，如 {"910.inputs.scale": 2.0, "910.inputs.rho": 0.3}。

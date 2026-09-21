@@ -1,15 +1,18 @@
 """按本机显存总量选「低显存分块」档位。
 
-MiniMax H3 这类大模型（SelfLift 工作流权重合计 ~65 GiB）在显存/内存不足时靠
+MiniMax H3 这类大模型（多支视频工作流权重合计 ~65 GiB）在显存/内存不足时靠
 节点级分块把激活张量切小：
 
 - ``MiniMaxChunkFeedForward.chunks``  切 FFN 的 token 维
-- ``MiniMaxLowVRAMAttention.head_chunks`` 切 56 个注意力头
 - ``MiniMaxChunkFeedForward.seq_threshold`` 只有 token 数超过它才分块
-- ``SelfLiftH3Sampler.highres_tiling`` 高分辨率阶段按剩余显存**自动**决定切几块
+- ``MiniMaxLowVRAMAttention.head_chunks`` 切 56 个注意力头 —— **当前无绑定**：该节点与
+  ``BlockSparseAttention`` 硬互斥（前者替换 block.forward，不收后者补传的 ``attention``），
+  6 支视频档已统一走稀疏注意力 + FFN 分块，档位表里的数值暂无人消费
+- ``SelfLiftH3Sampler.highres_tiling`` 高分辨率阶段按剩余显存**自动**决定切几块 ——
+  SelfLiftH3Sampler 随 self-lift 下线，同样无绑定
 
-前三个是纯粹的「用时间换显存」，不改变输出；第四个块数不可手调。它们的合适取值
-只取决于显存大小，所以做成按档位自动填默认值 —— 同一份工作流换机器不用改 JSON。
+前面几项是纯粹的「用时间换显存」，不改变输出；``highres_tiling`` 的块数不可手调。它们的
+合适取值只取决于显存大小，所以做成按档位自动填默认值 —— 同一份工作流换机器不用改 JSON。
 
 档位表放在 ``models.yaml`` 的 ``defaults.vram_tiers``（改参数不用动代码），本模块只
 负责两件纯函数式的事：**探测显存** 与 **选档**，便于离线测试。

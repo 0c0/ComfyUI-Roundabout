@@ -1,6 +1,6 @@
 """视频分辨率预设（`size`）的档位覆盖与解析测试。
 
-档位：480p / 576p / 720p / 768p / 1080p；比例：1:1 / 3:4 / 4:3 / 16:9 / 9:16。
+档位：480p / 576p / 720p / 768p / 1080p / 1440p；比例：1:1 / 3:4 / 4:3 / 16:9 / 9:16。
 铁律：预设里**每个维度都必须是 16 的倍数**（扩散视频模型隐空间约束）；
 基准边本身不是 16 倍数时（1080）就近上取到 1088。
 
@@ -62,8 +62,8 @@ def _expect_error(size: str, spec=SPEC) -> str:
 
 def main() -> int:
     # ---- 1. 档位与比例覆盖 ----
-    check("档位集合 = {480, 576, 720, 768, 1080}", _RES_TIERS == {480, 576, 720, 768, 1080},
-          f"got={sorted(_RES_TIERS)}")
+    check("档位集合 = {480, 576, 720, 768, 1080, 1440}",
+          _RES_TIERS == {480, 576, 720, 768, 1080, 1440}, f"got={sorted(_RES_TIERS)}")
     check("预设表键与档位一致", set(VIDEO_RES_PRESETS) == _RES_TIERS,
           f"got={sorted(VIDEO_RES_PRESETS)}")
     check("比例集合 = 1:1/3:4/4:3/16:9/9:16",
@@ -114,6 +114,11 @@ def main() -> int:
         "1080p-9:16": (1088, 1920),
         "1080p-1:1": (1088, 1088),
         "1080p-4:3": (1440, 1088),
+        "1440p-16:9": (2560, 1440),
+        "1440p-9:16": (1440, 2560),
+        "1440p-1:1": (1440, 1440),
+        "1440p-4:3": (1920, 1440),
+        "1440p-3:4": (1440, 1920),
     }
     for size, want in cases.items():
         got = resolve_video_size(size, SPEC)
@@ -130,10 +135,10 @@ def main() -> int:
         check(f'resolve("{size}") == {want[0]}x{want[1]}', got == want, f"got={got}")
 
     # ---- 6. 非法档位 / 比例 ----
-    msg = _expect_error("1440p-16:9")
-    check("未支持档位 1440p 报错", bool(msg), f"msg={msg[:60]!r}")
-    check("错误提示列出全部五个档位",
-          all(f"{t}p" in msg for t in (480, 576, 720, 768, 1080)), f"msg={msg!r}")
+    msg = _expect_error("2160p-16:9")
+    check("未支持档位 2160p 报错", bool(msg), f"msg={msg[:60]!r}")
+    check("错误提示列出全部六个档位",
+          all(f"{t}p" in msg for t in (480, 576, 720, 768, 1080, 1440)), f"msg={msg!r}")
     check("未支持比例 720p-21:9 报错", bool(_expect_error("720p-21:9")))
 
     # ---- 7. 回退路径 ----

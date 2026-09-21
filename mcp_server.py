@@ -323,7 +323,7 @@ async def remove_background(
     name="generate_video",
     description=(
         "生成视频（文生视频 / 参考生视频）。model 默认 minimax-h3；支持 duration(1-15s) / "
-        "fps / size(如 576p-16:9 / 720p-16:9 / 768p-16:9 / 1080p-16:9) / seed / reference_images(参考图，最多 6 张，"
+        "fps / size(如 576p-16:9 / 720p-16:9 / 768p-16:9 / 1080p-16:9 / 1440p-16:9=2560x1440，1440p 需大显存) / seed / reference_images(参考图，最多 6 张，"
         "支持 base64/URL/本地路径) / reference_videos / reference_audios。"
         "minimax-h3-lift / -lift-edit = base / edit 骨架 + 尾部确定性潜空间放大（输出画布 x1.5）；"
         "fasth3=FastVideo 8 步蒸馏档（reference_images 传 0/1/2 张 = 文生 / 首帧 / 首尾帧）；"
@@ -346,6 +346,10 @@ async def generate_video_tool(
             "minimax-h3-lift=H3 确定性放大档（原生 1344x768 采样 → 学习式 lift，默认输出 2016x1152，"
             "构图零重掷、纹理 +152% vs 白放大；scale/rho 精调用 workflow_overrides 点名 "
             "910.inputs.scale / 910.inputs.rho）。"
+            "attention 可选：sparse（默认，块稀疏注意力，8 步 768p 实测约 0.76x 耗时，"
+            "画质与致密高度一致、差异只在高频细节）/ dense（关闭稀疏换致密画质，耗时回满）。"
+            "仅 base 四支（minimax-h3 / -edit / -lift / -lift-edit）支持；FastH3 两支恒定稀疏、"
+            "传了报错。"
         ),
     ),
     duration: float | None = None,
@@ -357,6 +361,7 @@ async def generate_video_tool(
     reference_videos: list[str] | None = None,
     reference_audios: list[str] | None = None,
     steps: int | None = None,
+    attention: str = "",  # "sparse"（默认，稀疏加速）| "dense"（关闭稀疏，画质优先）；仅 base 四支
     background: str = "",  # "pending" 触发异步
     response_format: str = "",
     filename_prefix: str = "",
@@ -377,6 +382,7 @@ async def generate_video_tool(
         background=background or None,
         response_format=response_format or None,  # type: ignore[arg-type]
         filename_prefix=filename_prefix or None,
+        attention=attention or None,  # type: ignore[arg-type]
     )
     return await _handle_video(req, ctx)
 

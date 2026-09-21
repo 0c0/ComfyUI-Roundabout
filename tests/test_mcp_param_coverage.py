@@ -47,7 +47,7 @@ REQUIRED = {
     "remove_background": {"image", "filename_prefix"},
     "generate_video": {"prompt", "model", "duration", "fps", "size", "seed",
                        "negative_prompt", "reference_images", "reference_videos",
-                       "reference_audios", "background", "filename_prefix"},
+                       "reference_audios", "background", "filename_prefix", "attention"},
 }
 
 # 有意不暴露的快照（子集语义：missing 必须是它的子集）

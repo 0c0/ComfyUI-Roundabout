@@ -5,6 +5,10 @@
 取值只取决于显存大小，写死在 JSON 里换机器就得手改。现在在 models.yaml 声明
 `vram_adaptive: true`，加载时按本机显存从 `defaults.vram_tiers` 取一档作为默认值
 （显存探测见 gateway/vram.py）。
+⚠️ 2026-09-21 起只有 `chunks` / `seq_threshold` 还有节点绑定（KJNodes 的 FFN 分块）；
+`head_chunks`（原 MiniMaxLowVRAMAttention）与 `highres_tiling`（原 SelfLiftH3Sampler）
+两个消费者都已撤除，档位值仍会进 spec.defaults 但**不会注入任何工作流** —— 下面的断言
+按这个口径写。
 
 同一工作流还兼作文生视频与带图生成：两个 LoadImage 可插拔 —— 请求里不传图，
 网关提交前把对应节点删掉（= 文生视频）；传 1 张用首帧；传 2 张首尾都用。
@@ -146,7 +150,6 @@ def main() -> int:
             "      prompt: 138.inputs.value\n"
             "      seed: 129.inputs.noise_seed\n"
             "      chunks: 158.inputs.chunks\n"
-            "      head_chunks: 157.inputs.head_chunks\n"
             "      seq_threshold: 158.inputs.seq_threshold\n"
             "  plain:\n"
             f"    workflow: {WF}\n"
@@ -170,25 +173,24 @@ def main() -> int:
             check(f"{gb:g} GiB -> 未声明 vram_adaptive 的模型不受影响",
                   plain.defaults.get("chunks") is None and plain.vram_tier == {})
 
-        # 注入后确实写进工作流节点
-        wf = build_workflow(reg.resolve("t"), {"prompt": "p", "chunks": 1, "head_chunks": 4,
-                                              "seq_threshold": 262144, "highres_tiling": False}, None)
-        check("分块参数注入到 158 / 157",
-              wf["158"]["inputs"]["chunks"] == 1 and wf["157"]["inputs"]["head_chunks"] == 4
-              and wf["158"]["inputs"]["seq_threshold"] == 262144)
+        # 注入后确实写进工作流节点（2026-09-21：head_chunks 已无节点，见 [6]）
+        wf = build_workflow(reg.resolve("t"), {"prompt": "p", "chunks": 1,
+                                              "seq_threshold": 262144}, None)
+        check("分块参数注入到 158",
+              wf["158"]["inputs"]["chunks"] == 1 and wf["158"]["inputs"]["seq_threshold"] == 262144,
+              wf["158"]["inputs"])
         check("模板未被注入污染", reg.resolve("t").template["158"]["inputs"]["chunks"] == 1)
 
-        # 回归：pipeline 组装出的 values 是一份白名单，永远不会带 chunks / head_chunks 这些键，
+        # 回归：pipeline 组装出的 values 是一份白名单，永远不会带 chunks / seq_threshold 这些键，
         # 所以档位值必须由 spec.defaults 兜住。早期只有「调用方主动传参」才注入，结果是
         # list_models 报 6/24、真正提交给 ComfyUI 的却还是模板里写死的 2/8。
-        for gb, expect in ((8.0, (6, 24, 4096)), (24.0, (2, 8, 16384))):
+        for gb, expect in ((8.0, (6, 4096)), (24.0, (2, 16384))):
             os.environ[vram.ENV_KEY] = str(gb)
             vram.reset_cache()
             reg_d = Registry()
             reg_d.load(tmpdir / "models.yaml", tmpdir / "workflows", "t")
             wf_d = build_workflow(reg_d.resolve("t"), {"prompt": "p"}, None)
-            got_d = (wf_d["158"]["inputs"]["chunks"], wf_d["157"]["inputs"]["head_chunks"],
-                     wf_d["158"]["inputs"]["seq_threshold"])
+            got_d = (wf_d["158"]["inputs"]["chunks"], wf_d["158"]["inputs"]["seq_threshold"])
             check(f"{gb:g} GiB -> 不传分块参数也按档位注入 {expect}", got_d == expect, f"got={got_d}")
 
         os.environ[vram.ENV_KEY] = "48"
@@ -253,7 +255,7 @@ def main() -> int:
             orphans = sorted(set(wf2) - seen, key=int)
             check(f"传 {n} 张图 -> 无不可达孤儿节点", not orphans, f"orphans={orphans}")
 
-        print("\n[6] 真实 models.yaml：基础两支（minimax-h3 / -edit）已开启分块自适应")
+        print("\n[6] 真实 models.yaml：基础两支分块自适应 + 稀疏注意力（sol-attn）接线")
         os.environ[vram.ENV_KEY] = "8"
         vram.reset_cache()
         reg_real = Registry()
@@ -261,12 +263,18 @@ def main() -> int:
         for name, ff_node in (("minimax-h3", "158"), ("minimax-h3-edit", "158")):
             sp = reg_real.resolve(name)
             check(f"{name}: vram_adaptive 已声明", sp.vram_adaptive is True and bool(sp.vram_tier))
-            check(f"{name}: 分块三参已绑定（highres_tiling 无节点不绑）",
-                  set(sp.bindings) >= {"chunks", "head_chunks", "seq_threshold"}
-                  and "highres_tiling" not in sp.bindings, sorted(sp.bindings))
+            check(f"{name}: 可注入绑定只剩 chunks / seq_threshold",
+                  {"chunks", "seq_threshold"} <= set(sp.bindings)
+                  and not ({"head_chunks", "highres_tiling"} & set(sp.bindings)), sorted(sp.bindings))
             wf_r = build_workflow(sp, {"prompt": "p"}, None)
-            check(f"{name}: 8GB 档注入 157 head_chunks=24",
-                  wf_r["157"]["inputs"]["head_chunks"] == 24, wf_r["157"]["inputs"])
+            check(f"{name}: 稀疏节点 159 = BlockSparseAttention(sol-attn)，链路 156 -> 159 -> 158",
+                  wf_r["159"]["class_type"] == "BlockSparseAttention"
+                  and wf_r["159"]["inputs"]["selection"] == "sol-attn"
+                  and wf_r["159"]["inputs"]["model"] == ["156", 0]
+                  and wf_r[ff_node]["inputs"]["model"] == ["159", 0],
+                  wf_r["159"]["inputs"])
+            check(f"{name}: 链路中已无 MiniMaxLowVRAMAttention（与稀疏硬互斥）",
+                  all(nd.get("class_type") != "MiniMaxLowVRAMAttention" for nd in wf_r.values()))
             check(f"{name}: 8GB 档注入 158 chunks=6、seq_threshold=4096",
                   wf_r["158"]["inputs"]["chunks"] == 6
                   and wf_r["158"]["inputs"]["seq_threshold"] == 4096,

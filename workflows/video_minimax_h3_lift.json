@@ -267,7 +267,7 @@
   },
   "156": {
     "inputs": {
-      "attention": "pytorch attention",
+      "attention": "comfy kitchen attention",
       "model": [
         "127",
         0
@@ -278,25 +278,12 @@
       "title": "ModelAttentionBackend"
     }
   },
-  "157": {
-    "inputs": {
-      "head_chunks": 4,
-      "model": [
-        "156",
-        0
-      ]
-    },
-    "class_type": "MiniMaxLowVRAMAttention",
-    "_meta": {
-      "title": "低显存注意力分块"
-    }
-  },
   "158": {
     "inputs": {
       "chunks": 1,
       "seq_threshold": 262144,
       "model": [
-        "157",
+        "159",
         0
       ]
     },
@@ -342,6 +329,27 @@
         "119",
         0
       ]
+    }
+  },
+  "159": {
+    "inputs": {
+      "selection": "sol-attn",
+      "selection.tau": 1.3,
+      "start_percent": 0.2,
+      "end_percent": 1,
+      "dense_blocks": "",
+      "min_tokens": 12288,
+      "extra_tokens": 256,
+      "sink_conditioning": "exact_kv_and_rows",
+      "verbose": false,
+      "model": [
+        "156",
+        0
+      ]
+    },
+    "class_type": "BlockSparseAttention",
+    "_meta": {
+      "title": "块稀疏注意力(sol-attn)"
     }
   }
 }

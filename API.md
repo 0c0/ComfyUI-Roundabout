@@ -252,10 +252,11 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 |---|---|---|
 | `prompt` | string | 正向提示词（必填） |
 | `model` | string? | 默认 `minimax-h3`；视频模型 |
-| `size` | string? | `<tier>p-<ratio>` 或 `<ratio>@<tier>`，tier∈{`480p`,`576p`,`720p`,`768p`,`1080p`}，ratio∈{`1:1`,`3:4`,`4:3`,`16:9`,`9:16`}；或直接 `WxH`；空=模型默认 |
+| `size` | string? | `<tier>p-<ratio>` 或 `<ratio>@<tier>`，tier∈{`480p`,`576p`,`720p`,`768p`,`1080p`,`1440p`}，ratio∈{`1:1`,`3:4`,`4:3`,`16:9`,`9:16`}；或直接 `WxH`；空=模型默认。`1440p-16:9` = 2560×1440，需大显存（8GB 直接生跑不动，改用 lift 放大） |
 | `duration` | float? | 时长 1–15 秒 |
 | `fps` | int? | 帧率 |
 | `num_frames` | int? | 总帧数（部分工作流用帧数而非时长） |
+| `attention` | `"sparse"`\|`"dense"`? | **注意力档位**（更快 ↔ 更高质量，仅 base 四支 H3 视频档）：`sparse`（默认，块稀疏加速；8 步 768p 实测约 **0.76x** 耗时，画质与致密高度一致、差异只在高频细节）/ `dense`（关闭稀疏，画质优先，耗时回满）。不传 = 保持模板默认（稀疏）。**FastH3 两支恒稀疏**（其 `vsa` 与蒸馏权重配对训练，关掉不是更高画质而是脱离训练分布），传了报 400；其它模型同样报 400 |
 | ~~`motion`~~ / ~~`transition_step`~~ / ~~`lowres_scale`~~ | — | **已移除 2026-09-21**：原仅 SelfLift 两支声明，随其下线后成为孤儿形参；机制代码（请求字段 / `motion_presets` 配置 / `gateway/lowres.py`）一并删除，传了会被当作未知字段忽略 |
 | `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"910.inputs.scale": 2.0}`。`minimax-h3-lift` 的可调项：`910.inputs.scale`（放大倍率，默认 1.5 → 输出 2016x1152）、`910.inputs.rho`（SelfLift-zero 像素锚阻尼，默认 0=纯学习 lift 纹理最强；0.3 实测高频 -18%）、`910.inputs.w_min`/`w_max`（阻尼强度上下限，默认 0.5/1.0） |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |

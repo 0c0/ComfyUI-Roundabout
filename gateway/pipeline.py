@@ -22,6 +22,7 @@ from .params import (
     load_image_input,
     mime_for_ext,
     parse_size,
+    resolve_attention,
     resolve_seed,
     resolve_video_size,
     sniff_image,
@@ -413,6 +414,27 @@ def build_video_values(
         values["width"] = spec.defaults.get("width")
     if values.get("height") is None:
         values["height"] = spec.defaults.get("height")
+    # 注意力档位：对外 `attention`（sparse|dense）→ 内部 `sparse_start_percent`（数值）。
+    # 不传 = 完全不注入，保持工作流模板默认（模板里就是 0.2 = 稀疏档）。
+    # 传了但该模型没有这一档 ⇒ 显式拒绝，别让参数静默无效。
+    # ⛔ FastH3 两支故意不给档位：它的 `vsa` 稀疏与蒸馏权重配对训练，关掉不是「更高画质」
+    #    而是脱离训练分布。该档只有一个诉求（快），恒定稀疏就是它的最优形态。
+    if getattr(req, "attention", None):
+        if "sparse_start_percent" not in spec.bindings:
+            if spec.is_video:
+                raise APIError(
+                    f"Model `{spec.name}` always runs sparse attention: its weights are "
+                    "trained for that sparse pattern, so there is no dense counterpart to "
+                    "switch to. `attention` applies to the non-distilled H3 video models "
+                    "(minimax-h3, minimax-h3-edit, minimax-h3-lift, minimax-h3-lift-edit).",
+                    param="attention",
+                )
+            raise APIError(
+                f"Model `{spec.name}` has no block-sparse attention stage, so `attention` "
+                "has nothing to switch. It is only supported by the H3 video models.",
+                param="attention",
+            )
+        values["sparse_start_percent"] = resolve_attention(req.attention)
     return values
 
 

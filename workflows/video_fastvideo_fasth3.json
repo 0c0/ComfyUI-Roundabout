@@ -80,7 +80,7 @@
       "steps": 8,
       "denoise": 1,
       "model": [
-        "105:127",
+        "105:221",
         0
       ]
     },
@@ -120,7 +120,7 @@
   "105:16": {
     "inputs": {
       "model": [
-        "105:127",
+        "105:221",
         0
       ],
       "conditioning": [
@@ -300,6 +300,20 @@
     "class_type": "LoadImage",
     "_meta": {
       "title": "尾帧"
+    }
+  },
+  "105:221": {
+    "inputs": {
+      "chunks": 1,
+      "seq_threshold": 262144,
+      "model": [
+        "105:127",
+        0
+      ]
+    },
+    "class_type": "MiniMaxChunkFeedForward",
+    "_meta": {
+      "title": "FFN 分块"
     }
   }
 }

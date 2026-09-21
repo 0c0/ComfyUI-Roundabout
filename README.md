@@ -32,7 +32,7 @@ agent 全程**看不到也用不着**工作流 JSON。它只传语义参数，�
 | | 通用 ComfyUI MCP（把 workflow 整个交给 agent 操作） | Roundabout |
 |---|---|---|
 | 每次调用携带 | 整份 workflow JSON（或长期占用上下文） | `model` + `prompt` + `size` 等语义参数 |
-| 参数名从哪来 | 靠节点 schema / 试错 | 网关固定的 18 个参数白名单 |
+| 参数名从哪来 | 靠节点 schema / 试错 | 网关固定的参数白名单（清单见 WORKFLOWS.md） |
 | 换模型 | 重新理解另一张图 | 换一个 `model` 字符串 |
 | workflow 存哪 | agent 上下文里 | `workflows/` 本地，**永不进上下文** |
 | 出错面 | 节点 id / 字段名 / 连线都可能被改坏 | 映射在启动时校验，路径不存在直接拒绝加载 |
@@ -193,7 +193,9 @@ curl -X POST http://127.0.0.1:8188/v1/videos/generations \
 curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 ```
 
-`size` 支持档位预设 `<tier>p-<ratio>`：tier ∈ `480p` / `576p` / `720p` / `768p` / `1080p`，ratio ∈ `1:1` / `3:4` / `4:3` / `16:9` / `9:16`（如 `768p-16:9` = 1360×768、`1080p-16:9` = 1920×1088）；也接受反向写法 `<ratio>@<tier>p`（如 `9:16@768p`）与直接 `WxH`。不传或 `auto` 用模型默认。
+`size` 支持档位预设 `<tier>p-<ratio>`：tier ∈ `480p` / `576p` / `720p` / `768p` / `1080p` / `1440p`，ratio ∈ `1:1` / `3:4` / `4:3` / `16:9` / `9:16`（如 `768p-16:9` = 1360×768、`1080p-16:9` = 1920×1088、`1440p-16:9` = 2560×1440）；也接受反向写法 `<ratio>@<tier>p`（如 `9:16@768p`）与直接 `WxH`。不传或 `auto` 用模型默认。
+
+⚠️ **`1440p` 是大显存档**（2560×1440 ≈ 768p 的 3.6 倍像素）：8GB 卡**直接生跑不动**，要更大画面请优先走 `minimax-h3-lift`（768p 画布 × 1.5 = 2016×1152）。
 
 ### 3. MCP（给 agent 用）
 
@@ -437,9 +439,12 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 
 ### 第三方节点依赖
 
-> 这些工作流用到的节点**除 lift 系列（`minimax-h3-lift*`）和基础两支 `minimax-h3` / `-edit`（它们也接了低显存分块节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` 等节点。
+> 这些工作流用到的节点**除 lift 系列（`minimax-h3-lift*`）、基础两支 `minimax-h3` / `-edit`、以及 FastH3 两支（它们都接了低显存分块节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` 等节点。
 > lift 系列额外依赖一个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3LatentLift` + `latent_upscale_models/` 下的上采样权重）。两阶段采样用的 `SelfLiftH3Sampler` 与 `H3SigmaRefiner` 随 self-lift 下线后不再需要。
-> 需要 KJNodes 的 `MiniMaxChunkFeedForward` / `MiniMaxLowVRAMAttention` 做显存分块的：基础两支 `minimax-h3` / `-edit`，以及 lift 两支（`minimax-h3-lift*`）。只有 FastH3 两支不接这两个节点，**不需要 ComfyUI-KJNodes**。
+> 需要 KJNodes 的 `MiniMaxChunkFeedForward` 做 FFN 分块：**全部 6 支视频档**。低显存都走两级 —— `BlockSparseAttention`（comfy 核心节点，省 attention）→ `MiniMaxChunkFeedForward`：base 四支（`minimax-h3` / `-edit` / `minimax-h3-lift*`）的稀疏档位是 `sol-attn`（training-free，约保留 16% key block），FastH3 两支是 `vsa`（其权重按 10% cube 稀疏训练）。
+> ⛔ **不要在这 6 支里接 KJNodes 的 `MiniMaxLowVRAMAttention`**：它替换 `block.forward`，而 `BlockSparseAttention` 的 block patch 会无条件补传 `attention=` 关键字（`comfy/ldm/minimax/model.py`），签名对不上 ⇒ 实测 `TypeError`。两者**硬互斥**，因此 base 四支原先的 LowVRAM 节点已于 2026-09-21 撤除（`head_chunks` 档位值随之失去消费者，保留在表里仅为复原方便）。
+> 稀疏节点的参数（`tau` / `min_tokens` / `dense_blocks` …）不在可注入白名单；其中 `tau` 的键名是 `selection.tau`（含点号），按 `.` 切分的路径解析寻址不到，要调只能改工作流 JSON 再 `/admin/reload`。**但「更快 ↔ 更高质量」这一档有正式请求参数**：`attention`（`sparse` 默认 / `dense` 关闭稀疏换致密画质）。它内部落到 `BlockSparseAttention.start_percent` —— `1.0` 因 `percent_to_sigma(1.0) = 0` 而等效全程致密。**这一档只给 base 四支**（`minimax-h3` / `-edit` / `-lift` / `-lift-edit`）；FastH3 两支恒定稀疏 —— 它的 `vsa` 与蒸馏权重配对训练，关掉不是「更高画质」而是脱离训练分布，传 `attention` 会报 400。
+> 全部视频档的 `ModelAttentionBackend` 统一用 `comfy kitchen attention`（comfy_kitchen 的 INT8 实现，省显存）。要换 `pytorch attention` 得改工作流模板里那个节点的值；它不在 `bindings` 白名单里，但**可以**用 `workflow_overrides` 在运行时点改（`{"156.inputs.attention": "pytorch attention"}`）—— `workflow_overrides` 是任意路径注入，与白名单无关。
 > 上述权重多为 `int8_convrot` 量化版，只在你已具备同名权重的机器上开箱即用；换成自己的模型时，同步改工作流 JSON 里的文件名即可。
 
 ---
@@ -488,18 +493,16 @@ defaults:
   vram_tiers:
     - min_gb: 24        # 24 GiB 及以上
       chunks: 2
-      head_chunks: 8
       seq_threshold: 16384
-      highres_tiling: true
+      head_chunks: 8         # ← 当前无节点绑定（见第三方节点依赖节）
+      highres_tiling: true   # ← 当前无节点绑定
     # ... 12 / 8 / 0 各档
 models:
   minimax-h3-lift:
     vram_adaptive: true
     bindings:
-      chunks: 219.inputs.chunks
-      head_chunks: 220.inputs.head_chunks
-      seq_threshold: 219.inputs.seq_threshold
-      highres_tiling: 235.inputs.highres_tiling
+      chunks: 158.inputs.chunks
+      seq_threshold: 158.inputs.seq_threshold
 ```
 
 - 优先级：**档位值 < 模型自己写的 `defaults` < 请求参数**（请求里传 `chunks` 等可按单次任务覆盖）。

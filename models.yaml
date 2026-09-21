@@ -6,7 +6,12 @@ defaults:
   # 低显存分块档位表：按本机显存总量取「min_gb 不超过它」的最大一档，作为
   # chunks / head_chunks / seq_threshold / highres_tiling 的默认值。
   # 只有声明了 `vram_adaptive: true` 的模型会用它；模型自己的 defaults 覆盖档位值。
-  # 改档位只动这里，不用碰代码。数值依据见 H3-SelfLift 分块调优文档第五节。
+  # 改档位只动这里，不用碰代码。数值是经验标定（原始调优文档已不在仓库内）；`chunks` 只切
+  # FFN 的 token 维、数学精确，改它不影响输出（分块耗时开销实测 ≈ 0）。
+  # ⚠️ `head_chunks` 自 09-21 起**没有任何模型绑定**：唯一消费它的 MiniMaxLowVRAMAttention
+  #   与 BlockSparseAttention 硬互斥，已从 6 支视频档全部撤除（原因见下方 H3 系列共同点）。
+  #   `highres_tiling` 同样无绑定（SelfLiftH3Sampler 下线后失去消费者）。这两列数值留在表里
+  #   只为复原方便 —— **改它们不会影响任何工作流**。
   vram_tiers:
     - min_gb: 48
       chunks: 1
@@ -321,6 +326,14 @@ models:
   #   - width/height 在 aggregator(136)；fps 在 CreateVideo(130)
   #   - 未上传的资源由网关在发送前动态删除对应节点（删 LoadVideo 会级联删其 GetVideoComponents，
   #     见 references 段与 gateway/pipeline.py 的 _prune_unused_references）。
+  #   - 低显存统一两级：BlockSparseAttention(159) → MiniMaxChunkFeedForward(158)。
+  #     稀疏档位按权重分：base / edit / lift / lift-edit 用 **`sol-attn`**（training-free，
+  #     tau 1.3 自适应阈值，约保留 16% key block）；fasth3 两支用 `vsa`（权重按 10% cube 稀疏训练）。
+  #     ⛔ **不能再接** KJNodes 的 MiniMaxLowVRAMAttention：它替换 `block.forward`，而稀疏的 block
+  #     patch 会无条件补传 `attention=` 关键字（comfy/ldm/minimax/model.py:753），签名对不上
+  #     ⇒ 实测 TypeError。base 四支原先的 LowVRAM 节点已按此撤除（09-21）。
+  #     ⚠️ 稀疏参数（tau / start_percent / min_tokens …）不在可注入白名单，且 `selection.tau`
+  #     键名含点号、路径按 `.` 切分无法寻址 ⇒ 调整只能改工作流 JSON + `/admin/reload`。
   minimax-h3:
     workflow: video_minimax_h3.json
     description: MiniMax H3 (FL2VA) —— 文生视频 / 首尾帧生视频，30 步，低显存分块按档位自适应
@@ -362,8 +375,8 @@ models:
       duration: 132.inputs.value
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
-      head_chunks: 157.inputs.head_chunks
       seq_threshold: 158.inputs.seq_threshold
+      sparse_start_percent: '159.inputs.start_percent'
     aliases:
     - minimax_h3
     - minimaxh3
@@ -417,8 +430,8 @@ models:
       duration: 132.inputs.value
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
-      head_chunks: 157.inputs.head_chunks
       seq_threshold: 158.inputs.seq_threshold
+      sparse_start_percent: '159.inputs.start_percent'
     aliases:
     - minimax_h3_edit
     - minimaxh3edit
@@ -442,7 +455,7 @@ models:
   #     .workbuddy/stash/video_minimax_h3_self_lift_edit.json
   #   连带：motion / transition_step / lowres_scale 三个请求字段与 motion_presets 机制、
   #   gateway/lowres.py 已于 09-21 一并删除（复原时须从 git 历史取回，不是补个配置就行）。
-  #   仅 highres_tiling 仍留在 vram_tiers 里（无节点绑定，lift 的潜在 tiling 旋钮）。
+  #   仅 highres_tiling 仍留在 vram_tiers 里（无节点绑定、无消费者，仅为复原方便而保留）。
   #   旧名与别名（selflift / self-lift / h3-selflift / -nolora 等）见 git 历史。
 
   # ===================== FastVideo FastH3 =====================
@@ -455,6 +468,10 @@ models:
   # ⚠️ 蒸馏只覆盖 fl2va（文生 + 首尾帧）：官方未发布 Ref2VA 蒸馏权重，所以 fasth3-edit
   #    复用同一份 fl2v 权重作**占位** —— 参考节点与槽位齐全，但条件对这份权重属未训练输入，
   #    效果未经标定。要稳的参考生视频走 minimax-h3-edit。
+  #
+  # 低显存：BlockSparseAttention(105:127，vsa / keep 10%) + MiniMaxChunkFeedForward(105:221)，
+  #   两级与 base 四支同构。档位只生效 chunks / seq_threshold（head_chunks 无节点、highres_tiling
+  #   无绑定）。576p@8 实测 FFN 分块开/关耗时无差（349s vs 357s）—— 分块收益在峰值显存不在速度。
   # ⚠️ 本档定位草稿 / 快周转，不是 49/50 步的等价替代：09-20 分频实测 8 步在细节量上并非
   #    「无损」，高频段整体过量（越细越超）；要最大质量用 minimax-h3。
   fasth3:
@@ -465,6 +482,7 @@ models:
     - text-to-video
     - image-to-video
     output_node: '92'
+    vram_adaptive: true
     timeout: 1800
     references:
       aggregator: '105:104'
@@ -496,6 +514,8 @@ models:
       height: 105:104.inputs.height
       duration: 105:111.inputs.value
       fps: 105:91.inputs.fps
+      chunks: 105:221.inputs.chunks
+      seq_threshold: 105:221.inputs.seq_threshold
     aliases:
     - fastvideo-fasth3
     - fastvideo_fasth3
@@ -517,6 +537,7 @@ models:
     - text-to-video
     - reference-to-video
     output_node: '92'
+    vram_adaptive: true
     timeout: 1800
     references:
       aggregator: '105:145'
@@ -556,6 +577,8 @@ models:
       height: 105:145.inputs.height
       duration: 105:111.inputs.value
       fps: 105:91.inputs.fps
+      chunks: 105:221.inputs.chunks
+      seq_threshold: 105:221.inputs.seq_threshold
     aliases:
     - fastvideo-fasth3-edit
     - fastvideo_fasth3_edit
@@ -616,8 +639,8 @@ models:
       duration: 132.inputs.value
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
-      head_chunks: 157.inputs.head_chunks
       seq_threshold: 158.inputs.seq_threshold
+      sparse_start_percent: '159.inputs.start_percent'
     aliases:
     - minimax_h3_lift
     - h3-lift
@@ -677,8 +700,8 @@ models:
       duration: 132.inputs.value
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
-      head_chunks: 157.inputs.head_chunks
       seq_threshold: 158.inputs.seq_threshold
+      sparse_start_percent: '159.inputs.start_percent'
     aliases:
     - minimax_h3_lift_edit
     - minimax-h3-edit-lift

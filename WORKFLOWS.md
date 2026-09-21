@@ -27,7 +27,7 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 
 ### 可绑定的参数名（白名单）
 
-`prompt` `negative_prompt` `width` `height` `seed` `steps` `cfg` `sampler_name` `scheduler` `denoise` `batch_size` `image` `mask` `filename_prefix` `duration` `fps` `num_frames` `mode` `chunks` `head_chunks` `seq_threshold` `highres_tiling`
+`prompt` `negative_prompt` `width` `height` `seed` `steps` `cfg` `sampler_name` `scheduler` `denoise` `batch_size` `image` `mask` `filename_prefix` `duration` `fps` `num_frames` `mode` `chunks` `head_chunks` `seq_threshold` `highres_tiling` `sparse_start_percent`
 
 **白名单以外的键会被静默忽略**（只在启动日志里留一条 warning）。厂商特有参数用 `workflow_overrides` 传，不要在 `bindings` 里造名字。
 
@@ -49,7 +49,9 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 | `filename_prefix` | `SaveImage.filename_prefix`、`SaveVideo.filename_prefix` |
 | `fps` | `CreateVideo.fps`、`VideoCombine.frame_rate` |
 | `duration` / `num_frames` | 你自己链路里的时长/帧数节点 |
-| `chunks` / `head_chunks` / `seq_threshold` | `MiniMaxChunkFeedForward.chunks` / `.seq_threshold`、`MiniMaxLowVRAMAttention.head_chunks`（KJNodes） |
+| `chunks` / `seq_threshold` | `MiniMaxChunkFeedForward.chunks` / `.seq_threshold`（KJNodes） |
+| `sparse_start_percent` | `BlockSparseAttention.start_percent`（稀疏起始点，`1.0` 因 `percent_to_sigma(1.0)=0` 等效全程关闭稀疏）。**对外的语义参数是 `attention: sparse\|dense`**，由 `params.resolve_attention` 翻译后落到这里；`attention` 只对 base 四支 H3 视频档有效（FastH3 两支恒定稀疏，传了报错） |
+| ~~`head_chunks`~~ | **当前无绑定 2026-09-21**：唯一消费者 `MiniMaxLowVRAMAttention` 与 `BlockSparseAttention` 硬互斥，已从 6 支视频档撤除。参数名仍在可注入白名单里，把节点挂回去即可复用；档位表里的值不会注入任何工作流 |
 | `highres_tiling` | ~~`SelfLiftH3Sampler.highres_tiling`~~（**已下线 2026-09-21**，随 self-lift 摘档） |
 | ~~`transition_step`~~ / ~~`lowres_scale`~~ | **已移除 2026-09-21**（原 `SelfLiftH3Sampler` 的两阶段参数，随 self-lift 摘档；已从可注入白名单删除） |
 
@@ -242,7 +244,7 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 
 ## 大模型按显卡自动调参：`vram_adaptive`
 
-像 MiniMax H3 SelfLift 这种权重几十 GiB 的工作流，靠节点级分块把激活张量切小才能在显存吃紧的卡上跑。分块参数的合适取值**只取决于显存大小**，写死在 JSON 里换台机器就得手改，所以做成档位自动填：
+像 MiniMax H3 这类权重几十 GiB 的工作流，靠节点级分块把激活张量切小才能在显存吃紧的卡上跑。分块参数的合适取值**只取决于显存大小**，写死在 JSON 里换台机器就得手改，所以做成档位自动填：
 
 ```yaml
 defaults:
@@ -271,10 +273,14 @@ models:
   minimax-h3-lift:
     vram_adaptive: true
     bindings:
-      chunks: 219.inputs.chunks
-      head_chunks: 220.inputs.head_chunks
-      seq_threshold: 219.inputs.seq_threshold
-      highres_tiling: 235.inputs.highres_tiling
+      chunks: 158.inputs.chunks              # base 四支同构：MiniMaxChunkFeedForward
+      seq_threshold: 158.inputs.seq_threshold
+  fastvideo-fasth3:
+    vram_adaptive: true
+    bindings:
+      chunks: '105:221.inputs.chunks'        # FastH3 两支的分块节点在子图内
+      seq_threshold: '105:221.inputs.seq_threshold'
+      # head_chunks / highres_tiling 当前无节点可绑（见上方参数表）
 ```
 
 - **选档规则**：取 `min_gb` 不超过本机显存的最大一档；匹配留 0.6 GiB 容差（显卡报的可用量普遍略低于标称值，如 12G 卡报 12282 MiB = 11.99 GiB）。

@@ -90,9 +90,10 @@ def _round8(v: int) -> int:
 #
 # 约定：「p」指该档位的基准边——横向比例(16:9/4:3/1:1)取 height=档位，纵向比例(9:16/3:4)
 # 取 width=档位。例如 480p-16:9 = 848×480，720p-9:16 = 720×1280，1080p-16:9 = 1920×1088。
-# 档位：480 / 576 / 720 / 768 / 1080。基准边不是 16 倍数时（1080）就近上取，保证所有维度都对齐。
-# 576 是 16 的倍数（576/16=36），五档比例全部自然对齐，无需上取——它就是给
-# 「快速调试」用的低档（576p-16:9 = 1024×576，像素量约为 768p 的 55%）。
+# 档位：480 / 576 / 720 / 768 / 1080 / 1440。基准边不是 16 倍数时（1080）就近上取，保证所有维度都对齐。
+# 576 与 1440 都是 16 的倍数 ⇒ 这两档的五种比例全部自然对齐、无需上取。576 给「快速调试」用
+# （576p-16:9 = 1024×576 ≈ 768p 的 55% 像素）；1440p 是 8GB 显存**直接生跑不动**的大档
+# （16:9 = 2560×1440 ≈ 768p 的 3.6 倍像素），要更大画面优先走 lift（输出 = 画布 × 1.5）。
 VIDEO_RES_PRESETS: dict[int, dict[str, tuple[int, int]]] = {
     480: {
         "1:1": (480, 480),
@@ -131,8 +132,16 @@ VIDEO_RES_PRESETS: dict[int, dict[str, tuple[int, int]]] = {
         "16:9": (1920, 1088),
         "9:16": (1088, 1920),
     },
+    1440: {
+        # 1440 本身是 16 的倍数（1440 / 16 = 90）⇒ 无需像 1080 那样上取，16:9 即标准 2560×1440。
+        "1:1": (1440, 1440),
+        "4:3": (1920, 1440),
+        "3:4": (1440, 1920),
+        "16:9": (2560, 1440),
+        "9:16": (1440, 2560),
+    },
 }
-_RES_TIERS = {480, 576, 720, 768, 1080}
+_RES_TIERS = {480, 576, 720, 768, 1080, 1440}
 _RES_RATIOS = {"1:1", "3:4", "4:3", "16:9", "9:16"}
 _RES_PRESET_RE = re.compile(
     r"^(?P<tier>[0-9]+)p[-_](?P<ratio>[0-9]+:[0-9]+)$"
@@ -165,6 +174,39 @@ def resolve_video_size(size: str | None, spec: ModelSpec) -> tuple[int | None, i
 
     # 回退：显式 WxH
     return parse_size(size, spec)
+
+
+# ------------------------------------------------------------------ 注意力档位
+# 稀疏注意力（sol-attn）与致密画质高度一致、差异只在高频细节（同 seed MAE 20.2 / SSIM 0.615，
+# 约为「换种子内容噪声」的 1/3），代价端是耗时（8 步 768p 实测 0.76~0.79x）。所以把它做成
+# 用户可选的「更快 ↔ 更高质量」档：
+#   sparse（默认）= 保留 BlockSparseAttention 模板默认起始点 0.2（8 步档吃头 2 步走致密）
+#   dense         = 把 start_percent 顶到 1.0
+# 只给 base 四支（minimax-h3 / -edit / -lift / -lift-edit）：它们跑的是 training-free 的
+# sol-attn，「关掉」就是换回本来会算的致密注意力。FastH3 两支不参与 —— 它的 `vsa` 与
+# 蒸馏权重配对训练，关掉不是「更高画质」而是脱离训练分布；该档只求快，恒定稀疏即最优。
+#
+# 1.0 为什么等效「关闭稀疏」：apply_block_sparse_attention 把 start_percent 过
+# percent_to_sigma()，而所有 percent_to_sigma 实现里 `percent >= 1.0` 一律返回 0.0；
+# SparseAttnPatch.dense_reason() 判 `sigma > sigma_start` 即走 dense ⇒ 每个采样步
+# （sigma 恒 > 0）都落在窗外 ⇒ 全程致密。
+ATTENTION_SPARSE_START: dict[str, float] = {"sparse": 0.2, "dense": 1.0}
+
+
+def resolve_attention(attention: str) -> float:
+    """把注意力档位翻译成 `BlockSparseAttention.start_percent` 的值。
+
+    非法值直接报 400，不回落 —— 静默回落会让「参数看起来支持、实际无效」难以定位。
+    """
+    key = attention.strip().lower()
+    try:
+        return ATTENTION_SPARSE_START[key]
+    except KeyError:
+        raise APIError(
+            f"Invalid `attention`: {attention!r}. Expected one of: "
+            f"{', '.join(sorted(ATTENTION_SPARSE_START))}.",
+            param="attention",
+        ) from None
 
 
 # ------------------------------------------------------------------ 种子
