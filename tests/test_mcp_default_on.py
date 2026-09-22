@@ -167,7 +167,9 @@ async def main() -> int:
             )
             tools = (_parse_sse(body) or {}).get("result", {}).get("tools", [])
             names = sorted(t["name"] for t in tools)
-            check("tools/list 返回 12 个工具", len(names) == 12, f"{len(names)} 个: {names}")
+            # 工具数变更时同步这里；get_skills 是 skill 发现入口，必须在线
+            check("tools/list 返回 13 个工具", len(names) == 13, f"{len(names)} 个: {names}")
+            check("tools/list 含 get_skills", "get_skills" in names, str(names))
     finally:
         await runner.cleanup()
 
