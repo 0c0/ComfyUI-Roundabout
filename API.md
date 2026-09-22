@@ -372,6 +372,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `GET /roundabout/admin/state` | 配置状态（模型文件/目录/model 列表） |
 | `GET /roundabout/admin/queue` | **队列监控合并视图**：ComfyUI running/pending + 网关 tasks，**每个条目含 `seed`** |
 | `GET /roundabout/admin/queue/workflow/{prompt_id}` | 三层查找工作流 JSON：队列 → history → 任务快照 |
+| `GET /roundabout/admin/weights` | **权重体检**：内置工作流引用的权重里当前缺哪些，每条的下载命令与目标目录（`?unreferenced=1` 附带当前无工作流引用的条目，`?mirror=modelscope` 换下载源） |
 | `GET /roundabout/admin/workflows` | 列出工作流文件（含校验状态、被哪些模型引用） |
 | `POST /roundabout/admin/workflows/upload` | 上传工作流 JSON（multipart；可选 `create_model` 自动建模型条目） |
 | `DELETE /roundabout/admin/workflows/{name}` | 删除工作流（被模型引用时 409） |
@@ -404,16 +405,17 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 - **ImageResponse / VideoResponse**：`created`(int) + `data`(list, 每项 `url`/`b64_json`/`path`/`revised_prompt`) + `seed`(int|int[]|null) + `usage`(null) + `references`(视频参考图回显)。
 - **异步 task 对象**：`id` / `object:"image_generation.task"` / `status` / `created_at` / `model` / (`output`|`error`)。
 - **错误**：`{ "error": { "message": "...", "code": "...", "param": "..." } }`，HTTP 状态对应 4xx/5xx（如 `400` 参数错误、`404` task_not_found、`422` 配置校验失败、`500` 内部错误）。
+- **权重缺失会被改写成下载指引**：ComfyUI 的 combo 校验拒掉提交时（`value_not_in_list`，报错形态 `Value not in list (unet_name: 'x.safetensors' not in [...])`），网关把该 400 的 `message` 补成「文件名 + 目标目录 + `curl` 命令」。数据来自仓库根的 `weights.yaml`；索引里没有的文件（如 `LoadImage` 的输入图）**保持原报错不变**，不会给出错的下载地址。
 
 ---
 
-## 7. MCP 网关（12 个工具）
+## 7. MCP 网关（14 个工具）
 
 **默认启用**（`MCP_ENABLED` 默认 `true`）：装好 `mcp` / `uvicorn`、重启 ComfyUI 即可用，不需要任何配置。
 
 传输：`streamable-http`，端点 `/mcp`（共享端口挂在 ComfyUI 端口，或 `MCP_HOST:<MCP_PORT>` 独立，端口由 `MCP_PORT` / `MCP_PORT_MAP` 决定）。与 REST 完全互通。
 
-工具分三类：**生成**（`generate_image` / `edit_image` / `remove_background` / `generate_video`）、**查询与控制**（`list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health`）、**运维**（`reload` / `get_view_url`）。
+工具分三类：**生成**（`generate_image` / `edit_image` / `remove_background` / `generate_video`）、**查询与控制**（`list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`）、**运维**（`reload` / `get_view_url` / `get_skills`）。
 
 | 工具 | 说明 |
 |---|---|
@@ -429,6 +431,8 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `reload` | 热加载 `models.yaml` |
 | `health` | 网关与 ComfyUI 后端健康状态 |
 | `get_view_url` | 返回可视化页面地址（`{url}`，浏览器直接打开）：浏览 input/output 资源 + 实时任务进度。用户问「生成的东西在哪看」「给我查看页面」时调用，把 `url` 原样给用户 |
+| `check_weights` | **权重体检**（只读、不占 GPU）：列出内置工作流当前缺失的权重文件与每条的下载命令，避免等到 `generate*` 报 400 才发现权重没下 |
+| `get_skills` | 返回配套 agent-skills 的清单与安装地址（`roundabout` / `h3-playbook`） |
 
 > ⚠️ MCP 工具的形参是**逐个手写**的，与 REST 的 pydantic 请求模型是两条独立路径，二者并不自动对齐。
 > MCP SDK 的参数模型沿用 pydantic 默认的 `extra="ignore"`：**传入未声明的字段不报错、被直接丢弃**。
@@ -544,3 +548,4 @@ call generate_video(prompt="a cat walking in rain", model="minimax-h3", size="57
 | MCP 创建的异步任务在 `/v1/videos/tasks/{id}` 或任务面板里查不到 | 同上（`task_store` 也是两份） | 同上 |
 | 视图页看不到刚生成的产物 | 页面每 4 秒探测一次；或标签页在后台（暂停探测）；或产物落在 input/output 之外 | 手动点「刷新」；确认产物目录是 ComfyUI 的 output |
 | 任务面板一直空 | 后端未重启（旧代码只在异步视频时记任务）；或标签页后台 | `handlers.py` / `tasks.py` / `viewer.py` 改动需重启 ComfyUI |
+| 生成报 400 `ComfyUI rejected the workflow: ... Value not in list (...)` | **权重文件没装**，不是参数写错 —— ComfyUI 的 combo 校验把本地已装的列成了候选值 | 该报错已被网关改写成下载指引（文件名 + 目标目录 + `curl`）；想知道还缺哪些用 `GET /roundabout/admin/weights` 或 MCP `check_weights`。逐条来源见 [README 权重清单](README.md) |

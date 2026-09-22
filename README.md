@@ -1,6 +1,6 @@
 # ComfyUI-Roundabout
 
-> 一个 ComfyUI **custom node**：把本地工作流包装成 **OpenAI 兼容 REST API** + **MCP 工具**（12 个），让 AI agent / 脚本 / 任意 OpenAI 客户端直接调用你本机的图像与视频生成。
+> 一个 ComfyUI **custom node**：把本地工作流包装成 **OpenAI 兼容 REST API** + **MCP 工具**（14 个），让 AI agent / 脚本 / 任意 OpenAI 客户端直接调用你本机的图像与视频生成。
 
 **不碰画布、不改代码。** 你在 ComfyUI 里搭好的流程，导出一个 JSON、在 `models.yaml` 写一段参数映射，就变成了一个可被任意客户端调用的 `model`。
 
@@ -110,7 +110,7 @@ git clone https://github.com/0c0/h3-playbook-skill.git <agent 的 skills 目录>
 **两套接入层，共享同一个引擎**
 
 - **OpenAI 兼容 REST**：`/v1/images/generations`（文生图 / 图生图）、`/v1/images/edits`（multipart 标准编辑）、`/v1/images/remove-background`（去背景）、`/v1/videos/generations`（视频，支持异步）。返回格式可选 `b64_json` / `url` / `file` / `path`，可直接替换 OpenAI 官方地址使用。
-- **MCP 服务（12 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `generate_video`，查询类 `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health`，运维类 `reload` / `get_view_url`。agent 用一组工具就能完成「查模型 → 生成 → 跟踪进度 → 拿产物」全流程。
+- **MCP 服务（14 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `generate_video`，查询类 `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills`。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 拿产物」全流程。
 - **共享端口**：MCP 端点 `/mcp` 直接挂在 ComfyUI 同一端口（`http://<comfyui>:8188/mcp`），不用额外开端口、不用另起进程；REST 与 MCP 共用同一份注册表、生成链路与任务表。
 
 **声明式模型注册**
@@ -303,7 +303,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 
 ## 权重清单（内置工作流的全部依赖）
 
-**本仓库不包含任何权重文件**（体积与许可原因）。内置的 17 个工作流共引用 **23 个**权重文件，合计约 **215 GB**（图像档约 94 GB / 视频档约 121 GB）；下面两张清单表共 **26 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个 hyperflow LoRA），仅作参考，计入则约 222 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>`。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入这 23 个。）
+**本仓库不包含任何权重文件**（体积与许可原因）。内置的 17 个工作流共引用 **23 个**权重文件，合计约 **215 GB**（图像档约 94 GB / 视频档约 121 GB）；下面两张清单表共 **26 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个 hyperflow LoRA），仅作参考，计入则约 222 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入这 23 个。）
 
 这些文件基本都在 **HuggingFace 的 Comfy-Org 官方仓库**里（少数为模型原厂或社区仓库，已在表中标注）。国区建议把端点换成镜像，repo ID 与 repo 内路径完全一致：
 
@@ -349,9 +349,9 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 | `flux1_vae_bf16.safetensors` | `vae/` | 0.17 GB | `Comfy-Org/Boogu-Image` | `vae/` |
 | `flux-2-klein-9b-kv-fp8.safetensors` | `diffusion_models/` | 9.82 GB | `black-forest-labs/FLUX.2-klein-9b-kv-fp8` | 根目录 |
 | `flux2-vae.safetensors` | `vae/` | 0.34 GB | `Comfy-Org/vae-text-encorder-for-flux-klein-9b` | `split_files/vae/` |
-| `qwen_image_2.1_int8_convrot.safetensors` | `diffusion_models/` | 7.26 GB | `Comfy-Org/Qwen-Image-2.1` | 根目录 |
-| `qwen3vl_8b_int8_convrot.safetensors` | `text_encoders/` | 9.35 GB | `Comfy-Org/Qwen-Image-2.1` | 根目录 |
-| `qwen_image_2.1_vae_bf16.safetensors` | `vae/` | 0.68 GB | `Comfy-Org/Qwen-Image-2.1` | 根目录 |
+| `qwen_image_2.1_int8_convrot.safetensors` | `diffusion_models/` | 7.26 GB | `Comfy-Org/Qwen-Image-2.1` | `diffusion_models/` |
+| `qwen3vl_8b_int8_convrot.safetensors` | `text_encoders/` | 9.35 GB | `Comfy-Org/Qwen-Image-2.1` | `text_encoders/` |
+| `qwen_image_2.1_vae_bf16.safetensors` | `vae/` | 0.68 GB | `Comfy-Org/Qwen-Image-2.1` | `vae/` |
 | `birefnet.safetensors` | `background_removal/` | 0.44 GB | `Comfy-Org/BiRefNet` | `background_removal/` |
 
 **几个共用 / 易混点：**
@@ -566,7 +566,7 @@ MCP_PORT_MAP=[8188,888],[8189,999]
 ```
 ComfyUI-Roundabout/
 ├── __init__.py            # ComfyUI 节点入口（启动网关、加载模型）
-├── mcp_server.py          # MCP 服务（12 工具）+ 共享端口嵌入启动
+├── mcp_server.py          # MCP 服务（14 工具）+ 共享端口嵌入启动
 ├── gateway/               # REST 网关
 │   ├── config.py          # 配置（.env / 环境变量）
 │   ├── registry.py        # models.yaml 解析、绑定校验、热加载
@@ -583,6 +583,7 @@ ComfyUI-Roundabout/
 ├── web/                   # 前端（可视化页面 + 设置面板）
 ├── workflows/             # API 格式工作流（example_txt2img.json 为接入样本）
 ├── models.yaml            # 模型注册表
+├── weights.yaml           # 权重 → 下载来源索引（报错里的下载指引与体检的数据源）
 ├── pyproject.toml         # 节点包元数据（供 ComfyUI-Manager 等抓取识别）
 ├── requirements.txt       # mcp + uvicorn（MCP 默认启用故默认需要；关掉 MCP 可不装）
 ├── tests/                 # 回归测试（run_tests.py 为入口；分发时由 .comfyignore 排除）
