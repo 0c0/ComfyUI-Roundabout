@@ -333,14 +333,14 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 | `models/latent_upscale_models/` | SelfLift 的 latent 上采样权重 |
 | `models/background_removal/` | BiRefNet 抠图 |
 
-### 图像档（16 个文件，约 94 GB）
+### 图像档（16 行：15 个内置引用 + 1 个参考项，约 94 GB）
 
 | 文件 | 目标目录 | 体积 | 下载源（HF repo） | repo 内路径 |
 |---|---|---|---|---|
 | `z_image_int8_convrot.safetensors` | `diffusion_models/` | 6.20 GB | `Comfy-Org/z_image` | `split_files/diffusion_models/` |
 | `z_image_turbo_int8_convrot.safetensors` | `diffusion_models/` | 6.20 GB | `Comfy-Org/z_image_turbo` | `split_files/diffusion_models/` |
 | `qwen_3_4b.safetensors` | `text_encoders/` | 8.05 GB | `Comfy-Org/z_image` | `split_files/text_encoders/` |
-| `ae.safetensors` | `vae/` | 0.34 GB | `Comfy-Org/z_image` | `split_files/vae/` |
+| `ae.safetensors` | `vae/` | 0.34 GB | `Comfy-Org/z_image` | `split_files/vae/`（仅参考：与 `flux1_vae_bf16` 同权重，内置工作流已不引用） |
 | `boogu_image_base_fp8_scaled.safetensors` | `diffusion_models/` | 10.31 GB | `Comfy-Org/Boogu-Image` | `diffusion_models/` |
 | `boogu_image_turbo_hotfix_int8_convrot.safetensors` | `diffusion_models/` | 11.37 GB | `Comfy-Org/Boogu-Image` | `diffusion_models/` |
 | `boogu_image_edit_int8_convrot.safetensors` | `diffusion_models/` | 11.37 GB | `Comfy-Org/Boogu-Image` | `diffusion_models/` |
@@ -356,7 +356,7 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 
 **几个共用 / 易混点：**
 
-- `ae.safetensors` 与 `flux1_vae_bf16.safetensors` 是**同一个 FLUX.1 Autoencoder 的两种精度**（前者 fp32 0.34 GB，后者 bf16 0.17 GB），按文件名被不同工作流引用 —— 名字不同就必须都存在。只跑 `boogu-image-edit` 而没跑 `z-image` 时，也可以把 `flux1_vae_bf16.safetensors` 复制一份改名成 `ae.safetensors` 用（同架构可换，代价是精度）。
+- `ae.safetensors`（fp32 0.34 GB）与 `flux1_vae_bf16.safetensors`（bf16 0.17 GB）是**同一个 FLUX.1 Autoencoder 的两种精度副本** —— 逐张量核对过：244/244 张量在 bf16 下**逐位相同**。**内置工作流已统一引用 bf16 那份**：ComfyUI 默认按 bf16 加载 VAE（`working_dtypes = [bf16, fp32]`），读 `ae` 时会先下转为 bf16，结果与 `flux1_vae_bf16` 完全等同（同一 latent 解码实测 `max|Δ| = 0`、8-bit 下差异像素 `0.0000%`）。省 0.17 GB，也省掉每次加载的精度转换。`ae.safetensors` 只在启动加 `--fp32-vae` 时才有理论优势（多 2 位尾数），实测上限也只有 ≤2/255。
 - `qwen3vl_8b_fp8_scaled.safetensors` 被 Boogu 全系与 `flux2-klein-image-edit-turbo` 共用，下一个文件够三个模型用。
 - `flux-2-klein-9b-kv-fp8.safetensors` 来自 Black Forest Labs 官方仓库（不在 Comfy-Org）；Comfy-Org 只提供了它的 VAE 与文本编码器仓库（`vae-text-encorder-for-flux-klein-9b`，官方拼写如此）。
 - Qwen-Image 2.1 的文本编码器是 `qwen3vl_8b_int8_convrot.safetensors`，与 Boogu 用的 `qwen3vl_8b_fp8_scaled.safetensors` **同名不同文件、不同仓库**，别互相顶替 —— 跑哪支就下哪支。同仓库里另有 `qwen3.5_9b_qwen_image_2.1_pe_t2i.int8_convrot.safetensors` / `..._pe_i2i...` 一路「PE」编码器，内置工作流**不用**它。
@@ -390,15 +390,13 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 ```bash
 B=https://hf-mirror.com          # 走官方就换成 https://huggingface.co
 
-# ---------- Z-Image（z-image / z-image-turbo，约 21 GB）----------
+# ---------- Z-Image（z-image / z-image-turbo，约 20 GB）----------
 curl -L -o models/diffusion_models/z_image_int8_convrot.safetensors \
   $B/Comfy-Org/z_image/resolve/main/split_files/diffusion_models/z_image_int8_convrot.safetensors
 curl -L -o models/diffusion_models/z_image_turbo_int8_convrot.safetensors \
   $B/Comfy-Org/z_image_turbo/resolve/main/split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors
 curl -L -o models/text_encoders/qwen_3_4b.safetensors \
   $B/Comfy-Org/z_image/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors
-curl -L -o models/vae/ae.safetensors \
-  $B/Comfy-Org/z_image/resolve/main/split_files/vae/ae.safetensors
 
 # ---------- Boogu（文生图 + 图生图，约 45 GB）----------
 curl -L -o models/diffusion_models/boogu_image_base_fp8_scaled.safetensors \
@@ -467,9 +465,9 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 
 | 工作流 | 需要的权重 → 目标目录 |
 |---|---|
-| `z-image` / `z-image-turbo` | `diffusion_models/` `z_image_int8_convrot.safetensors`、`z_image_turbo_int8_convrot.safetensors` · `text_encoders/` `qwen_3_4b.safetensors` · `vae/` `ae.safetensors` |
+| `z-image` / `z-image-turbo` | `diffusion_models/` `z_image_int8_convrot.safetensors`、`z_image_turbo_int8_convrot.safetensors` · `text_encoders/` `qwen_3_4b.safetensors` · `vae/` `flux1_vae_bf16.safetensors` |
 | `boogu-image-base` / `-base-4step` / `-turbo` | `diffusion_models/` `boogu_image_base_fp8_scaled.safetensors`、`boogu_image_turbo_hotfix_int8_convrot.safetensors` · `loras/` `boogu_image_turbo_hotfix_lora_rank_128_bf16.safetensors` · `text_encoders/` `qwen3vl_8b_fp8_scaled.safetensors` · `vae/` `flux1_vae_bf16.safetensors` |
-| `boogu-image-edit` / `-edit-turbo` | `diffusion_models/` `boogu_image_edit_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_8b_fp8_scaled.safetensors` · `vae/` `ae.safetensors` ·（turbo 另需）`loras/` `boogu_image_turbo_hotfix_lora_rank_128_bf16.safetensors` |
+| `boogu-image-edit` / `-edit-turbo` | `diffusion_models/` `boogu_image_edit_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_8b_fp8_scaled.safetensors` · `vae/` `flux1_vae_bf16.safetensors` ·（turbo 另需）`loras/` `boogu_image_turbo_hotfix_lora_rank_128_bf16.safetensors` |
 | `flux2-klein-image-edit-turbo` | `diffusion_models/` `flux-2-klein-9b-kv-fp8.safetensors` · `text_encoders/` `qwen3vl_8b_fp8_scaled.safetensors` · `vae/` `flux2-vae.safetensors` |
 | `qwen-image-2.1` / `qwen-image-2.1-edit` | `diffusion_models/` `qwen_image_2.1_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_8b_int8_convrot.safetensors` · `vae/` `qwen_image_2.1_vae_bf16.safetensors` |
 | `utility-birefnet-remove-background` | `background_removal/` `birefnet.safetensors` |

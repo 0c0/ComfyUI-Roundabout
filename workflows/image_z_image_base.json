@@ -41,7 +41,7 @@
   },
   "76:63": {
     "inputs": {
-      "vae_name": "ae.safetensors"
+      "vae_name": "flux1_vae_bf16.safetensors"
     },
     "class_type": "VAELoader",
     "_meta": {

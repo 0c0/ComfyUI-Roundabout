@@ -42,6 +42,7 @@ files:
     repo: Comfy-Org/z_image
     path: split_files/vae/ae.safetensors
     size_gb: 0.34
+    referenced: false
   - file: boogu_image_base_fp8_scaled.safetensors
     dir: diffusion_models
     repo: Comfy-Org/Boogu-Image
