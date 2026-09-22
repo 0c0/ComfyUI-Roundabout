@@ -303,7 +303,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 
 ## 权重清单（内置工作流的全部依赖）
 
-**本仓库不包含任何权重文件**（体积与许可原因）。内置的 17 个工作流共引用 **23 个**权重文件，合计约 **215 GB**（图像档约 94 GB / 视频档约 121 GB）；下面两张清单表共 **26 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个 hyperflow LoRA），仅作参考，计入则约 222 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入这 23 个。）
+**本仓库不包含任何权重文件**（体积与许可原因）。内置的 17 个工作流共引用 **22 个**权重文件，合计约 **215 GB**（图像档约 94 GB / 视频档约 121 GB）；下面两张清单表共 **25 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个 hyperflow LoRA），仅作参考，计入则约 222 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入这 22 个。）
 
 这些文件基本都在 **HuggingFace 的 Comfy-Org 官方仓库**里（少数为模型原厂或社区仓库，已在表中标注）。国区建议把端点换成镜像，repo ID 与 repo 内路径完全一致：
 
@@ -333,14 +333,13 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 | `models/latent_upscale_models/` | SelfLift 的 latent 上采样权重 |
 | `models/background_removal/` | BiRefNet 抠图 |
 
-### 图像档（16 行：15 个内置引用 + 1 个参考项，约 94 GB）
+### 图像档（15 个文件，约 94 GB）
 
 | 文件 | 目标目录 | 体积 | 下载源（HF repo） | repo 内路径 |
 |---|---|---|---|---|
 | `z_image_int8_convrot.safetensors` | `diffusion_models/` | 6.20 GB | `Comfy-Org/z_image` | `split_files/diffusion_models/` |
 | `z_image_turbo_int8_convrot.safetensors` | `diffusion_models/` | 6.20 GB | `Comfy-Org/z_image_turbo` | `split_files/diffusion_models/` |
 | `qwen_3_4b.safetensors` | `text_encoders/` | 8.05 GB | `Comfy-Org/z_image` | `split_files/text_encoders/` |
-| `ae.safetensors` | `vae/` | 0.34 GB | `Comfy-Org/z_image` | `split_files/vae/`（仅参考：与 `flux1_vae_bf16` 同权重，内置工作流已不引用） |
 | `boogu_image_base_fp8_scaled.safetensors` | `diffusion_models/` | 10.31 GB | `Comfy-Org/Boogu-Image` | `diffusion_models/` |
 | `boogu_image_turbo_hotfix_int8_convrot.safetensors` | `diffusion_models/` | 11.37 GB | `Comfy-Org/Boogu-Image` | `diffusion_models/` |
 | `boogu_image_edit_int8_convrot.safetensors` | `diffusion_models/` | 11.37 GB | `Comfy-Org/Boogu-Image` | `diffusion_models/` |
@@ -356,7 +355,7 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 
 **几个共用 / 易混点：**
 
-- `ae.safetensors`（fp32 0.34 GB）与 `flux1_vae_bf16.safetensors`（bf16 0.17 GB）是**同一个 FLUX.1 Autoencoder 的两种精度副本** —— 逐张量核对过：244/244 张量在 bf16 下**逐位相同**。**内置工作流已统一引用 bf16 那份**：ComfyUI 默认按 bf16 加载 VAE（`working_dtypes = [bf16, fp32]`），读 `ae` 时会先下转为 bf16，结果与 `flux1_vae_bf16` 完全等同（同一 latent 解码实测 `max|Δ| = 0`、8-bit 下差异像素 `0.0000%`）。省 0.17 GB，也省掉每次加载的精度转换。`ae.safetensors` 只在启动加 `--fp32-vae` 时才有理论优势（多 2 位尾数），实测上限也只有 ≤2/255。
+- `flux1_vae_bf16.safetensors` 就是 Z-Image / Boogu 全系要的那份 VAE，**不用再去找 `ae.safetensors`**：两者是同一个 FLUX.1 Autoencoder 的 fp32 / bf16 副本（244/244 张量在 bf16 下**逐位相同**），而 ComfyUI 默认就按 bf16 加载 VAE（`working_dtypes = [bf16, fp32]`）—— 读 `ae` 会先下转成 bf16，两者解码**逐像素相同**（同一 latent 实测 `max|Δ| = 0`、8-bit 下差异像素 `0.0000%`）。bf16 那份体积还不到一半。
 - `qwen3vl_8b_fp8_scaled.safetensors` 被 Boogu 全系与 `flux2-klein-image-edit-turbo` 共用，下一个文件够三个模型用。
 - `flux-2-klein-9b-kv-fp8.safetensors` 来自 Black Forest Labs 官方仓库（不在 Comfy-Org）；Comfy-Org 只提供了它的 VAE 与文本编码器仓库（`vae-text-encorder-for-flux-klein-9b`，官方拼写如此）。
 - Qwen-Image 2.1 的文本编码器是 `qwen3vl_8b_int8_convrot.safetensors`，与 Boogu 用的 `qwen3vl_8b_fp8_scaled.safetensors` **同名不同文件、不同仓库**，别互相顶替 —— 跑哪支就下哪支。同仓库里另有 `qwen3.5_9b_qwen_image_2.1_pe_t2i.int8_convrot.safetensors` / `..._pe_i2i...` 一路「PE」编码器，内置工作流**不用**它。
