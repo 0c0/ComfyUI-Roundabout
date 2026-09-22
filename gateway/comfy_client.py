@@ -18,6 +18,7 @@ from typing import Any
 
 import aiohttp
 
+from . import weights
 from .config import settings
 from .errors import APIError, JobCancelled, JobTimeout, UpstreamError
 
@@ -279,6 +280,25 @@ def collect_images(entry: dict[str, Any], output_node: str | None = None) -> lis
     return refs
 
 
+def _missing_weight_name(err: dict[str, Any]) -> str | None:
+    """从 ComfyUI 的 combo 校验错误里取出「缺失的权重文件名」。
+
+    缺权重的报错形态是 `value_not_in_list`（见 ComfyUI `execution.py` 的
+    `validate_inputs`），收到的值放在 `extra_info.received_value`，字段名在
+    `extra_info.input_name`（unet_name / clip_name / vae_name / lora_name…）。
+
+    只认 `.safetensors`：LoadImage 的 image 字段走同一错误类型，但那是输入图，
+    权重索引里查不到 —— 宁可少提示，也不能给出错的下载地址。
+    """
+    if not isinstance(err, dict) or err.get("type") != "value_not_in_list":
+        return None
+    info = err.get("extra_info") or {}
+    value = info.get("received_value")
+    if isinstance(value, str) and value.endswith(".safetensors"):
+        return value.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    return None
+
+
 def _format_validation_error(resp: _Resp) -> str:
     try:
         body = resp.json()
@@ -291,10 +311,22 @@ def _format_validation_error(resp: _Resp) -> str:
         parts.append(str(err.get("message") or err))
         if err.get("details"):
             parts.append(str(err["details"]))
+    missing: list[str] = []
     for node_id, node_err in (body.get("node_errors") or {}).items():
         for e in node_err.get("errors", []):
             parts.append(f"[node {node_id}] {e.get('message')} ({e.get('details')})")
-    return "ComfyUI rejected the workflow: " + "; ".join(p for p in parts if p) if parts else str(body)[:400]
+            name = _missing_weight_name(e)
+            if name and name not in missing:
+                missing.append(name)
+    head = (
+        "ComfyUI rejected the workflow: " + "; ".join(p for p in parts if p)
+        if parts
+        else str(body)[:400]
+    )
+    # 缺权重时把「去下哪个文件、命令是什么」直接写进报错 —— agent 收到即可执行。
+    # 只查本地索引（weights.yaml），认不出就保持原报错不变。
+    hint = weights.describe_missing(missing) if missing else None
+    return f"{head}\n{hint}" if hint else head
 
 
 def _format_exec_error(status: dict[str, Any]) -> str | None:

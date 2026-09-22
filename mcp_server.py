@@ -57,6 +57,7 @@ import sys  # noqa: E402
 #   - 嵌入 ComfyUI 进程：本模块属于节点包（__package__ 非空），走相对导入，与 __init__.py 共用同一份；
 #   - 直接运行脚本：没有包上下文，把节点根目录挂到 sys.path 后按顶层包导入。
 if __package__:
+    from .gateway import weights  # noqa: E402
     from .gateway.comfy_client import ComfyClient  # noqa: E402
     from .gateway.config import settings  # noqa: E402
     from .gateway.errors import APIError  # noqa: E402
@@ -74,6 +75,7 @@ if __package__:
 else:
     if str(_ROOT) not in sys.path:
         sys.path.insert(0, str(_ROOT))
+    from gateway import weights  # noqa: E402
     from gateway.comfy_client import ComfyClient  # noqa: E402
     from gateway.config import settings  # noqa: E402
     from gateway.errors import APIError  # noqa: E402
@@ -582,6 +584,20 @@ async def get_skills() -> dict[str, Any]:
         "note": "两 skill 均公开发布；其余专精 skill 不随本仓库发布，"
                 "不在此列出。安装方式：把 install_url 交给 agent 的 skill 安装流程（裸 URL 即可，无需指定目录）。",
     }
+
+
+# ---- 工具 14：check_weights ------------------------------------------------
+@mcp.tool(
+    name="check_weights",
+    description=(
+        "权重体检（只读、不占 GPU、不触发生成）：列出内置工作流当前缺失的权重文件，"
+        "并给出每条的下载命令与目标目录，避免等到 generate 报 400 才发现权重没下。"
+        "首次部署、换模型、或某个档跑不起来时先调它。"
+        "返回 missing[]，每条含 file / dir / repo / size_gb / used_by / command。"
+    ),
+)
+async def check_weights(include_unreferenced: bool = False) -> dict[str, Any]:
+    return weights.check(include_unreferenced=include_unreferenced)
 
 
 # ------------------------------------------------------------------ 内部辅助

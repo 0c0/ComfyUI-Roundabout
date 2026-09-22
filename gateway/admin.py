@@ -18,6 +18,7 @@ import yaml
 from aiohttp import web
 from pydantic import ValidationError
 
+from . import weights
 from .analyze import analyze_workflow, workflow_seed
 from .auth import verify
 from .comfy_client import ComfyClient
@@ -623,3 +624,18 @@ async def queue_workflow(request: web.Request) -> web.Response:
         status_code=404,
         code="prompt_not_in_queue",
     )
+
+
+# ------------------------------------------------------------------ 权重体检
+@gateway_handler
+async def weights_status(request: web.Request) -> web.Response:
+    """权重体检：内置工作流引用的权重里，当前缺哪些 + 每条的下载命令。
+
+    只读：不触发生成、不占 GPU，只对每个文件做一次 isfile。查询参数
+    `?unreferenced=1` 附带当前无工作流引用的条目，`?mirror=modelscope` 换下载源。
+    """
+    unref = (request.query.get("unreferenced") or "").strip().lower() in ("1", "true", "yes")
+    mirror = (request.query.get("mirror") or "hf").strip() or "hf"
+    report = weights.check(include_unreferenced=unref, mirror=mirror)
+    log.info("weights check: %s", weights.summary_line(report))
+    return web.json_response(report)

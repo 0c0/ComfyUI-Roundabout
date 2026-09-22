@@ -50,6 +50,7 @@ def register_routes(app) -> None:
         ("GET", "/roundabout/admin/state", admin.admin_state),
         ("GET", "/roundabout/admin/queue", admin.queue_status),
         ("GET", "/roundabout/admin/queue/workflow/{prompt_id}", admin.queue_workflow),
+        ("GET", "/roundabout/admin/weights", admin.weights_status),
         ("GET", "/roundabout/admin/workflows", admin.list_workflows),
         ("POST", "/roundabout/admin/workflows/upload", admin.upload_workflow),
         ("DELETE", "/roundabout/admin/workflows/{name}", admin.delete_workflow),

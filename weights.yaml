@@ -1,0 +1,159 @@
+# 内置工作流引用的权重 → 下载来源（唯一真源）。
+#
+# 为什么需要这份文件：工作流 JSON 里只有**文件名**，没有它来自哪个 HF 仓库 ——
+# 光看 workflows/*.json 推不出下载地址。网关据此做两件事：
+#   1) 「权重未安装」的 400 报错里**直接附上可复制的下载命令**（gateway/weights.py）；
+#   2) 按需体检：REST `GET /roundabout/admin/weights`、MCP `check_weights`，
+#      列出当前缺哪些权重 —— 不做启动预扫，也不在每发生成前 preflight。
+#
+# 维护：新增/下线工作流时同步本文件；`tests/test_weights_index.py` 会核它与
+# README.md 两张权重表、以及 workflows/*.json 的实际引用三者一致。
+# 体积为十进制 GB（与 README 同口径）。字段 path 是 **repo 内完整路径**（末段即上游文件名）。
+
+mirrors:
+  hf: https://hf-mirror.com                  # 国区默认；官方为 https://huggingface.co
+  modelscope: https://modelscope.cn/models   # 备用源：域名与 models 段换掉、resolve/main -> resolve/master
+
+# 上游文件名 → 工作流引用的名字（内置工作流里只有这一个需要改名）
+rename:
+  minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors: minimax_h3_latent_upscaler_3d_fp16.safetensors
+
+# dir 是 ComfyUI models/ 下的子目录；referenced: false = 当前无内置工作流引用（仅作参考）
+files:
+
+  # ---------- 图像档 ----------
+  - file: z_image_int8_convrot.safetensors
+    dir: diffusion_models
+    repo: Comfy-Org/z_image
+    path: split_files/diffusion_models/z_image_int8_convrot.safetensors
+    size_gb: 6.20
+  - file: z_image_turbo_int8_convrot.safetensors
+    dir: diffusion_models
+    repo: Comfy-Org/z_image_turbo
+    path: split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors
+    size_gb: 6.20
+  - file: qwen_3_4b.safetensors
+    dir: text_encoders
+    repo: Comfy-Org/z_image
+    path: split_files/text_encoders/qwen_3_4b.safetensors
+    size_gb: 8.05
+  - file: ae.safetensors
+    dir: vae
+    repo: Comfy-Org/z_image
+    path: split_files/vae/ae.safetensors
+    size_gb: 0.34
+  - file: boogu_image_base_fp8_scaled.safetensors
+    dir: diffusion_models
+    repo: Comfy-Org/Boogu-Image
+    path: diffusion_models/boogu_image_base_fp8_scaled.safetensors
+    size_gb: 10.31
+  - file: boogu_image_turbo_hotfix_int8_convrot.safetensors
+    dir: diffusion_models
+    repo: Comfy-Org/Boogu-Image
+    path: diffusion_models/boogu_image_turbo_hotfix_int8_convrot.safetensors
+    size_gb: 11.37
+  - file: boogu_image_edit_int8_convrot.safetensors
+    dir: diffusion_models
+    repo: Comfy-Org/Boogu-Image
+    path: diffusion_models/boogu_image_edit_int8_convrot.safetensors
+    size_gb: 11.37
+  - file: boogu_image_turbo_hotfix_lora_rank_128_bf16.safetensors
+    dir: loras
+    repo: Comfy-Org/Boogu-Image
+    path: loras/boogu_image_turbo_hotfix_lora_rank_128_bf16.safetensors
+    size_gb: 1.35
+  - file: qwen3vl_8b_fp8_scaled.safetensors
+    dir: text_encoders
+    repo: Comfy-Org/Boogu-Image
+    path: text_encoders/qwen3vl_8b_fp8_scaled.safetensors
+    size_gb: 10.59
+  - file: flux1_vae_bf16.safetensors
+    dir: vae
+    repo: Comfy-Org/Boogu-Image
+    path: vae/flux1_vae_bf16.safetensors
+    size_gb: 0.17
+  - file: flux-2-klein-9b-kv-fp8.safetensors
+    dir: diffusion_models
+    repo: black-forest-labs/FLUX.2-klein-9b-kv-fp8
+    path: flux-2-klein-9b-kv-fp8.safetensors
+    size_gb: 9.82
+  - file: flux2-vae.safetensors
+    dir: vae
+    repo: Comfy-Org/vae-text-encorder-for-flux-klein-9b
+    path: split_files/vae/flux2-vae.safetensors
+    size_gb: 0.34
+  - file: qwen_image_2.1_int8_convrot.safetensors
+    dir: diffusion_models
+    repo: Comfy-Org/Qwen-Image-2.1
+    path: diffusion_models/qwen_image_2.1_int8_convrot.safetensors
+    size_gb: 7.26
+  - file: qwen3vl_8b_int8_convrot.safetensors
+    dir: text_encoders
+    repo: Comfy-Org/Qwen-Image-2.1
+    path: text_encoders/qwen3vl_8b_int8_convrot.safetensors
+    size_gb: 9.35
+  - file: qwen_image_2.1_vae_bf16.safetensors
+    dir: vae
+    repo: Comfy-Org/Qwen-Image-2.1
+    path: vae/qwen_image_2.1_vae_bf16.safetensors
+    size_gb: 0.68
+  - file: birefnet.safetensors
+    dir: background_removal
+    repo: Comfy-Org/BiRefNet
+    path: background_removal/birefnet.safetensors
+    size_gb: 0.44
+
+  # ---------- 视频档 ----------
+  - file: minimax_h3_fl2va_int8_convrot.safetensors
+    dir: diffusion_models
+    repo: Comfy-Org/MiniMax-H3
+    path: diffusion_models/minimax_h3_fl2va_int8_convrot.safetensors
+    size_gb: 34.04
+  - file: minimax_h3_ref2va_int8_convrot.safetensors
+    dir: diffusion_models
+    repo: Comfy-Org/MiniMax-H3
+    path: diffusion_models/minimax_h3_ref2va_int8_convrot.safetensors
+    size_gb: 34.04
+  - file: qwen3vl_32b_minimax_h3_int8_convrot.safetensors
+    dir: text_encoders
+    repo: Comfy-Org/MiniMax-H3
+    path: text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors
+    size_gb: 27.14
+  - file: minimax_h3_video_vae_int8_convrot.safetensors
+    dir: vae
+    repo: Comfy-Org/MiniMax-H3
+    path: vae/minimax_h3_video_vae_int8_convrot.safetensors
+    size_gb: 2.81
+  - file: minimax_h3_audio_vae_fp32.safetensors
+    dir: vae
+    repo: Comfy-Org/MiniMax-H3
+    path: vae/minimax_h3_audio_vae_fp32.safetensors
+    size_gb: 0.61
+  - file: MiniMax-H3-FL2VA-Acc-8Step.safetensors
+    dir: loras
+    repo: alibaba-pai/MiniMax-H3-Acc-LoRAs
+    path: MiniMax-H3-FL2VA-Acc-8Step.safetensors
+    size_gb: 1.37
+    referenced: false
+  - file: MiniMax-H3-Ref2VA-Acc-8Step.safetensors
+    dir: loras
+    repo: alibaba-pai/MiniMax-H3-Acc-LoRAs
+    path: MiniMax-H3-Ref2VA-Acc-8Step.safetensors
+    size_gb: 1.37
+    referenced: false
+  - file: minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors
+    dir: loras
+    repo: drbaph/MiniMax-H3-Turbo-Lora-ComfyUI
+    path: minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors
+    size_gb: 3.93
+    referenced: false
+  - file: fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors
+    dir: diffusion_models
+    repo: Comfy-Org/FastVideo-FastH3
+    path: diffusion_models/fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors
+    size_gb: 22.13
+  - file: minimax_h3_latent_upscaler_3d_fp16.safetensors
+    dir: latent_upscale_models
+    repo: LBH-123-AI/Minimax_h3_latent_Upscaler
+    path: minimax_h3_latent_upscaler_3d_conv_v1/minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors
+    size_gb: 0.69
