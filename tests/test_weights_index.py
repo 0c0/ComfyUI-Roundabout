@@ -6,7 +6,9 @@
   1. `workflows/*.json` 实际引用的权重 —— 少一条，那道工作流缺文件时就给不出下载指引；
   2. `README.md` 的两张权重表 —— 那是人读的一份，漂移了就会把使用者指向错的仓库/路径
      （历史上就有过：Qwen 三条的 repo 内路径在表里写成「根目录」，实际在子目录下）；
-  3. `referenced` 标记 —— 标错会让体检把「根本没人用」的权重当必装项报缺失。
+  3. `referenced` 标记 —— 标错会让体检把「根本没人用」的权重当必装项报缺失；
+  4. `README.md` 概览段（「## 权重清单」开头那段）的计数与体积 —— 手写自然语言，增删文件或
+     改 `referenced` 就会过期（历史上就有过：`ae` 转参考项后「共引用 23 个」没跟着改）。
 
     python tests/test_weights_index.py
 """
@@ -60,6 +62,7 @@ for p in sorted(WORKFLOWS.glob("*.json")):
 
 readme_text = README.read_text(encoding="utf-8")
 rows: dict[str, tuple[str, str, str, str]] = {}  # file -> (dir, size, repo, 路径列)
+row_sec: dict[str, str] = {}  # file -> 所属分节
 section = "图像档"
 for line in readme_text.splitlines():
     if line.startswith("### 图像档"):
@@ -69,6 +72,7 @@ for line in readme_text.splitlines():
     m = ROW_RE.match(line)
     if m:
         rows[m.group(1)] = (m.group(2), m.group(3), m.group(4), m.group(5))
+        row_sec[m.group(1)] = section
 
 print("=== [1] 索引自身 ===")
 check("weights.yaml 有条目", bool(entries), len(entries))
@@ -120,6 +124,46 @@ for name, e in sorted(entries.items()):
     else:
         check(f"{name} repo 内路径前缀一致", e["path"].startswith(rpath_clean.strip("/")),
               f"表 {rpath_clean} / 索引 {e['path']}")
+
+print("\n=== [6] README 概览数字与索引一致 ===")
+# 概览段（「## 权重清单」开头那段）是手写的自然语言，最容易悄悄漂移：
+# 改一条 referenced 标记、增删一个文件，那里就有三个数（引用数 / 表行数 / 参考行数）
+# 和四处体积说法会一起过期。这里逐个对账 —— 体积允许「四舍五入到最近整数」（.5 取哪边都行）。
+n_entries = len(entries)
+n_ref_false = n_entries - n_ref_true
+sum_all = sum(float(e["size_gb"]) for e in entries.values())
+sum_ref = sum(float(e["size_gb"]) for e in entries.values() if e.get("referenced", True))
+sec_sum_ref = {
+    sec: sum(float(entries[f]["size_gb"])
+             for f in rows if row_sec.get(f) == sec and entries[f].get("referenced", True))
+    for sec in ("图像档", "视频档")
+}
+
+
+def prose(pattern: str, label: str) -> int | None:
+    m = re.search(pattern, readme_text)
+    check(f"概览「{label}」可解析", bool(m), pattern)
+    return int(m.group(1)) if m else None
+
+
+def near(v: int | None, actual: float) -> bool:
+    return v is not None and abs(v - actual) <= 0.5 + 1e-6
+
+
+for pat, tt, actual, label in (
+    (r"共引用 \*\*(\d+) 个\*\*权重文件", True, n_ref_true, "引用数"),
+    (r"清单表共 \*\*(\d+) 行\*\*", True, n_entries, "表行数"),
+    (r"另 (\d+) 行是", True, n_ref_false, "参考行数"),
+    (r"合计约 \*\*(\d+) GB\*\*", False, sum_ref, "合计体积（仅引用）"),
+    (r"计入则约 (\d+) GB", False, sum_all, "计入参考项后的体积"),
+    (r"图像档约 (\d+) GB", False, sec_sum_ref["图像档"], "图像档体积（仅引用）"),
+    (r"视频档约 (\d+) GB", False, sec_sum_ref["视频档"], "视频档体积（仅引用）"),
+):
+    v = prose(pat, label)
+    if tt:
+        check(f"概览{label} == {actual}", v == actual, f"文 {v} / 索引 {actual}")
+    else:
+        check(f"概览{label} ≈ {round(actual, 2)} GB", near(v, actual), f"文 {v} / 实际 {round(actual, 2)}")
 
 print(f"\n===== {passed} passed / {failed} failed =====")
 sys.exit(1 if failed else 0)
