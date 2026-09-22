@@ -84,24 +84,24 @@ agent 全程**看不到也用不着**工作流 JSON。它只传语义参数，�
 | skill | 内容 | 什么时候用 |
 |---|---|---|
 | [`roundabout-skill`](https://github.com/0c0/roundabout-skill) | 本插件的**总入口**：选模型、走 REST / MCP 生成、把工作流接进网关或下线、权重下载、排障运维、核对「文档与实现是否一致」 | agent 要驱动本机 ComfyUI 出图出视频，或要改 `models.yaml` / 加工作流时 |
-| [`h3-official-playbook-skill`](https://github.com/0c0/h3-official-playbook-skill) | MiniMax H3 的官方口径：提示词公式、三类生成模式（文生 / 首尾帧 / 全能参考）的写法差异、素材用途标签、时长与宽高比边界 | 写 / 改 H3 提示词，或判断某个需求 H3 能不能做时 |
+| [`h3-playbook-skill`](https://github.com/0c0/h3-playbook-skill) | MiniMax H3 的官方口径：提示词公式、三类生成模式（文生 / 首尾帧 / 全能参考）的写法差异、素材用途标签、时长与宽高比边界 | 写 / 改 H3 提示词，或判断某个需求 H3 能不能做时 |
 
 装法就是把这个目录放进 agent 的 skills 目录（目录名与 skill 的 `name` 保持一致）：
 
 ```bash
 git clone https://github.com/0c0/roundabout-skill.git <agent 的 skills 目录>/roundabout
-git clone https://github.com/0c0/h3-official-playbook-skill.git <agent 的 skills 目录>/h3-official-playbook
+git clone https://github.com/0c0/h3-playbook-skill.git <agent 的 skills 目录>/h3-playbook
 ```
 
 **一句话安装**（把这句丢给 agent 即可，装在哪、怎么落位由它按自家约定处理）：
 
 ```text
 安装这个skill https://github.com/0c0/roundabout-skill
-安装这个skill https://github.com/0c0/h3-official-playbook-skill
+安装这个skill https://github.com/0c0/h3-playbook-skill
 ```
 
 > 两个 skill 都按「先自己探、探不到再问」的方式取 ComfyUI 路径与端口，**不含硬编的内网地址**，换机器可直接用。
-> `roundabout-skill` 内部还会按任务转交给几个更专的 skill（注意力档位、SelfLift 放大、Z-Image 中文提示词、子图工作流 JSON 改写）—— 那些是本机自用件，未随本仓库发布。
+> 两者边界互不重叠：`roundabout-skill` 只管网关这一侧（怎么调用、怎么注册、怎么排障），`h3-playbook-skill` 只管 H3 本身（提示词结构、素材用途、能力边界）。
 
 ---
 

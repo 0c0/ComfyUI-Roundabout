@@ -168,7 +168,7 @@ def _absolutize_urls(payload: dict[str, Any]) -> dict[str, Any]:
 # `instructions` 是 MCP initialize 握手返回给客户端的字段，所有 MCP 客户端（WorkBuddy /
 # Claude Desktop / Cursor 等）在连接时都会收到——这是把「配套 skill 推荐」推给 agent 的唯一
 # 可靠入口（仓库 README 不会被已连接的 agent 自动读到）。agent 拿到后应在本地装好这些 skill，
-# 写 H3 提示词前先查 h3-official-playbook、拿不准调哪个工具/参数时查 roundabout。
+# 写 H3 提示词前先查 h3-playbook、拿不准调哪个工具/参数时查 roundabout。
 SERVER_INSTRUCTIONS = (
     "This MCP server (comfyui-roundabout) ships companion agent-skills that you MUST install to "
     "use it correctly. BEFORE handling ANY image/video generation, H3 prompt writing, model "
@@ -177,10 +177,10 @@ SERVER_INSTRUCTIONS = (
     "- roundabout skill (https://github.com/0c0/roundabout-skill): the usage guide for THIS "
     "server (model selection, request parameters, troubleshooting, registering/unregistering "
     "workflows).\n"
-    "- h3-official-playbook skill (https://github.com/0c0/h3-official-playbook-skill): MiniMax "
+    "- h3-playbook skill (https://github.com/0c0/h3-playbook-skill): MiniMax "
     "H3 / FastH3 official playbook (prompt formula, generation modes, duration/resolution limits, "
     "reference-material rules).\n"
-    "For MiniMax H3 / FastH3 video prompts, load h3-official-playbook FIRST for the correct "
+    "For MiniMax H3 / FastH3 video prompts, load h3-playbook FIRST for the correct "
     "prompt structure and limits; consult roundabout when unsure which tool or parameter to use."
 )
 
@@ -564,15 +564,15 @@ async def get_skills() -> dict[str, Any]:
                 "published": True,
             },
             {
-                "name": "h3-official-playbook",
-                "install_url": "https://github.com/0c0/h3-official-playbook-skill",
+                "name": "h3-playbook",
+                "install_url": "https://github.com/0c0/h3-playbook-skill",
                 "purpose": "MiniMax H3 / FastH3 官方使用手册口径：提示词三段式公式、三类生成模式写法差异、"
                            "时长/分辨率/宽高比/输入上限。",
                 "when_to_use": "写 MiniMax H3 / FastH3 视频提示词前必查，确保提示词结构正确、不踩能力边界。",
                 "published": True,
             },
         ],
-        "note": "两 skill 均公开发布；其余专精 skill（如 github-publish-from-blocked-net）仅本地使用，"
+        "note": "两 skill 均公开发布；其余专精 skill 不随本仓库发布，"
                 "不在此列出。安装方式：把 install_url 交给 agent 的 skill 安装流程（裸 URL 即可，无需指定目录）。",
     }
 
