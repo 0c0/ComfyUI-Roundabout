@@ -64,6 +64,8 @@ ALLOWED_MISSING = {
     "remove_background": {"prompt", "model", "n", "size", "style", "user",
                           "background", "output_format", "moderation", "negative_prompt",
                           "seed", "steps", "cfg", "sampler_name", "scheduler",
+                          # 去背景是 promptless 单图工具，多图参考对它没有意义
+                          "reference_images",
                           "denoise", "mode", "mask", "workflow_overrides"},
     "generate_video": {"n", "style", "user", "num_frames", "cfg",
                        "sampler_name", "scheduler", "denoise", "image",

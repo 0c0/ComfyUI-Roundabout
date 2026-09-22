@@ -286,12 +286,44 @@ models:
     - remove-background
   flux2-klein-image-edit-turbo:
     workflow: image_flux2_klein_image_edit_turbo.json
-    description: Flux2 Klein 9B Edit Turbo —— 单图编辑 6 步快速版（参考图 + 提示词改写，Qwen3-VL 文本编码），尺寸跟随输入图，输出约 1MP（必须传 image）
+    description: Flux2 Klein 9B Edit Turbo —— 多图参考编辑 6 步快速版（参考图 + 提示词改写，Qwen3-VL 文本编码），尺寸跟随第一张参考图，输出约 1MP；参考图走 reference_images（最多 4 张）
     mode: image
     capabilities:
     - image-to-image
     output_node: '94'
     timeout: 600
+    # 参考槽（多图编辑）：槽 1 是既有单槽（LoadImage 76），槽 2..4 各一条独立链路
+    #   IMG{i} -> SC{i}(ImageScaleToTotalPixels) -> ENC{i}(VAEEncode)
+    # 正/负 conditioning 各串一条 ReferenceLatent 链（latent 是可选的，留空即直通）。
+    # 注意这里**没有 aggregator**：参考不是挂在同一个聚合节点上，而是各自独立接线。
+    references:
+      images:
+      - '76'
+      - 'IMG2'
+      - 'IMG3'
+      - 'IMG4'
+      # 删槽时：删该槽独占的下游节点，并清空链上 RL 的 optional latent 键
+      # （节点留着当直通，链因此不用重接）
+      slots:
+      - {}
+      - nodes:
+        - SC2
+        - ENC2
+        clear:
+        - RLN2.latent
+        - RLP2.latent
+      - nodes:
+        - SC3
+        - ENC3
+        clear:
+        - RLN3.latent
+        - RLP3.latent
+      - nodes:
+        - SC4
+        - ENC4
+        clear:
+        - RLN4.latent
+        - RLP4.latent
     defaults:
       negative_prompt: ''
       steps: 6

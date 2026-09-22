@@ -171,9 +171,11 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 
 ---
 
-## 视频工作流：`references` 段
+## 参考资源：`references` 段
 
 参考图 / 参考视频 / 参考音频的槽位不是在 `bindings` 里，而是声明拓扑，让网关**动态删除未上传的槽位节点**（否则模板里引用的示例文件名不存在，会直接报错）：
+
+图像档的多图编辑走的也是这套（`qwen-image-2.1-edit` 的 4 个参考槽、`flux2-klein-image-edit-turbo` 的 4 条参考链路都声明在这里），与视频档的参考生成共用一套代码。
 
 ```yaml
     references:
@@ -227,6 +229,26 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 - 节点 id 含冒号（子图扁平化导出的 `105:200`）照抄，绑定路径按 `.` 切分，冒号不影响解析。
 - `fasth3` / `fasth3-edit` 就是这么接的：前者用 `image_keys` 接管首尾帧，后者聚合节点是
   `MiniMaxH3ReferenceToVideo`，仍走默认键名。
+
+### 参考槽是「链式」而非聚合时：`slots`
+
+上面两种都假定参考图汇聚到**一个聚合节点**（删槽 = 删 loader + 删聚合器上那个键）。也有工作流把参考图串成一条链 —— 每个槽自带 `LoadImage → ImageScaleToTotalPixels → VAEEncode → ReferenceLatent`，前一个 `ReferenceLatent` 的 conditioning 喂给下一个，**没有 aggregator**。
+
+这时删槽除了删 loader 节点，还得删掉该槽**独占的下游**、并清空它接在链上的那个 optional 键：
+
+```yaml
+    references:
+      images: ['76', 'IMG2', 'IMG3', 'IMG4']   # 没有 aggregator
+      slots:                                   # 与 images 等长
+        - {}                                   # 槽 1 是既有的单槽，没有独占下游
+        - nodes: ['SC2', 'ENC2']               # 槽 2 独占的缩放 + VAEEncode
+          clear: ['RLN2.latent', 'RLP2.latent']  # 清链上 RL 的 optional latent（正/负各一条）
+```
+
+- `slots` 与 `images` **必须等长**；`nodes` 里的 id 与 `clear` 里的路径启动时逐条校验（不在图里、或指向的键不存在都直接报错）。
+- 之所以「只删不接」：`ReferenceLatent.latent` 是 **optional**，留空时节点原样返回上游 conditioning，等于**直通** —— 链因此不用重接。
+- **判据**：网关传 1 张（其余槽被剪掉）与**原生只放 1 张参考图**跑出来的结果应**逐像素一致**（MAE=0）—— 不一致说明漏清了哪个键。
+- `flux2-klein-image-edit-turbo` 就是这么接的。
 
 **示例提示词的落点**：`prompt` 既可绑到独立的 `PrimitiveStringMultiline` 节点，
 也可直接绑聚合节点自己的 `prompt` 输入（`105:104.inputs.prompt`）—— 后者少一个节点，

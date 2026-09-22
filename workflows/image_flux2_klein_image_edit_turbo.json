@@ -191,11 +191,11 @@
     0
    ],
    "positive": [
-    "92:127",
+    "RLP4",
     0
    ],
    "negative": [
-    "92:125",
+    "RLN4",
     0
    ]
   },
@@ -267,6 +267,222 @@
   "class_type": "ReferenceLatent",
   "_meta": {
    "title": "参考Latent"
+  }
+ },
+ "IMG2": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "example.png"
+  },
+  "_meta": {
+   "title": "Load Image (slot 2)"
+  }
+ },
+ "SC2": {
+  "class_type": "ImageScaleToTotalPixels",
+  "inputs": {
+   "upscale_method": "nearest-exact",
+   "megapixels": 1,
+   "resolution_steps": 1,
+   "image": [
+    "IMG2",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Scale Image (slot 2)"
+  }
+ },
+ "ENC2": {
+  "class_type": "VAEEncode",
+  "inputs": {
+   "pixels": [
+    "SC2",
+    0
+   ],
+   "vae": [
+    "92:107",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "VAE Encode (slot 2)"
+  }
+ },
+ "RLN2": {
+  "class_type": "ReferenceLatent",
+  "inputs": {
+   "conditioning": [
+    "92:125",
+    0
+   ],
+   "latent": [
+    "ENC2",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Ref Latent neg (slot 2)"
+  }
+ },
+ "RLP2": {
+  "class_type": "ReferenceLatent",
+  "inputs": {
+   "conditioning": [
+    "92:127",
+    0
+   ],
+   "latent": [
+    "ENC2",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Ref Latent pos (slot 2)"
+  }
+ },
+ "IMG3": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "example.png"
+  },
+  "_meta": {
+   "title": "Load Image (slot 3)"
+  }
+ },
+ "SC3": {
+  "class_type": "ImageScaleToTotalPixels",
+  "inputs": {
+   "upscale_method": "nearest-exact",
+   "megapixels": 1,
+   "resolution_steps": 1,
+   "image": [
+    "IMG3",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Scale Image (slot 3)"
+  }
+ },
+ "ENC3": {
+  "class_type": "VAEEncode",
+  "inputs": {
+   "pixels": [
+    "SC3",
+    0
+   ],
+   "vae": [
+    "92:107",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "VAE Encode (slot 3)"
+  }
+ },
+ "RLN3": {
+  "class_type": "ReferenceLatent",
+  "inputs": {
+   "conditioning": [
+    "RLN2",
+    0
+   ],
+   "latent": [
+    "ENC3",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Ref Latent neg (slot 3)"
+  }
+ },
+ "RLP3": {
+  "class_type": "ReferenceLatent",
+  "inputs": {
+   "conditioning": [
+    "RLP2",
+    0
+   ],
+   "latent": [
+    "ENC3",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Ref Latent pos (slot 3)"
+  }
+ },
+ "IMG4": {
+  "class_type": "LoadImage",
+  "inputs": {
+   "image": "example.png"
+  },
+  "_meta": {
+   "title": "Load Image (slot 4)"
+  }
+ },
+ "SC4": {
+  "class_type": "ImageScaleToTotalPixels",
+  "inputs": {
+   "upscale_method": "nearest-exact",
+   "megapixels": 1,
+   "resolution_steps": 1,
+   "image": [
+    "IMG4",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Scale Image (slot 4)"
+  }
+ },
+ "ENC4": {
+  "class_type": "VAEEncode",
+  "inputs": {
+   "pixels": [
+    "SC4",
+    0
+   ],
+   "vae": [
+    "92:107",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "VAE Encode (slot 4)"
+  }
+ },
+ "RLN4": {
+  "class_type": "ReferenceLatent",
+  "inputs": {
+   "conditioning": [
+    "RLN3",
+    0
+   ],
+   "latent": [
+    "ENC4",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Ref Latent neg (slot 4)"
+  }
+ },
+ "RLP4": {
+  "class_type": "ReferenceLatent",
+  "inputs": {
+   "conditioning": [
+    "RLP3",
+    0
+   ],
+   "latent": [
+    "ENC4",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "Ref Latent pos (slot 4)"
   }
  }
 }

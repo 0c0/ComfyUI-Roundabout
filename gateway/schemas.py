@@ -40,9 +40,21 @@ class ImageGenerationRequest(BaseModel):
     # 模型专属动态模式（如 Ideogram4 的 Quality / Default / Turbo）
     mode: str | None = Field(None, description="生图模式；仅部分模型支持，由 models.yaml 的 mode_choices 约束")
 
-    # 图生图输入：base64 / dataURL / http(s) URL。给 generations 端点用的扩展入口
-    image: str | list[str] | None = Field(None, description="图生图输入图")
+    # 图生图输入：base64 / dataURL / http(s) URL。给 generations 端点用的扩展入口。
+    # 语义是「重绘的基图」，只收单张；多图编辑请用 reference_images（语义是参考素材）。
+    # 传数组会在 pipeline 里报 400 并指路 —— 早期版本会静默丢弃第二张起，这里不再容忍。
+    image: str | list[str] | None = Field(
+        None, description="图生图基图（单张）。多图编辑请改用 reference_images"
+    )
     mask: str | None = Field(None, description="局部重绘遮罩")
+
+    # 多图编辑的参考图：每项可为 dataURL / base64 / http(s) URL / 本地路径
+    # （绝对路径，或相对 ComfyUI input 目录的路径）。
+    # 按顺序接入模型工作流的参考槽；槽数上限由 models.yaml 的 references 段决定，
+    # 未提供的槽由网关在提交前剪掉（未上传即删除）。
+    reference_images: list[str] | None = Field(
+        None, description="多图编辑的参考图，按序接入工作流参考槽（数量上限由模型决定）"
+    )
 
     # 直接改写工作流节点，形如 {"3.inputs.cfg": 4.5}
     workflow_overrides: dict[str, Any] | None = None

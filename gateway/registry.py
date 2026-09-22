@@ -96,7 +96,10 @@ class ModelSpec:
 
     @property
     def supports_img2img(self) -> bool:
-        return CAP_IMG2IMG in self.capabilities and "image" in self.bindings
+        """能吃图：绑了 `image`（单图重绘），或声明了参考图槽（多图编辑）。"""
+        if CAP_IMG2IMG not in self.capabilities:
+            return False
+        return "image" in self.bindings or bool((self.references or {}).get("images"))
 
     @property
     def is_video(self) -> bool:
@@ -396,6 +399,13 @@ def _normalize_references(raw: dict[str, Any]) -> dict[str, Any]:
 
     可选的 `image_keys` / `video_keys` / `audio_keys` 逐槽覆盖聚合节点上的输入键名，
     用于聚合节点不收 ref_* 槽位的场景（见 `ref_key`）。
+
+    可选的 `slots`（与 `images` 等长）描述每个参考槽在「未提供」时要额外清理什么，
+    用于参考经各自独立链路接线的模型（Flux2/Klein 的 ReferenceLatent 链）：
+      - `nodes`: 该槽独占的下游节点（删槽时一并删）
+      - `clear`: 删槽后要清空的 optional 输入键，形如 `节点id.输入键`
+                （如 `RLN2.latent` —— ReferenceLatent 的 latent 是可选的，留空即直通）
+    `aggregator` 只对「参考都挂在同一个聚合节点上」的模型有意义，可为空。
     """
     out: dict[str, Any] = {}
     agg = raw.get("aggregator")
@@ -406,6 +416,18 @@ def _normalize_references(raw: dict[str, Any]) -> dict[str, Any]:
         keys = raw.get(_REF_KEY_OVERRIDE[cat])
         if keys:
             out[_REF_KEY_OVERRIDE[cat]] = [str(k) for k in keys]
+    slots = raw.get("slots")
+    if slots:
+        norm: list[dict[str, Any]] = []
+        for s in slots:
+            if isinstance(s, dict):
+                norm.append({
+                    "nodes": [str(x) for x in (s.get("nodes") or [])],
+                    "clear": [str(x) for x in (s.get("clear") or [])],
+                })
+            else:
+                norm.append({"nodes": [], "clear": []})
+        out["slots"] = norm
     return out
 
 
@@ -416,22 +438,30 @@ def _validate_references(spec: ModelSpec) -> None:
         return
     tpl = spec.template
     agg = ref.get("aggregator")
-    if agg is None or agg not in tpl:
-        raise RuntimeError(
-            f"model `{spec.name}`: references.aggregator `{agg}` not found in {spec.workflow_path.name}"
-        )
-    agg_ins = tpl[agg].get("inputs", {})
+    # aggregator 只在「参考都挂在同一个聚合节点上」的模型需要（H3 系、Qwen autogrow）。
+    # 参考经各自独立链路接线的模型（Flux2/Klein 的 ReferenceLatent 链）没有聚合节点。
+    agg_ins: dict[str, Any] | None = None
+    if agg is not None:
+        if agg not in tpl:
+            raise RuntimeError(
+                f"model `{spec.name}`: references.aggregator `{agg}` not found in {spec.workflow_path.name}"
+            )
+        agg_ins = tpl[agg].get("inputs", {})
 
-    def _need(cat: str, key: str, nid: str, idx: int) -> None:
+    def _need(cat: str, key: str | None, nid: str, idx: int) -> None:
         if nid not in tpl:
             raise RuntimeError(
                 f"model `{spec.name}`: references.{cat}[{idx}]={nid} not found in {spec.workflow_path.name}"
             )
-        if key not in agg_ins:
+        if key is not None and key not in (agg_ins or {}):
             raise RuntimeError(f"model `{spec.name}`: aggregator `{agg}` missing input `{key}`")
 
     for cat in ("images", "videos", "audios"):
         override = ref.get(_REF_KEY_OVERRIDE[cat]) or []
+        if override and agg_ins is None:
+            raise RuntimeError(
+                f"model `{spec.name}`: references.{_REF_KEY_OVERRIDE[cat]} 需要同时声明 aggregator"
+            )
         if override and len(override) != len(ref.get(cat, [])):
             # 覆盖列表与节点列表必须一一对应，否则缺的那几槽会悄悄回落到默认键名
             raise RuntimeError(
@@ -440,12 +470,46 @@ def _validate_references(spec: ModelSpec) -> None:
             )
 
     for i, nid in enumerate(ref.get("images", [])):
-        _need("images", ref_key(ref, "images", i), nid, i)
+        _need("images", ref_key(ref, "images", i) if agg_ins is not None else None, nid, i)
     for i, nid in enumerate(ref.get("videos", [])):
-        _need("videos", ref_key(ref, "videos", i), nid, i)
-        _need("videos", REF_VIDEO_AUDIO_KEY_FMT.format(i), nid, i)
+        _need("videos", ref_key(ref, "videos", i) if agg_ins is not None else None, nid, i)
+        if agg_ins is not None:
+            _need("videos", REF_VIDEO_AUDIO_KEY_FMT.format(i), nid, i)
     for i, nid in enumerate(ref.get("audios", [])):
-        _need("audios", ref_key(ref, "audios", i), nid, i)
+        _need("audios", ref_key(ref, "audios", i) if agg_ins is not None else None, nid, i)
+
+    # slots：逐槽的独占下游节点与删除后要清空的 optional 键
+    slots = ref.get("slots") or []
+    if slots:
+        n_img = len(ref.get("images", []))
+        if len(slots) != n_img:
+            raise RuntimeError(
+                f"model `{spec.name}`: references.slots 有 {len(slots)} 项，"
+                f"与 references.images 的 {n_img} 项对不上"
+            )
+        for i, slot in enumerate(slots):
+            for nid in slot.get("nodes") or []:
+                if str(nid) not in tpl:
+                    raise RuntimeError(
+                        f"model `{spec.name}`: references.slots[{i}].nodes 的 `{nid}` 不在 "
+                        f"{spec.workflow_path.name} 里"
+                    )
+            for path in slot.get("clear") or []:
+                nid, _, key = str(path).partition(".")
+                if not nid or not key:
+                    raise RuntimeError(
+                        f"model `{spec.name}`: references.slots[{i}].clear 的 `{path}` "
+                        "需要 `节点id.输入键` 形式（按第一个点切分）"
+                    )
+                if nid not in tpl:
+                    raise RuntimeError(
+                        f"model `{spec.name}`: references.slots[{i}].clear 的 `{path}` 指向的节点不存在"
+                    )
+                if key not in (tpl[nid].get("inputs") or {}):
+                    raise RuntimeError(
+                        f"model `{spec.name}`: references.slots[{i}].clear 的 `{path}` "
+                        f"在节点 `{nid}` 的 inputs 里不存在"
+                    )
 
 
 # ---------------------------------------------------------------- 注入

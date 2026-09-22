@@ -230,18 +230,25 @@ async def generate(
             log.debug("negative-split applied: prompt=%r -> negative=%r", _trunc(req.prompt, 80), _trunc(neg_in, 80))
 
     # ---- 0. 请求到达日志（关键信息，不含 base64 等大体积字段） ----
-    img2img = bool(image_inputs) or bool(req.image)
+    ref_imgs = list(req.reference_images or [])
+    img2img = bool(image_inputs) or bool(req.image) or bool(ref_imgs)
     log.info(
-        "req=%s | IMAGE gen | model=%s n=%d size=%s fmt=%s img2img=%s mode=%s prompt=%s",
+        "req=%s | IMAGE gen | model=%s n=%d size=%s fmt=%s img2img=%s refs=%d mode=%s prompt=%s",
         request_id, spec.name, n, req.size or "-",
-        response_format, img2img, req.mode or "-", _trunc(prompt_in),
+        response_format, img2img, len(ref_imgs), req.mode or "-", _trunc(prompt_in),
     )
 
     # ---- 1. 收集图生图输入 ----
     images = list(image_inputs or [])
     if not images and req.image:
-        raw_list = req.image if isinstance(req.image, list) else [req.image]
-        images = [await load_image_input(str(x)) for x in raw_list if x]
+        if isinstance(req.image, list):
+            # `image` 的语义是「重绘基图」，只收单张。早期版本对数组只取第一张、其余静默丢弃，
+            # 不再容忍 —— 多图参考请走 reference_images（按序接入模型声明的参考槽）。
+            raise APIError(
+                "`image` accepts a single image. Use `reference_images` for multi-image editing.",
+                param="image",
+            )
+        images = [await load_image_input(str(req.image))]
     if not mask_input and req.mask:
         mask_input = await load_image_input(str(req.mask), param="mask")
 
@@ -254,7 +261,29 @@ async def generate(
             f"(capabilities: {', '.join(sorted(spec.capabilities))}).{hint}",
             param="image",
         )
-    if CAP_IMG2IMG in spec.capabilities and not spec.capabilities - {CAP_IMG2IMG} and not images:
+    # 参考图：只有声明了参考槽的模型收，且张数不得超过槽数（超了报 400，不静默截断）
+    if ref_imgs:
+        n_slots = len((spec.references or {}).get("images") or [])
+        if not n_slots:
+            alts = [s.name for s in registry.all()
+                    if (s.references or {}).get("images") and not s.is_video]
+            hint = f" Models with reference slots: {', '.join(alts)}." if alts else ""
+            raise APIError(
+                f"Model `{spec.name}` does not accept `reference_images`.{hint}",
+                param="reference_images",
+            )
+        if len(ref_imgs) > n_slots:
+            raise APIError(
+                f"`reference_images` accepts at most {n_slots} image(s) for `{spec.name}` "
+                f"(got {len(ref_imgs)}).",
+                param="reference_images",
+            )
+    if (
+        CAP_IMG2IMG in spec.capabilities
+        and not spec.capabilities - {CAP_IMG2IMG}
+        and not images
+        and not ref_imgs
+    ):
         raise APIError(f"Model `{spec.name}` requires an input `image`.", param="image")
 
     # ---- 2. 上传输入图，拿到 LoadImage 能引用的文件名 ----
@@ -319,14 +348,14 @@ async def generate(
         values["batch_size"] = n
         values["seed"] = resolve_seed(req.seed)
         used_seeds.append(values["seed"])
-        rendered, _ = await _run_once(spec, values, req.workflow_overrides, client, timeout, request_id)
+        rendered, _ = await _run_once(spec, values, req.workflow_overrides, client, timeout, request_id, req_refs=req)
     else:
         if spec.supports_batch:
             values["batch_size"] = 1
         for i in range(n):
             values["seed"] = resolve_seed(req.seed, i)
             used_seeds.append(values["seed"])
-            rendered_part, _ = await _run_once(spec, values, req.workflow_overrides, client, timeout, f"{request_id}-{i}")
+            rendered_part, _ = await _run_once(spec, values, req.workflow_overrides, client, timeout, f"{request_id}-{i}", req_refs=req)
             rendered += rendered_part
 
     if not rendered:
@@ -529,7 +558,7 @@ async def generate_video(
         values["batch_size"] = n
         values["seed"] = resolve_seed(req.seed)
         used_seeds.append(values["seed"])
-        rendered_part, ref_descriptors = await _run_once(spec, values, req.workflow_overrides, client, timeout, request_id, req_video=req, on_submit=on_submit)
+        rendered_part, ref_descriptors = await _run_once(spec, values, req.workflow_overrides, client, timeout, request_id, req_refs=req, on_submit=on_submit)
         rendered += rendered_part
         all_refs += ref_descriptors
     else:
@@ -538,7 +567,7 @@ async def generate_video(
         for i in range(n):
             values["seed"] = resolve_seed(req.seed, i)
             used_seeds.append(values["seed"])
-            rendered_part, ref_descriptors = await _run_once(spec, values, req.workflow_overrides, client, timeout, f"{request_id}-{i}", req_video=req, on_submit=on_submit)
+            rendered_part, ref_descriptors = await _run_once(spec, values, req.workflow_overrides, client, timeout, f"{request_id}-{i}", req_refs=req, on_submit=on_submit)
             rendered += rendered_part
             all_refs += ref_descriptors
 
@@ -590,15 +619,16 @@ async def _run_once(
     client: ComfyClient,
     timeout: float,
     trace: str,
-    req_video: VideoGenerationRequest | None = None,
+    req_refs: ImageGenerationRequest | VideoGenerationRequest | None = None,
     on_submit: Any | None = None,
 ) -> tuple[list[RenderedImage], list[dict[str, Any]]]:
     workflow = build_workflow(spec, values, overrides)
     ref_descriptors: list[dict[str, Any]] = []
-    # 视频参考资源：先接入实际提供的参考素材，再删除未上传的节点，最后提交给 ComfyUI
-    if spec.is_video and req_video is not None:
-        ref_descriptors = await _wire_references(workflow, spec, req_video, client, trace)
-        dropped = _prune_unused_references(workflow, spec, req_video)
+    # 参考资源（图像档的多图编辑与视频档一样走这套）：先接入实际提供的参考素材，
+    # 再删除未上传的槽，最后提交给 ComfyUI
+    if spec.references and req_refs is not None:
+        ref_descriptors = await _wire_references(workflow, spec, req_refs, client, trace)
+        dropped = _prune_unused_references(workflow, spec, req_refs)
         if dropped:
             log.info("req=%s pruned %d unused reference node(s) before submit", trace, dropped)
     async with semaphore():
@@ -635,9 +665,11 @@ def _validate_n(n: int) -> int:
 
 
 def _prune_unused_references(
-    wf: dict[str, Any], spec: ModelSpec, req: VideoGenerationRequest
+    wf: dict[str, Any],
+    spec: ModelSpec,
+    req: ImageGenerationRequest | VideoGenerationRequest,
 ) -> int:
-    """按请求实际提供的参考资源数量，删除工作流 JSON 副本中多余的参考节点。
+    """按请求实际提供的参考资源数量，删除工作流 JSON 副本中多余的参考槽。
 
     仅做删除（用户明确要求）：接口未上传的资源，其对应的 LoadImage / LoadVideo / LoadAudio
     节点及 aggregator 上的输入键一并移除；已提供资源的节点保留（接入由调用方负责）。
@@ -645,15 +677,32 @@ def _prune_unused_references(
 
     级联：删除某个 loader 节点（如 LoadVideo）时，会连带删除依赖它的下游节点
     （如 GetVideoComponents），但**绝不删除聚合节点**（aggregator）。
+
+    两种参考拓扑都支持：
+      - **聚合式**（H3 系、Qwen autogrow）：参考都挂在同一个聚合节点上，删槽 = 删 loader
+        节点 + 删 aggregator 上对应的输入键；
+      - **链式**（Flux2/Klein 的 ReferenceLatent 链）：参考经各自独立链路接线，没有聚合
+        节点，删槽 = 删 loader 节点 + `slots[i].nodes` 声明的独占下游 + 清空
+        `slots[i].clear` 声明的 optional 输入键（latent 留空即直通，链不用重接）。
     """
     ref = spec.references
     if not ref:
         return 0
     agg = str(ref.get("aggregator") or "")
-    agg_node = wf.get(agg)
-    if not isinstance(agg_node, dict):
-        return 0
-    agg_ins = agg_node.setdefault("inputs", {})
+    agg_node = wf.get(agg) if agg else None
+    # 无聚合节点时留空 dict：下面 _drop 对它的 pop 是无操作
+    agg_ins: dict[str, Any] = agg_node.setdefault("inputs", {}) if isinstance(agg_node, dict) else {}
+
+    # binding 的落点节点受保护，不参与剪枝。
+    # 典型情形：Klein 的向后兼容单图入口 `image: 76.inputs.image`，而 76 同时是 images 的
+    # 第 0 槽 loader —— 调用方只传 `image`、不传 `reference_images` 时，该槽看似"未提供"，
+    # 实际正是 image 的落点，删掉工作流就悬空了。由 binding 供图的 loader 是调用方可控的
+    # 输入面（未传时回落模板默认值，即引入多槽之前的行为），不该当垃圾槽清掉。
+    protected: set[str] = {
+        str(path).partition(".")[0]
+        for paths in (spec.bindings or {}).values()
+        for path in paths
+    }
 
     removed = 0
 
@@ -677,20 +726,42 @@ def _prune_unused_references(
                     if wf.pop(k, None) is not None:
                         removed += 1
 
+    def _clear(path: str) -> None:
+        """清空 `节点id.输入键`（按第一个点切分 —— 节点 id 不含点，输入键可能含点，
+        如 `474.images.image_1`）。仅从 inputs 里摘掉键，不碰节点自身。"""
+        nid, _, key = str(path).partition(".")
+        node = wf.get(nid)
+        if isinstance(node, dict) and isinstance(node.get("inputs"), dict):
+            node["inputs"].pop(key, None)
+
     imgs = req.reference_images or []
+    slots = ref.get("slots") or []
     for i, nid in enumerate(ref.get("images", [])):
+        if str(nid) in protected:
+            continue  # 该槽由 binding 直接供图（单图入口），保留整条链路
         if i >= len(imgs):
             _drop(ref_key(ref, "images", i), str(nid))
+            if i < len(slots):
+                slot = slots[i] or {}
+                for extra in slot.get("nodes") or []:
+                    if wf.pop(str(extra), None) is not None:
+                        removed += 1
+                for path in slot.get("clear") or []:
+                    _clear(path)
 
-    vids = req.reference_videos or []
+    vids = getattr(req, "reference_videos", None) or []
     for i, nid in enumerate(ref.get("videos", [])):
+        if str(nid) in protected:
+            continue
         if i >= len(vids):
             # 参考视频与其音轨（ref_video_audio_N）同源、同节点，一并移除
             _drop(ref_key(ref, "videos", i), str(nid))
             _drop(REF_VIDEO_AUDIO_KEY_FMT.format(i), str(nid))
 
-    auds = req.reference_audios or []
+    auds = getattr(req, "reference_audios", None) or []
     for i, nid in enumerate(ref.get("audios", [])):
+        if str(nid) in protected:
+            continue
         if i >= len(auds):
             _drop(ref_key(ref, "audios", i), str(nid))
 
@@ -700,11 +771,14 @@ def _prune_unused_references(
 async def _wire_references(
     wf: dict[str, Any],
     spec: ModelSpec,
-    req: VideoGenerationRequest,
+    req: ImageGenerationRequest | VideoGenerationRequest,
     client: ComfyClient,
     trace: str,
 ) -> list[dict[str, Any]]:
     """把请求中实际提供的参考素材接到对应 loader 节点，并返回 image 类描述符。
+
+    图像档（多图编辑）与视频档共用：图像请求只有 `reference_images`，
+    video/audio 两类用 getattr 兜底。
 
     三类 loader（LoadImage / LoadVideo / LoadAudio）都是 ComfyUI input 文件夹内的
     **文件名** COMBO，逻辑统一：把 ``_stage_ref`` 解析出的文件名写入节点对应的 widget
@@ -731,7 +805,7 @@ async def _wire_references(
             descriptors.append(desc)
 
     # ---- 参考视频：LoadVideo.inputs.file ----
-    vids = req.reference_videos or []
+    vids = getattr(req, "reference_videos", None) or []
     for i, nid in enumerate(ref.get("videos", [])):
         if i >= len(vids):
             break
@@ -741,7 +815,7 @@ async def _wire_references(
             node.setdefault("inputs", {})[widget["video"]] = node_value
 
     # ---- 参考音频：LoadAudio.inputs.audio ----
-    auds = req.reference_audios or []
+    auds = getattr(req, "reference_audios", None) or []
     for i, nid in enumerate(ref.get("audios", [])):
         if i >= len(auds):
             break

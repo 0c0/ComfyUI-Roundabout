@@ -233,6 +233,7 @@ async def generate_image(
     cfg: float | None = None,
     image: str = "",
     mask: str = "",
+    reference_images: list[str] | None = None,
     workflow_overrides: str = "",  # JSON 字符串，形如 {"3.inputs.cfg": 4.5}
     mode: str = "",
     filename_prefix: str = "",
@@ -250,6 +251,7 @@ async def generate_image(
         cfg=cfg,
         image=image or None,
         mask=mask or None,
+        reference_images=reference_images,
         workflow_overrides=_parse_json_or_none(workflow_overrides),
         mode=mode or None,
         filename_prefix=filename_prefix or None,
@@ -273,11 +275,14 @@ async def generate_image(
         "改写/添加图内文字传 model='boogu-image-edit-turbo'（快）或 'boogu-image-edit'（高质量）。"
         "尺寸跟随输入图（输出约 1MP，size 不生效）。response_format=url/path/b64_json；"
         "返回 OpenAI 风格响应。只做文生图请用 generate_image。"
+        "多图参考编辑传 reference_images（按序接入模型声明的参考槽，张数上限由模型决定）："
+        "flux2-klein-image-edit-turbo 与 qwen-image-2.1-edit 都最多 4 张；"
+        "这类模型可以不传 image，只用 reference_images。"
     ),
 )
 async def edit_image(
     prompt: str,
-    image: str,
+    image: str = "",
     model: str = "",
     n: int = 1,
     negative_prompt: str = "",
@@ -285,6 +290,7 @@ async def edit_image(
     response_format: str = "",
     filename_prefix: str = "",
     mask: str = "",
+    reference_images: list[str] | None = None,
     workflow_overrides: str = "",  # JSON 字符串，形如 {"3.inputs.cfg": 4.5}
 ) -> dict[str, Any]:
     req = ImageGenerationRequest(
@@ -299,6 +305,7 @@ async def edit_image(
         filename_prefix=filename_prefix or None,
         image=image or None,
         mask=mask or None,
+        reference_images=reference_images,
         workflow_overrides=_parse_json_or_none(workflow_overrides),
     )
     spec = registry.resolve(req.model)
