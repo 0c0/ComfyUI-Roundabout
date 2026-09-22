@@ -51,9 +51,7 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 | `duration` / `num_frames` | 你自己链路里的时长/帧数节点 |
 | `chunks` / `seq_threshold` | `MiniMaxChunkFeedForward.chunks` / `.seq_threshold`（KJNodes） |
 | `sparse_start_percent` | `BlockSparseAttention.start_percent`（稀疏起始点，`1.0` 因 `percent_to_sigma(1.0)=0` 等效全程关闭稀疏）。**对外的语义参数是 `attention: sparse\|dense`**，由 `params.resolve_attention` 翻译后落到这里；`attention` 只对 base 四支 H3 视频档有效（FastH3 两支恒定稀疏，传了报错） |
-| ~~`head_chunks`~~ | **当前无绑定 2026-09-21**：唯一消费者 `MiniMaxLowVRAMAttention` 与 `BlockSparseAttention` 硬互斥，已从 6 支视频档撤除。参数名仍在可注入白名单里，把节点挂回去即可复用；档位表里的值不会注入任何工作流 |
-| `highres_tiling` | ~~`SelfLiftH3Sampler.highres_tiling`~~（**已下线 2026-09-21**，随 self-lift 摘档） |
-| ~~`transition_step`~~ / ~~`lowres_scale`~~ | **已移除 2026-09-21**（原 `SelfLiftH3Sampler` 的两阶段参数，随 self-lift 摘档；已从可注入白名单删除） |
+| `head_chunks` | **当前无绑定**：唯一消费者 `MiniMaxLowVRAMAttention` 与 `BlockSparseAttention` 硬互斥，已从 6 支视频档撤除。参数名仍在可注入白名单里，把节点挂回去即可复用；档位表里的值不会注入任何工作流 |
 
 ### 写映射的三条铁律
 
@@ -234,14 +232,6 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 也可直接绑聚合节点自己的 `prompt` 输入（`105:104.inputs.prompt`）—— 后者少一个节点，
 新工作流推荐这么做。
 
-### SelfLift 的 σ 网格与 `extra_steps`【已移除 2026-09-21】
-
-`transition_step` / `lowres_scale` / `motion` 三个形参连同 `gateway/lowres.py` 已**从代码里删除**
-（不再只是"无模型声明"）。σ 标定历史（最终 NFE = `steps + extra_steps`、上界
-`steps + extra_steps - 1`）保留在 `skill: selflift-progressive-upscale`。
-
-
-
 ## 大模型按显卡自动调参：`vram_adaptive`
 
 像 MiniMax H3 这类权重几十 GiB 的工作流，靠节点级分块把激活张量切小才能在显存吃紧的卡上跑。分块参数的合适取值**只取决于显存大小**，写死在 JSON 里换台机器就得手改，所以做成档位自动填：
@@ -289,13 +279,6 @@ models:
 - 档位表在 YAML 里，**改参数不用动代码**；本机命中哪一档见启动日志 `model ... 显存 X GiB -> 分块档位 {...}`。
 
 ---
-
-## 按叙事节奏切参数档：`motion_presets`【已移除 2026-09-21】
-
-随 self-lift 下线后无模型声明，机制已整条删除：`ModelSpec.motion_presets`、`apply_presets` 的
-motion 分支、请求字段 `motion`、结构化配置里的 `motion_presets` 读写——不再保留"有模型重新声明
-即可复用"的空壳。要恢复请从 git 历史取回，别照着旧文档补一半。
-
 
 ## 排错表
 

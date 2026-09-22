@@ -288,9 +288,6 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 图像编辑 | `boogu-image-edit` / `boogu-image-edit-turbo` | 擅长改写 / 添加**图内文字**，30 步 / 6 步 |
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
 | 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base / edit 均 30 步），支持 6 图 + 3 视频 + 3 音频参考；低显存分块按档位自适应（`vram_adaptive`） |
-| 视频 | ~~`minimax-h3-turbo`~~ / ~~`-turbo-edit`~~（**已下线 2026-09-20**） | Acc LoRA 是 diffusers 命名 → 728 key 零 patch，实际=裸 base@8（2026-09-19 实测）；8 步快跑由 `minimax-h3` 直接传 `size:"576p-16:9"` + `steps:8` 承接。要真加速见下方 Acc LoRA 注记 |
-| 视频 | ~~`minimax-h3-hyperflow`~~（**已下线 2026-09-21**） | HyperFlow 8 步加速档（base 权重 + HyperFlow LoRA，`euler` + `ManualSigmas` 官方 9 点 σ）。**本地跑不通**：社区转换版把端点适配器 `endpoint_time_embedder.*` 并进了 `time_embedder.proj_in/proj_out`，端点条件进不了模型（画面非单段式晕开）；要完整效果需上游原版 + `Addis-Pulse-Studio/ComfyUI-HyperFlow` 节点包。8 步快跑由 `minimax-h3` 直接传 `steps:8` 与 `fasth3` 承接 |
-| 视频 | ~~`minimax-h3-self-lift`~~ / ~~`-self-lift-edit`~~（**已下线 2026-09-21**） | SelfLift 两阶段渐进采样（低分 NFE + 高分 NFE）。被 lift 的「原生采样 → 确定性 latent lift」取代；工作流备份在 `.workbuddy/stash/`，配套的采样档参数机制已随之删除 |
 | 视频 | `minimax-h3-lift` | **base 骨架 + 确定性放大**：30 步原生采样 → 学习式 latent lift（1344x768 × scale 1.875 = 2520x1440），构图零重掷、纹理最强；支持首尾帧（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）；产物落 `video/H3_Lift`；`scale` 是请求参数（默认 1.875 → 2520x1440）；`rho` 精调走 `workflow_overrides`（`910.inputs.rho`） |
 | 视频 | `minimax-h3-lift-edit` | 同上，改用 **edit 骨架**：Ref2VA 权重 + 参考槽全套 6 图 / 3 视频 / 3 音频。⚠️ **未标定**：步数 30（随 edit 统一），放大与参考的组合效果没做过 A/B |
 | 视频 | `fasth3` | FastVideo FastH3 8 步蒸馏档；文生 / 首尾帧生视频（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）。首尾帧走**关键帧**槽 `first_frame` / `last_frame`，与自成一族的 `minimax-h3` 走参考图槽不是一条路。**定位草稿 / 快周转**：官方口径 8 步最优、改步数掉质量，且 09-20 分频实测其高频段整体过量（**不是 49/50 步的无损替代**），要最大质量用 `minimax-h3` |
@@ -304,7 +301,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 
 ## 权重清单（内置工作流的全部依赖）
 
-**本仓库不包含任何权重文件**（体积与许可原因）。内置的 15 个工作流共引用 **20 个**权重文件，合计约 **198 GB**（图像档约 77 GB / 视频档约 121 GB）；下面两张清单表共 **23 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个已下线档 LoRA），仅作参考，计入则约 205 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>`。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入这 20 个。）
+**本仓库不包含任何权重文件**（体积与许可原因）。内置的 15 个工作流共引用 **20 个**权重文件，合计约 **198 GB**（图像档约 77 GB / 视频档约 121 GB）；下面两张清单表共 **23 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个 hyperflow LoRA），仅作参考，计入则约 205 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>`。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入这 20 个。）
 
 这些文件基本都在 **HuggingFace 的 Comfy-Org 官方仓库**里（少数为模型原厂或社区仓库，已在表中标注）。国区建议把端点换成镜像，repo ID 与 repo 内路径完全一致：
 
@@ -370,14 +367,14 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 | `minimax_h3_audio_vae_fp32.safetensors` | `vae/` | 0.61 GB | `Comfy-Org/MiniMax-H3` | `vae/` |
 | `MiniMax-H3-FL2VA-Acc-8Step.safetensors` | `loras/` | 1.37 GB | `alibaba-pai/MiniMax-H3-Acc-LoRAs` | 根目录 |
 | `MiniMax-H3-Ref2VA-Acc-8Step.safetensors` | `loras/` | 1.37 GB | `alibaba-pai/MiniMax-H3-Acc-LoRAs` | 根目录 |
-| ~~`minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors`~~ | `loras/` | 3.93 GB | `drbaph/MiniMax-H3-Turbo-Lora-ComfyUI` | 根目录（**已下线档的 LoRA，2026-09-21**；文件仍在盘上，但没有任何工作流引用它） |
+| `minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors` | `loras/` | 3.93 GB | `drbaph/MiniMax-H3-Turbo-Lora-ComfyUI` | 根目录（文件仍在盘上，但没有任何内置工作流引用它） |
 | `fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors` | `diffusion_models/` | 22.13 GB | `Comfy-Org/FastVideo-FastH3` | `diffusion_models/` |
 | `minimax_h3_latent_upscaler_3d_fp16.safetensors` | `latent_upscale_models/` | 0.69 GB | `LBH-123-AI/Minimax_h3_latent_Upscaler` | `minimax_h3_latent_upscaler_3d_conv_v1/`（**需改名**） |
 
 **视频档的三个坑：**
 
 - **`fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors` 跑的是 pruned 形态**，对应 `fasth3` / `fasth3-edit` 两支；`minimax-h3` 系列（含 lift）用的是**完整版** `minimax_h3_*_int8_convrot.safetensors`。两者不能互换，LoRA 也会跟着不匹配（见下一条）。
-- **（已下线档的历史坑，2026-09-21）`minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors` 是社区转换版**（原始版在 `videorebirth/hyperflow`，文件名 `minimax_h3_hyperflow_8step_v1.0.safetensors`，无 `_comfyui_bf16` 后缀）。转换版在重映射 key 时把端点适配器 `endpoint_time_embedder.*` 并进了 `time_embedder.proj_in/proj_out`，本机实测**端点条件进不了模型**（画面出现非单段式晕开）—— 想用完整效果需上游原版 + 专用节点包 `Addis-Pulse-Studio/ComfyUI-HyperFlow`。内置工作流目前挂的是转换版。
+- **`minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors` 是社区转换版**（原始版在 `videorebirth/hyperflow`，文件名 `minimax_h3_hyperflow_8step_v1.0.safetensors`，无 `_comfyui_bf16` 后缀）。转换版在重映射 key 时把端点适配器 `endpoint_time_embedder.*` 并进了 `time_embedder.proj_in/proj_out`，本机实测**端点条件进不了模型**（画面出现非单段式晕开）—— 想用完整效果需上游原版 + 专用节点包 `Addis-Pulse-Studio/ComfyUI-HyperFlow`。内置工作流目前挂的是转换版。
 - **Acc LoRA 是 diffusers 命名，普通加载器挂不上**（详见[内置模型](#内置模型)里 `minimax-h3-turbo` 那行）。若要真正加速，改用 `Comfy-Org/MiniMax-H3` 的 `loras/` 下那些 **ComfyUI 命名**的，如 `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors`。
 
 ### 一键下载
@@ -437,9 +434,6 @@ curl -L -o models/loras/MiniMax-H3-FL2VA-Acc-8Step.safetensors \
   $B/alibaba-pai/MiniMax-H3-Acc-LoRAs/resolve/main/MiniMax-H3-FL2VA-Acc-8Step.safetensors
 curl -L -o models/loras/MiniMax-H3-Ref2VA-Acc-8Step.safetensors \
   $B/alibaba-pai/MiniMax-H3-Acc-LoRAs/resolve/main/MiniMax-H3-Ref2VA-Acc-8Step.safetensors
-# hyperflow 档的 LoRA（该档已于 2026-09-21 下线，跑不通；如需复原再解开下面两行）
-# curl -L -o models/loras/minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors \
-#   $B/drbaph/MiniMax-H3-Turbo-Lora-ComfyUI/resolve/main/minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors
 # fasth3 权重
 curl -L -o models/diffusion_models/fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors \
   $B/Comfy-Org/FastVideo-FastH3/resolve/main/diffusion_models/fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors
@@ -465,14 +459,13 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 | `flux2-klein-image-edit-turbo` | `diffusion_models/` `flux-2-klein-9b-kv-fp8.safetensors` · `text_encoders/` `qwen3vl_8b_fp8_scaled.safetensors` · `vae/` `flux2-vae.safetensors` |
 | `utility-birefnet-remove-background` | `background_removal/` `birefnet.safetensors` |
 | `minimax-h3` / `minimax-h3-edit` | `diffusion_models/` `minimax_h3_fl2va_int8_convrot.safetensors`、`minimax_h3_ref2va_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` · `vae/` `minimax_h3_video_vae_int8_convrot.safetensors`、`minimax_h3_audio_vae_fp32.safetensors` |
-| ~~`minimax-h3-hyperflow`~~（已下线 2026-09-21） | 同 `minimax-h3`（**FL2VA** 权重），另需 `loras/` `minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors`。⚠ 该基础权重是**完整版**形态，只能用**非 pruned** 的 LoRA 文件；`*_pruned_*.safetensors` 是给 curve-form 权重（如 `fasth3` 用的那支）转换的，挂错会 key 不匹配 → LoRA 静默不加载 |
 | `minimax-h3-lift` / `-lift-edit` | 同 `minimax-h3` / `minimax-h3-edit`，另需 `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors`（**不需要** `loras/`） |
 | `fasth3` / `fasth3-edit` | `diffusion_models/` `fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` · `vae/` `minimax_h3_video_vae_int8_convrot.safetensors`、`minimax_h3_audio_vae_fp32.safetensors` |
 
 ### 第三方节点依赖
 
 > 这些工作流用到的节点**除 lift 系列（`minimax-h3-lift*`）、基础两支 `minimax-h3` / `-edit`、以及 FastH3 两支（它们都接了低显存分块节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` 等节点。
-> lift 系列额外依赖一个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3LatentLift` + `latent_upscale_models/` 下的上采样权重）。两阶段采样用的 `SelfLiftH3Sampler` 与 `H3SigmaRefiner` 随 self-lift 下线后不再需要。
+> lift 系列额外依赖一个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3LatentLift` + `latent_upscale_models/` 下的上采样权重）。
 > 需要 KJNodes 的 `MiniMaxChunkFeedForward` 做 FFN 分块：**全部 6 支视频档**。低显存都走两级 —— `BlockSparseAttention`（comfy 核心节点，省 attention）→ `MiniMaxChunkFeedForward`：base 四支（`minimax-h3` / `-edit` / `minimax-h3-lift*`）的稀疏档位是 `sol-attn`（training-free，约保留 16% key block），FastH3 两支是 `vsa`（其权重按 10% cube 稀疏训练）。
 > ⛔ **不要在这 6 支里接 KJNodes 的 `MiniMaxLowVRAMAttention`**：它替换 `block.forward`，而 `BlockSparseAttention` 的 block patch 会无条件补传 `attention=` 关键字（`comfy/ldm/minimax/model.py`），签名对不上 ⇒ 实测 `TypeError`。两者**硬互斥**，因此 base 四支原先的 LowVRAM 节点已于 2026-09-21 撤除（`head_chunks` 档位值随之失去消费者，保留在表里仅为复原方便）。
 > 稀疏节点的参数（`tau` / `min_tokens` / `dense_blocks` …）不在可注入白名单；其中 `tau` 的键名是 `selection.tau`（含点号），按 `.` 切分的路径解析寻址不到，要调只能改工作流 JSON 再 `/admin/reload`。**但「更快 ↔ 更高质量」这一档有正式请求参数**：`attention`（`sparse` 默认 / `dense` 关闭稀疏换致密画质）。它内部落到 `BlockSparseAttention.start_percent` —— `1.0` 因 `percent_to_sigma(1.0) = 0` 而等效全程致密。**这一档只给 base 四支**（`minimax-h3` / `-edit` / `-lift` / `-lift-edit`）；FastH3 两支恒定稀疏 —— 它的 `vsa` 与蒸馏权重配对训练，关掉不是「更高画质」而是脱离训练分布，传 `attention` 会报 400。

@@ -10,7 +10,7 @@ defaults:
   # FFN 的 token 维、数学精确，改它不影响输出（分块耗时开销实测 ≈ 0）。
   # ⚠️ `head_chunks` 自 09-21 起**没有任何模型绑定**：唯一消费它的 MiniMaxLowVRAMAttention
   #   与 BlockSparseAttention 硬互斥，已从 6 支视频档全部撤除（原因见下方 H3 系列共同点）。
-  #   `highres_tiling` 同样无绑定（SelfLiftH3Sampler 下线后失去消费者）。这两列数值留在表里
+  #   `highres_tiling` 同样无绑定（本项目已无该参数的消费者）。这两列数值留在表里
   #   只为复原方便 —— **改它们不会影响任何工作流**。
   vram_tiers:
     - min_gb: 48
@@ -437,27 +437,6 @@ models:
     - minimax_h3_edit
     - minimaxh3edit
     - h3-edit
-  # minimax-h3-hyperflow 已于 2026-09-21 下线（本地跑不通，与 turbo 一档同款处置）：
-  #   HyperFlow 8 步蒸馏档 —— 完整版 FL2VA 权重 + HyperFlow LoRA（euler + 固定 9 点 ManualSigmas）。
-  #   离线原因：drbaph 社区转换版把端点适配器 endpoint_time_embedder.* 并进了
-  #   time_embedder.proj_in/proj_out，端点条件进不了模型（画面出现非单段式晕开）；
-  #   要完整效果得上游原版（videorebirth/hyperflow）+ 专用节点包
-  #   Addis-Pulse-Studio/ComfyUI-HyperFlow，成本不划算。
-  #   8 步快跑由 fasth3 承接（8 步蒸馏档，定位草稿 / 快周转）。
-  #   工作流备份：.workbuddy/stash/video_minimax_h3_hyperflow.json（复原时拷回 workflows/ 并恢复本条目）。
-
-  # ===================== MiniMax H3 SelfLift 变体（已下线 2026-09-21） =====================
-  # minimax-h3-self-lift / minimax-h3-self-lift-edit 两支同日下线，C 拍板：
-  #   两阶段渐进采样（SelfLiftH3Sampler：低分 NFE → 高分 NFE）由 lift 的
-  #   「原生采样 → SelfLiftH3LatentLift 确定性放大」取代 —— 机制更简，且 09-20 实测
-  #   高分二采反而洗掉 lift 铺的高频（lap 54.4 vs 78.4）。
-  #   工作流备份（复原时拷回 workflows/ 并按 git 历史恢复条目）：
-  #     .workbuddy/stash/video_minimax_h3_self_lift.json
-  #     .workbuddy/stash/video_minimax_h3_self_lift_edit.json
-  #   连带：motion / transition_step / lowres_scale 三个请求字段与 motion_presets 机制、
-  #   gateway/lowres.py 已于 09-21 一并删除（复原时须从 git 历史取回，不是补个配置就行）。
-  #   仅 highres_tiling 仍留在 vram_tiers 里（无节点绑定、无消费者，仅为复原方便而保留）。
-  #   旧名与别名（selflift / self-lift / h3-selflift / -nolora 等）见 git 历史。
 
   # ===================== FastVideo FastH3 =====================
   # FastVideo 的 FastH3 蒸馏档（fastvideo_fasth3_8step_v2_pruned_int8_convrot + qwen3vl int8）。

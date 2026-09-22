@@ -258,7 +258,6 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `num_frames` | int? | 总帧数（部分工作流用帧数而非时长） |
 | `attention` | `"sparse"`\|`"dense"`? | **注意力档位**（更快 ↔ 更高质量，仅 base 四支 H3 视频档）：`sparse`（默认，块稀疏加速，更快、更省显存；画质与致密高度一致、差异只在高频细节）/ `dense`（关闭稀疏，画质优先，耗时回满）。不传 = 保持模板默认（稀疏）。**FastH3 两支恒稀疏**（其 `vsa` 与蒸馏权重配对训练，关掉不是更高画质而是脱离训练分布），传了报 400；其它模型同样报 400 |
 | `scale` | float? | **放大倍率**（仅 `minimax-h3-lift` / `-lift-edit`）：输出 = 768p 画布 × scale，默认 1.875 → 2520x1440；其它模型传了报 400 |
-| ~~`motion`~~ / ~~`transition_step`~~ / ~~`lowres_scale`~~ | — | **已移除 2026-09-21**：原仅 SelfLift 两支声明，随其下线后成为孤儿形参；机制代码（请求字段 / `motion_presets` 配置 / `gateway/lowres.py`）一并删除，传了会被当作未知字段忽略 |
 | `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"910.inputs.rho": 0.3}`。`minimax-h3-lift` 的可调项：`910.inputs.rho`（SelfLift-zero 像素锚阻尼，默认 0=纯学习 lift 纹理最强；0.3 实测高频 -18%）、`910.inputs.w_min`/`w_max`（阻尼强度上下限，默认 0.5/1.0）。放大倍率 `scale` 已是正式请求参数，不必走透传 |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |
 | `image` | string\|string[]? | 图生视频输入 |
@@ -332,9 +331,8 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | **`boogu-image-edit`** / **`boogu-image-edit-turbo`** | image | **image-to-image** | 单图编辑，改图内文字首选（见 5.1） |
 | **`flux2-klein-image-edit-turbo`** | image | **image-to-image** | Flux2 Klein 9B 单图编辑，语义改写/换背景首选（见 5.1） |
 | **`utility-birefnet-remove-background`** | image | **image-to-image**（promptless） | 去背景独立工具，无 prompt，透明 PNG；专属端点 `/v1/images/remove-background` |
-| `minimax-h3` | video | text-to-video | H3 文生视频（base 30 步）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@30（网关已移除 `quality` 分档：分档只表达 size + steps，与直接传参等价） |
-| `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，30 步（支持图/视频/音频参考）。原 `-turbo-edit` 已于 2026-09-20 下线 |
-| ~~`minimax-h3-self-lift`~~ / ~~`-self-lift-edit`~~ | video | — | **已下线 2026-09-21**：两阶段渐进采样，被 lift 的确定性放大取代 |
+| `minimax-h3` | video | text-to-video | H3 文生视频（base 30 步）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@30（网关无 `quality` 分档 —— 它只能表达 size + steps，与直接传参等价） |
+| `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，30 步（支持图/视频/音频参考） |
 | `minimax-h3-lift` | video | text-to-video / image-to-video | base 骨架 + 确定性放大：30 步原生采样 → 学习式 latent lift（默认 2520x1440）；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧；分块参数按本机显存自动分档 |
 | `minimax-h3-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 edit 骨架（Ref2VA 权重，30 步）；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
 | `fasth3` | video | text-to-video / image-to-video | FastVideo FastH3 8 步蒸馏档；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（首尾帧走关键帧槽 `first_frame` / `last_frame`，见 [WORKFLOWS.md](WORKFLOWS.md)）。定位**草稿 / 快周转**，非 49/50 步的等价替代 |
