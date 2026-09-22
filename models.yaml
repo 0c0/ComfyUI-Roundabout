@@ -343,6 +343,80 @@ models:
     - flux2-edit-turbo
     - image_flux2_klein_image_edit_turbo
 
+  # ===================== Qwen-Image 2.1 =====================
+  # 官方模板把真管线藏在 subgraph 里，这里是等价的 API 平铺版（节点 id 沿用官方）。
+  qwen-image-2.1:
+    workflow: image_qwen_image_2_1_t2i.json
+    description: Qwen-Image 2.1 —— 文生图，25 步（Qwen3-VL 文本编码）；原生支持 2K，默认 1024x1024，要 2048x2048 用 workflow_overrides 或直接传 size
+    mode: image
+    output_node: '461'
+    timeout: 600
+    defaults:
+      negative_prompt: ''
+      steps: 25
+      cfg: 1
+      sampler_name: euler
+      scheduler: simple
+      width: 1024
+      height: 1024
+    bindings:
+      filename_prefix: 461.inputs.filename_prefix
+      prompt: 452.inputs.prompt
+      negative_prompt: 452.inputs.negative_prompt
+      seed: 458.inputs.seed
+      steps: 458.inputs.steps
+      cfg: 458.inputs.cfg
+      sampler_name: 458.inputs.sampler_name
+      scheduler: 458.inputs.scheduler
+      width: 456.inputs.width
+      height: 456.inputs.height
+    aliases:
+    - qwen-image-21
+    - qwen-image
+
+  # 多图参考编辑：参考槽走 reference_images（最多 4 张），输出尺寸跟随第一张参考图
+  # （官方模板 resolution 缺省 0 = 不缩放、只取整到 32；要固定尺寸改 474.inputs.resolution）。
+  # `image` 单图入口落在第 1 槽；capabilities 只写 image-to-image ⇒ 一个参考都不传会 400。
+  qwen-image-2.1-edit:
+    workflow: image_qwen_image_2_1_edit.json
+    description: Qwen-Image 2.1 Edit —— 多图参考编辑，25 步；参考图 1–4 张（走 reference_images，单图也可用 image）；输出尺寸跟随第一张参考图
+    mode: image
+    capabilities:
+    - image-to-image
+    output_node: '461'
+    timeout: 600
+    references:
+      aggregator: '474'
+      images:
+      - L1
+      - L2
+      - L3
+      - L4
+      # TextEncodeQwenImage21 的参考槽是 COMFY_AUTOGROW_V3 ⇒ 键名 `images.image_N`（点号平铺）
+      image_keys:
+      - images.image_1
+      - images.image_2
+      - images.image_3
+      - images.image_4
+    defaults:
+      negative_prompt: ''
+      steps: 25
+      cfg: 1
+      sampler_name: euler
+      scheduler: simple
+    bindings:
+      filename_prefix: 461.inputs.filename_prefix
+      image: L1.inputs.image
+      prompt: 474.inputs.prompt
+      negative_prompt: 474.inputs.negative_prompt
+      seed: 458.inputs.seed
+      steps: 458.inputs.steps
+      cfg: 458.inputs.cfg
+      sampler_name: 458.inputs.sampler_name
+      scheduler: 458.inputs.scheduler
+    aliases:
+    - qwen-image-edit
+
   # ===================== MiniMax H3 视频系列 =====================
   # 说明：聚合节点固定在 136、输出在 92；两支按「权重类型」分家，节点不同：
   #   - FL2VA（base / lift）：权重 *_fl2va_*，条件节点

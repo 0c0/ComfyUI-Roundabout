@@ -284,8 +284,10 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 文生图 | `z-image` | 30 步高质量 |
 | 文生图 | `boogu-image-turbo` / `boogu-image-base-4step` | 4 步极速预览 |
 | 文生图 | `boogu-image-base` | 30 步高质量 |
-| 图像编辑 | `flux2-klein-image-edit-turbo` | 语义改写首选：换背景 / 换材质 / 增删物体（`edit_image` 默认） |
+| 文生图 | `qwen-image-2.1` | 25 步；原生 2K 档位，默认 1024x1024（要更大传 `size`） |
+| 图像编辑 | `flux2-klein-image-edit-turbo` | 语义改写首选：换背景 / 换材质 / 增删物体（`edit_image` 默认）；**多图参考**最多 4 张 |
 | 图像编辑 | `boogu-image-edit` / `boogu-image-edit-turbo` | 擅长改写 / 添加**图内文字**，30 步 / 6 步 |
+| 图像编辑 | `qwen-image-2.1-edit` | **多图参考编辑**：1–4 张参考图（`reference_images` 按序喂槽；单图也可直接传 `image`，二者等价）；输出尺寸跟随第 1 张参考图 |
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
 | 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base / edit 均 30 步），支持 6 图 + 3 视频 + 3 音频参考；低显存分块按档位自适应（`vram_adaptive`） |
 | 视频 | `minimax-h3-lift` | **base 骨架 + 确定性放大**：30 步原生采样 → 学习式 latent lift（1344x768 × scale 1.875 = 2520x1440），构图零重掷、纹理最强；支持首尾帧（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）；产物落 `video/H3_Lift`；`scale` 是请求参数（默认 1.875 → 2520x1440）；`rho` 精调走 `workflow_overrides`（`910.inputs.rho`） |
@@ -293,15 +295,15 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 视频 | `fasth3` | FastVideo FastH3 8 步蒸馏档；文生 / 首尾帧生视频（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）。首尾帧走**关键帧**槽 `first_frame` / `last_frame`，与自成一族的 `minimax-h3` 走参考图槽不是一条路。**定位草稿 / 快周转**：官方口径 8 步最优、改步数掉质量，且 09-20 分频实测其高频段整体过量（**不是 49/50 步的无损替代**），要最大质量用 `minimax-h3` |
 | 视频 | `fasth3-edit` | 同权重改用 Ref2VA 聚合节点做参考生视频，参考槽全套 6 图 + 3 视频 + 3 音频；产物落 `video/FastH3`（不混进 `video/MiniMax_H3`）。⚠️ **占位档**：官方未蒸馏 Ref2VA，与 `fasth3` 共用同一份 fl2v 权重，参考效果未标定 |
 
-- 编辑类模型**必须传 `image`**；输出尺寸跟随输入图（工作流内缩放到 1MP），`size` 不生效。
+- 编辑类模型**必须传图**：单图模型传 `image`；**多图模型**（`qwen-image-2.1-edit` / `flux2-klein-image-edit-turbo`，各最多 4 张）传 `reference_images` 按序喂槽，单图也可以直接传 `image`（等价第 1 张）。输出尺寸跟随输入图（boogu / klein 缩放到 1MP；qwen edit 按官方默认不做重采样，直接跟随第 1 张参考图），`size` 不生效。
 - 给文生图模型传 `image` 会被拒绝，错误信息里会列出所有支持输入图的模型名。
-- 别名、绑定路径与实测耗时见 `models.yaml` 与 [API.md §5.4](API.md)。
+- 别名与绑定路径见 `models.yaml` 与 [API.md §5.4](API.md)。
 
 ---
 
 ## 权重清单（内置工作流的全部依赖）
 
-**本仓库不包含任何权重文件**（体积与许可原因）。内置的 15 个工作流共引用 **20 个**权重文件，合计约 **198 GB**（图像档约 77 GB / 视频档约 121 GB）；下面两张清单表共 **23 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个 hyperflow LoRA），仅作参考，计入则约 205 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>`。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入这 20 个。）
+**本仓库不包含任何权重文件**（体积与许可原因）。内置的 17 个工作流共引用 **23 个**权重文件，合计约 **215 GB**（图像档约 94 GB / 视频档约 121 GB）；下面两张清单表共 **26 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个 hyperflow LoRA），仅作参考，计入则约 222 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>`。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入这 23 个。）
 
 这些文件基本都在 **HuggingFace 的 Comfy-Org 官方仓库**里（少数为模型原厂或社区仓库，已在表中标注）。国区建议把端点换成镜像，repo ID 与 repo 内路径完全一致：
 
@@ -331,7 +333,7 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 | `models/latent_upscale_models/` | SelfLift 的 latent 上采样权重 |
 | `models/background_removal/` | BiRefNet 抠图 |
 
-### 图像档（13 个文件，约 77 GB）
+### 图像档（16 个文件，约 94 GB）
 
 | 文件 | 目标目录 | 体积 | 下载源（HF repo） | repo 内路径 |
 |---|---|---|---|---|
@@ -347,6 +349,9 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 | `flux1_vae_bf16.safetensors` | `vae/` | 0.17 GB | `Comfy-Org/Boogu-Image` | `vae/` |
 | `flux-2-klein-9b-kv-fp8.safetensors` | `diffusion_models/` | 9.82 GB | `black-forest-labs/FLUX.2-klein-9b-kv-fp8` | 根目录 |
 | `flux2-vae.safetensors` | `vae/` | 0.34 GB | `Comfy-Org/vae-text-encorder-for-flux-klein-9b` | `split_files/vae/` |
+| `qwen_image_2.1_int8_convrot.safetensors` | `diffusion_models/` | 7.26 GB | `Comfy-Org/Qwen-Image-2.1` | 根目录 |
+| `qwen3vl_8b_int8_convrot.safetensors` | `text_encoders/` | 9.35 GB | `Comfy-Org/Qwen-Image-2.1` | 根目录 |
+| `qwen_image_2.1_vae_bf16.safetensors` | `vae/` | 0.68 GB | `Comfy-Org/Qwen-Image-2.1` | 根目录 |
 | `birefnet.safetensors` | `background_removal/` | 0.44 GB | `Comfy-Org/BiRefNet` | `background_removal/` |
 
 **几个共用 / 易混点：**
@@ -354,6 +359,7 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 - `ae.safetensors` 与 `flux1_vae_bf16.safetensors` 是**同一个 FLUX.1 Autoencoder 的两种精度**（前者 fp32 0.34 GB，后者 bf16 0.17 GB），按文件名被不同工作流引用 —— 名字不同就必须都存在。只跑 `boogu-image-edit` 而没跑 `z-image` 时，也可以把 `flux1_vae_bf16.safetensors` 复制一份改名成 `ae.safetensors` 用（同架构可换，代价是精度）。
 - `qwen3vl_8b_fp8_scaled.safetensors` 被 Boogu 全系与 `flux2-klein-image-edit-turbo` 共用，下一个文件够三个模型用。
 - `flux-2-klein-9b-kv-fp8.safetensors` 来自 Black Forest Labs 官方仓库（不在 Comfy-Org）；Comfy-Org 只提供了它的 VAE 与文本编码器仓库（`vae-text-encorder-for-flux-klein-9b`，官方拼写如此）。
+- Qwen-Image 2.1 的文本编码器是 `qwen3vl_8b_int8_convrot.safetensors`，与 Boogu 用的 `qwen3vl_8b_fp8_scaled.safetensors` **同名不同文件、不同仓库**，别互相顶替 —— 跑哪支就下哪支。同仓库里另有 `qwen3.5_9b_qwen_image_2.1_pe_t2i.int8_convrot.safetensors` / `..._pe_i2i...` 一路「PE」编码器，内置工作流**不用**它。
 - 想省显存可以换更小的量化版（`nvfp4` / `pruned_int8_convrot` 等，同仓库同目录下有），但**要同步改工作流 JSON 里的文件名**。
 
 ### 视频档（10 行：7 个内置引用 + 3 个参考项，约 128 GB）
@@ -379,7 +385,7 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 
 ### 一键下载
 
-在 **ComfyUI 根目录**执行（`models/` 就在当前目录下）。按族分组，只下你要用的族即可。
+在 **ComfyUI 根目录**执行（`models/` 就在当前目录下）。按族分组，只下你要用的族即可。仓库内路径与 HF 一致；`hf-mirror` 之外，**ModelScope** 也可作备用源（同一份仓库，把 `$B/<repo>/resolve/main/<路径>` 换成 `https://modelscope.cn/models/<repo>/resolve/master/<路径>` 即可）。
 
 ```bash
 B=https://hf-mirror.com          # 走官方就换成 https://huggingface.co
@@ -415,6 +421,14 @@ curl -L -o models/vae/flux2-vae.safetensors \
   $B/Comfy-Org/vae-text-encorder-for-flux-klein-9b/resolve/main/split_files/vae/flux2-vae.safetensors
 curl -L -o models/background_removal/birefnet.safetensors \
   $B/Comfy-Org/BiRefNet/resolve/main/background_removal/birefnet.safetensors
+
+# ---------- Qwen-Image 2.1（文生图 + 多图编辑，约 17 GB）----------
+curl -L -o models/diffusion_models/qwen_image_2.1_int8_convrot.safetensors \
+  $B/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors
+curl -L -o models/text_encoders/qwen3vl_8b_int8_convrot.safetensors \
+  $B/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors
+curl -L -o models/vae/qwen_image_2.1_vae_bf16.safetensors \
+  $B/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors
 
 # ---------- MiniMax H3 共用主干（H3 全系都要，约 99 GB）----------
 curl -L -o models/diffusion_models/minimax_h3_fl2va_int8_convrot.safetensors \
@@ -457,6 +471,7 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 | `boogu-image-base` / `-base-4step` / `-turbo` | `diffusion_models/` `boogu_image_base_fp8_scaled.safetensors`、`boogu_image_turbo_hotfix_int8_convrot.safetensors` · `loras/` `boogu_image_turbo_hotfix_lora_rank_128_bf16.safetensors` · `text_encoders/` `qwen3vl_8b_fp8_scaled.safetensors` · `vae/` `flux1_vae_bf16.safetensors` |
 | `boogu-image-edit` / `-edit-turbo` | `diffusion_models/` `boogu_image_edit_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_8b_fp8_scaled.safetensors` · `vae/` `ae.safetensors` ·（turbo 另需）`loras/` `boogu_image_turbo_hotfix_lora_rank_128_bf16.safetensors` |
 | `flux2-klein-image-edit-turbo` | `diffusion_models/` `flux-2-klein-9b-kv-fp8.safetensors` · `text_encoders/` `qwen3vl_8b_fp8_scaled.safetensors` · `vae/` `flux2-vae.safetensors` |
+| `qwen-image-2.1` / `qwen-image-2.1-edit` | `diffusion_models/` `qwen_image_2.1_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_8b_int8_convrot.safetensors` · `vae/` `qwen_image_2.1_vae_bf16.safetensors` |
 | `utility-birefnet-remove-background` | `background_removal/` `birefnet.safetensors` |
 | `minimax-h3` / `minimax-h3-edit` | `diffusion_models/` `minimax_h3_fl2va_int8_convrot.safetensors`、`minimax_h3_ref2va_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` · `vae/` `minimax_h3_video_vae_int8_convrot.safetensors`、`minimax_h3_audio_vae_fp32.safetensors` |
 | `minimax-h3-lift` / `-lift-edit` | 同 `minimax-h3` / `minimax-h3-edit`，另需 `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors`（**不需要** `loras/`） |
@@ -464,7 +479,7 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 
 ### 第三方节点依赖
 
-> 这些工作流用到的节点**除 lift 系列（`minimax-h3-lift*`）、基础两支 `minimax-h3` / `-edit`、以及 FastH3 两支（它们都接了低显存分块节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` 等节点。
+> 这些工作流用到的节点**除 lift 系列（`minimax-h3-lift*`）、基础两支 `minimax-h3` / `-edit`、以及 FastH3 两支（它们都接了低显存分块节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。
 > lift 系列额外依赖一个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3LatentLift` + `latent_upscale_models/` 下的上采样权重）。
 > 需要 KJNodes 的 `MiniMaxChunkFeedForward` 做 FFN 分块：**全部 6 支视频档**。低显存都走两级 —— `BlockSparseAttention`（comfy 核心节点，省 attention）→ `MiniMaxChunkFeedForward`：base 四支（`minimax-h3` / `-edit` / `minimax-h3-lift*`）的稀疏档位是 `sol-attn`（training-free，约保留 16% key block），FastH3 两支是 `vsa`（其权重按 10% cube 稀疏训练）。
 > ⛔ **不要在这 6 支里接 KJNodes 的 `MiniMaxLowVRAMAttention`**：它替换 `block.forward`，而 `BlockSparseAttention` 的 block patch 会无条件补传 `attention=` 关键字（`comfy/ldm/minimax/model.py`），签名对不上 ⇒ 实测 `TypeError`。两者**硬互斥**，因此 base 四支原先的 LowVRAM 节点已于 2026-09-21 撤除（`head_chunks` 档位值随之失去消费者，保留在表里仅为复原方便）。

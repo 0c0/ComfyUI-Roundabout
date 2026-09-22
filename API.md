@@ -162,7 +162,7 @@ MCP 客户端配置（`mcp.json`）：
 - **产物 url 绝对化**：`response_format=url` 时返回绝对 `http(s)` 地址。基准顺序：`PUBLIC_BASE_URL` → REST 用请求 host / MCP 用 `comfy_base_url`。若填 `b64_json` 则内联 base64；`file`/`path` 返回磁盘绝对路径。
 - **seed 回显与监控**：生成响应回显本次实际生效 `seed`；队列监控的 running / pending / tasks 三表均带 `seed` 字段，便于区分批量同 prompt 提交。
 - **取消语义**：pending 任务从 ComfyUI 队列移除；running 任务只能 `interrupt`（ComfyUI 无按 id 中断接口，会中断当前正在执行的那个）。本地任务标记为 `cancelled`，且 `complete/fail` 不再覆盖它（防后台协程冲掉）。
-- **编辑模型（`image-to-image`）**：`boogu-image-edit` / `boogu-image-edit-turbo` 与 `flux2-klein-image-edit-turbo`（含别名 `flux2-edit-turbo`、`image_flux2_klein_image_edit_turbo`）**必须传 `image`**（不传返回 400 `requires an input \`image\``）。boogu 系列擅长**改写 / 添加图像内的文字**，prompt 里可用「图1」指代输入图；flux2 klein 擅长**语义改写**（换背景/材质、增删物体）。两者输出尺寸都跟随输入图（工作流内缩放到 1MP），因此 `size` 不生效；编辑模型均不继承全局默认负向提示词（全局负向含 text / watermark，会与写字的用途冲突）。
+- **编辑模型（`image-to-image`）**：`boogu-image-edit` / `boogu-image-edit-turbo` 与 `flux2-klein-image-edit-turbo`（含别名 `flux2-edit-turbo`、`image_flux2_klein_image_edit_turbo`）**必须传图**（不传返回 400，文案统一是 `requires an input \`image\`` —— 多图档只传 `reference_images` 也算通过）；`qwen-image-2.1-edit` 是**多图**档，传 `image`（单图，等价第 1 张）或 `reference_images`（1–4 张，按序喂槽，超上限 400）皆可。boogu 系列擅长**改写 / 添加图像内的文字**，prompt 里可用「图1」指代输入图；flux2 klein 与 qwen edit 擅长**语义改写**（换背景/材质、增删物体）；klein 与 qwen edit 都能吃多张参考做组合，输出尺寸跟随输入图（boogu / klein 缩放到 1MP；qwen edit 按官方默认不重采样、直接跟随第 1 张参考图），因此 `size` 不生效；编辑模型均不继承全局默认负向提示词（全局负向含 text / watermark，会与写字的用途冲突）。
 - **跨模型误用**：给文生图模型传 `image` 会被拒绝，错误信息里列出所有支持输入图的模型名，agent 可据此自助换模型。
 
 ---
@@ -187,6 +187,7 @@ MCP 客户端配置（`mcp.json`）：
 | `seed` | int? | 不传/`-1` 随机；`0` 与正整数固定 |
 | `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 采样精调；`denoise` 为图生图重绘幅度 |
 | `image` | string\|string[]? | 图生图输入（base64 / dataURL / URL / 本地路径） |
+| `reference_images` | string[]? | **多图参考**输入（仅声明了 `references` 的图像模型：`qwen-image-2.1-edit` / `flux2-klein-image-edit-turbo`，各最多 4 张）；按序对应参考槽，超过该模型槽数返回 400；这类模型也可以不传 `image` |
 | `mask` | string? | 局部重绘遮罩 |
 | `mode` | string? | 生图模式；仅当模型在 `models.yaml` 声明了 `mode_choices` 时生效（当前内置模型均未声明） |
 | `workflow_overrides` | object? | 直接改写节点，如 `{"3.inputs.cfg": 4.5}` |
@@ -329,7 +330,9 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `z-image` / `z-image-turbo` | image | text-to-image | Z-Image base（30 步）/ Turbo（8 步，默认模型） |
 | `boogu-image-base` / `boogu-image-base-4step` / `boogu-image-turbo` | image | text-to-image | Boogu 文生图三档 |
 | **`boogu-image-edit`** / **`boogu-image-edit-turbo`** | image | **image-to-image** | 单图编辑，改图内文字首选（见 5.1） |
-| **`flux2-klein-image-edit-turbo`** | image | **image-to-image** | Flux2 Klein 9B 单图编辑，语义改写/换背景首选（见 5.1） |
+| **`flux2-klein-image-edit-turbo`** | image | **image-to-image** | Flux2 Klein 9B **多图参考**编辑（最多 4 张），语义改写/换背景首选（见 5.1） |
+| **`qwen-image-2.1`** | image | text-to-image | Qwen-Image 2.1 文生图，25 步（Qwen3-VL 文本编码）；原生 2K 档位，默认 1024x1024 |
+| **`qwen-image-2.1-edit`** | image | **image-to-image** | Qwen-Image 2.1 Edit：**多图参考**编辑，1–4 张参考图（`reference_images`）；输出尺寸跟随第 1 张参考图 |
 | **`utility-birefnet-remove-background`** | image | **image-to-image**（promptless） | 去背景独立工具，无 prompt，透明 PNG；专属端点 `/v1/images/remove-background` |
 | `minimax-h3` | video | text-to-video | H3 文生视频（base 30 步）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@30（网关无 `quality` 分档 —— 它只能表达 size + steps，与直接传参等价） |
 | `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，30 步（支持图/视频/音频参考） |
@@ -416,7 +419,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 |---|---|
 | `list_models` | 列出可用模型及其能力 / 模式 / 默认参数 / 别名 |
 | `generate_image` | 文生图；支持 `negative_prompt`/`seed`/`size`/`steps`/`cfg`/`workflow_overrides`(JSON 字符串)/`filename_prefix`/`mode`；返回 OpenAI 风格响应（含 `seed` 回显，url 已绝对化）；视频模型自动转视频链路。**编辑图片不要用本工具**（用 `edit_image` / `remove_background`） |
-| `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写），改图内文字传 `boogu-image-edit-turbo` / `boogu-image-edit`；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
+| `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写，最多 4 张参考），改图内文字传 `boogu-image-edit-turbo` / `boogu-image-edit`，**多图参考**传 `qwen-image-2.1-edit` / `flux2-klein-image-edit-turbo` + `reference_images`；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
 | `generate_video` | 文生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`reference_images|videos|audios`/`steps`/`attention`/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
 | `remove_background` | 图片去背景（BiRefNet，独立工具，无需提示词）；参数 `image`(本地路径/URL/dataURL/base64)、`response_format`(默认 url)、`filename_prefix` |
 | `get_task` | 查询异步任务状态与产物（含 `prompt_id`、是否有工作流快照、`output`、`error`） |
