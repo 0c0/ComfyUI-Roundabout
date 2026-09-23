@@ -335,6 +335,12 @@ async def generate(
     if values.get("height") is None:
         values["height"] = spec.defaults.get("height")
 
+    # 尺寸来源开关（Qwen 2.1 合并档）：有参考素材 ⇒ latent 跟随它（聚合节点自己出的 latent）；
+    # 一张都没有 ⇒ 走 width/height 直传的空 latent，这才是纯文生那一支。值由参考素材有无推导，
+    # 不是请求参数（模型只在 bindings 里声明落点，调用方无需也无法直传）。
+    if spec.binds("use_custom_size"):
+        values["use_custom_size"] = not (ref_imgs or images)
+
     # JOB_TIMEOUT=0（或不传正 timeout）→ 无限等待，仅由 ComfyUI 任务状态判定健康；
     # 否则沿用「模型自身 timeout 优先、回落全局 JOB_TIMEOUT」的旧逻辑（向后兼容）。
     timeout = 0.0 if (settings.job_timeout and settings.job_timeout <= 0) else (spec.timeout or settings.job_timeout)
@@ -664,6 +670,23 @@ def _validate_n(n: int) -> int:
     return n
 
 
+def _ref_images(spec: ModelSpec, req: ImageGenerationRequest | VideoGenerationRequest) -> list[str]:
+    """本次请求实际提供的参考图，含 `image` 的单图回落。
+
+    模型没有 `image` 绑定时（参考槽是唯一入口，如 Qwen 2.1 合并档 —— 它的第 1 槽不能由
+    binding 供图，否则槽被「受保护」而删不掉，纯文生那一支会把模板占位图当参考喂进去），
+    `image` 在这里充当第 1 张参考图。否则它会被上传却无处注入 —— 静默丢弃。
+    有 `image` 绑定的模型（klein / boogu）不受影响：它们的 `image` 由 bindings 落在自己
+    声明的落点上。
+
+    接线与剪枝必须用同一份判断，故共用本函数。
+    """
+    imgs = list(getattr(req, "reference_images", None) or [])
+    if not imgs and not spec.is_video and getattr(req, "image", None) and not spec.binds("image"):
+        imgs = [req.image]
+    return imgs
+
+
 def _prune_unused_references(
     wf: dict[str, Any],
     spec: ModelSpec,
@@ -734,7 +757,7 @@ def _prune_unused_references(
         if isinstance(node, dict) and isinstance(node.get("inputs"), dict):
             node["inputs"].pop(key, None)
 
-    imgs = req.reference_images or []
+    imgs = _ref_images(spec, req)
     slots = ref.get("slots") or []
     for i, nid in enumerate(ref.get("images", [])):
         if str(nid) in protected:
@@ -793,7 +816,7 @@ async def _wire_references(
     widget = {"image": "image", "video": "file", "audio": "audio"}
 
     # ---- 参考图：LoadImage.inputs.image ----
-    imgs = req.reference_images or []
+    imgs = _ref_images(spec, req)
     for i, nid in enumerate(ref.get("images", [])):
         if i >= len(imgs):
             break

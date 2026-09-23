@@ -344,44 +344,21 @@ models:
     - image_flux2_klein_image_edit_turbo
 
   # ===================== Qwen-Image 2.1 =====================
-  # 官方模板把真管线藏在 subgraph 里，这里是等价的 API 平铺版（节点 id 沿用官方）。
+  # 官方模板把真管线藏在 subgraph 里，这里是等价的 API 平铺版（节点 id 沿用官方，
+  # 含 468 = ComfySwitchNode）。文生与编辑是**同一支管线**，不是两支：
+  #   - 474（TextEncodeQwenImage21）自己就分路 —— 有参考图才把它们的 latent 拼进
+  #     conditioning，一张没有则保持纯文本 + 视觉 token（节点内 keep_vision）；
+  #   - 尺寸由 468 切：有参考图 → 474 出的 latent（跟随第 1 张参考图，resolution 缺省 0
+  #     = 不缩放、只取整到 32）；无参考图 → 456 空 latent（width/height 直传，可非方图）。
+  #     468.switch 由 gateway 按「本次有没有参考素材」推导（绑定名 use_custom_size）。
+  # 因此**不能**给第 1 槽配 `image` binding：槽一旦被 binding 保护就删不掉，纯文生那一支
+  # 会把模板占位图 `__REF_1__.png` 当参考喂进去。`image` 改由 pipeline 落成第 1 张参考图。
   qwen-image-2.1:
-    workflow: image_qwen_image_2_1_t2i.json
-    description: Qwen-Image 2.1 —— 文生图，25 步（Qwen3-VL 文本编码）；原生支持 2K，默认 1024x1024，要 2048x2048 用 workflow_overrides 或直接传 size
-    mode: image
-    output_node: '461'
-    timeout: 600
-    defaults:
-      negative_prompt: ''
-      steps: 25
-      cfg: 1
-      sampler_name: euler
-      scheduler: simple
-      width: 1024
-      height: 1024
-    bindings:
-      filename_prefix: 461.inputs.filename_prefix
-      prompt: 452.inputs.prompt
-      negative_prompt: 452.inputs.negative_prompt
-      seed: 458.inputs.seed
-      steps: 458.inputs.steps
-      cfg: 458.inputs.cfg
-      sampler_name: 458.inputs.sampler_name
-      scheduler: 458.inputs.scheduler
-      width: 456.inputs.width
-      height: 456.inputs.height
-    aliases:
-    - qwen-image-21
-    - qwen-image
-
-  # 多图参考编辑：参考槽走 reference_images（最多 4 张），输出尺寸跟随第一张参考图
-  # （官方模板 resolution 缺省 0 = 不缩放、只取整到 32；要固定尺寸改 474.inputs.resolution）。
-  # `image` 单图入口落在第 1 槽；capabilities 只写 image-to-image ⇒ 一个参考都不传会 400。
-  qwen-image-2.1-edit:
-    workflow: image_qwen_image_2_1_edit.json
-    description: Qwen-Image 2.1 Edit —— 多图参考编辑，25 步；参考图 1–4 张（走 reference_images，单图也可用 image）；输出尺寸跟随第一张参考图
+    workflow: image_qwen_image_2_1.json
+    description: Qwen-Image 2.1 —— 文生图 / 多图参考编辑同支（40 步，Qwen3-VL 文本编码）；不带参考图即纯文生（size 直传，原生 2K、默认 1024x1024），带 1–6 张参考图则跟随第 1 张参考图的尺寸
     mode: image
     capabilities:
+    - text-to-image
     - image-to-image
     output_node: '461'
     timeout: 600
@@ -392,21 +369,26 @@ models:
       - L2
       - L3
       - L4
+      - L5
+      - L6
       # TextEncodeQwenImage21 的参考槽是 COMFY_AUTOGROW_V3 ⇒ 键名 `images.image_N`（点号平铺）
       image_keys:
       - images.image_1
       - images.image_2
       - images.image_3
       - images.image_4
+      - images.image_5
+      - images.image_6
     defaults:
       negative_prompt: ''
-      steps: 25
+      steps: 40
       cfg: 1
       sampler_name: euler
       scheduler: simple
+      width: 1024
+      height: 1024
     bindings:
       filename_prefix: 461.inputs.filename_prefix
-      image: L1.inputs.image
       prompt: 474.inputs.prompt
       negative_prompt: 474.inputs.negative_prompt
       seed: 458.inputs.seed
@@ -414,7 +396,13 @@ models:
       cfg: 458.inputs.cfg
       sampler_name: 458.inputs.sampler_name
       scheduler: 458.inputs.scheduler
+      width: 456.inputs.width
+      height: 456.inputs.height
+      use_custom_size: 468.inputs.switch
     aliases:
+    - qwen-image-21
+    - qwen-image
+    - qwen-image-2.1-edit   # 旧名，向后兼容
     - qwen-image-edit
 
   # ===================== MiniMax H3 视频系列 =====================

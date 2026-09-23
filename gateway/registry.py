@@ -58,6 +58,11 @@ KNOWN_PARAMS = {
     # params.resolve_attention 翻译成「稀疏起始点」后落到 BlockSparseAttention.start_percent。
     # 内部名与对外枚举分开，是为了让 defaults / 档位表里存的始终是数值，不混入枚举语义。
     "sparse_start_percent",
+    # ---- 尺寸来源开关（Qwen 2.1 合并档）----
+    # 落到 ComfySwitchNode.switch：latent 要么跟参考图（聚合节点的 latent 输出），
+    # 要么用 width/height 直传的空 latent。值由 pipeline 按「有没有参考素材」推导，
+    # 不是请求参数 —— 出现在这里只是因为 bindings 白名单要放行它。
+    "use_custom_size",
 }
 
 CAP_TXT2IMG = "text-to-image"

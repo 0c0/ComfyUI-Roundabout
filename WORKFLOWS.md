@@ -27,16 +27,18 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 
 ### 可绑定的参数名（白名单）
 
-`prompt` `negative_prompt` `width` `height` `seed` `steps` `cfg` `sampler_name` `scheduler` `denoise` `batch_size` `image` `mask` `filename_prefix` `duration` `fps` `num_frames` `mode` `chunks` `head_chunks` `seq_threshold` `highres_tiling` `sparse_start_percent`
+`prompt` `negative_prompt` `width` `height` `seed` `steps` `cfg` `sampler_name` `scheduler` `denoise` `batch_size` `image` `mask` `filename_prefix` `duration` `fps` `num_frames` `mode` `chunks` `head_chunks` `seq_threshold` `highres_tiling` `sparse_start_percent` `use_custom_size`
 
 **白名单以外的键会被静默忽略**（只在启动日志里留一条 warning）。厂商特有参数用 `workflow_overrides` 传，不要在 `bindings` 里造名字。
+
+少数白名单键的值**不是请求参数，而是网关按本次请求推导出来的**：`sparse_start_percent`（由 `attention` 档位翻译）与 `use_custom_size`（有没有参考素材）。它们出现在白名单里只是为了让 `bindings` 放行 —— 调用方无需、也不该直接传。
 
 ### 常见落点
 
 | 参数 | 常见节点与字段 |
 |---|---|
 | `prompt` | `CLIPTextEncode.text`；`TextEncodeBooguEdit.prompt`；`TextEncodeMageFlowEdit.prompt`；视频链路的 `PrimitiveStringMultiline.value` |
-| `negative_prompt` | `CLIPTextEncode.text`（独立负向节点）；`TextEncodeBooguEdit.negative_prompt` |
+| `negative_prompt` | `CLIPTextEncode.text`（独立负向节点）；`TextEncodeBooguEdit.negative_prompt`；`TextEncodeQwenImage21.negative_prompt`。⚠️ 只有 `cfg > 1` 才真的参与计算（`cfg = 1` 会被 ComfyUI 的 cfg1 优化整条跳过，见 API.md §4） |
 | `width` / `height` | `EmptyLatentImage`、`EmptySD3LatentImage`、`EmptyFlux2LatentImage` 的 `width` / `height` |
 | `seed` | `KSampler.seed`、`RandomNoise.noise_seed` |
 | `steps` | `KSampler.steps`、`BasicScheduler.steps`、`Flux2Scheduler.steps` |
@@ -175,7 +177,7 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 
 参考图 / 参考视频 / 参考音频的槽位不是在 `bindings` 里，而是声明拓扑，让网关**动态删除未上传的槽位节点**（否则模板里引用的示例文件名不存在，会直接报错）：
 
-图像档的多图编辑走的也是这套（`qwen-image-2.1-edit` 的 4 个参考槽、`flux2-klein-image-edit-turbo` 的 4 条参考链路都声明在这里），与视频档的参考生成共用一套代码。
+图像档的多图编辑走的也是这套（`qwen-image-2.1` 的 6 个参考槽、`flux2-klein-image-edit-turbo` 的 4 条参考链路都声明在这里），与视频档的参考生成共用一套代码。
 
 ```yaml
     references:

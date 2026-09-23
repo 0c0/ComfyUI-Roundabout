@@ -20,16 +20,55 @@
       "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
     }
   },
-  "452": {
+  "469": {
+    "class_type": "QwenImage21Cache",
+    "inputs": {
+      "model": [
+        "451",
+        0
+      ],
+      "device": "auto",
+      "dtype": "default"
+    }
+  },
+  "474": {
     "class_type": "TextEncodeQwenImage21",
     "inputs": {
       "clip": [
         "453",
         0
       ],
+      "vae": [
+        "454",
+        0
+      ],
       "prompt": "",
       "negative_prompt": "",
-      "resolution": 1024
+      "resolution": 0,
+      "images.image_1": [
+        "L1",
+        0
+      ],
+      "images.image_2": [
+        "L2",
+        0
+      ],
+      "images.image_3": [
+        "L3",
+        0
+      ],
+      "images.image_4": [
+        "L4",
+        0
+      ],
+      "images.image_5": [
+        "L5",
+        0
+      ],
+      "images.image_6": [
+        "L6",
+        0
+      ]
     }
   },
   "456": {
@@ -40,27 +79,41 @@
       "batch_size": 1
     }
   },
+  "468": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "474",
+        2
+      ],
+      "on_true": [
+        "456",
+        0
+      ]
+    }
+  },
   "458": {
     "class_type": "KSampler",
     "inputs": {
       "model": [
-        "451",
+        "469",
         0
       ],
       "positive": [
-        "452",
+        "474",
         0
       ],
       "negative": [
-        "452",
+        "474",
         1
       ],
       "latent_image": [
-        "456",
+        "468",
         0
       ],
       "seed": 0,
-      "steps": 25,
+      "steps": 40,
       "cfg": 1,
       "sampler_name": "euler",
       "scheduler": "simple",
@@ -91,6 +144,42 @@
       "format": "png",
       "format.bit_depth": "8-bit",
       "format.input_color_space": "sRGB"
+    }
+  },
+  "L1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__REF_1__.png"
+    }
+  },
+  "L2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__REF_2__.png"
+    }
+  },
+  "L3": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__REF_3__.png"
+    }
+  },
+  "L4": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__REF_4__.png"
+    }
+  },
+  "L5": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__REF_5__.png"
+    }
+  },
+  "L6": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__REF_6__.png"
     }
   }
 }
