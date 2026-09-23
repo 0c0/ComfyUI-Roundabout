@@ -189,8 +189,15 @@ SERVER_INSTRUCTIONS = (
     "- h3-playbook skill (https://github.com/0c0/h3-playbook-skill): MiniMax "
     "H3 / FastH3 official playbook (prompt formula, generation modes, duration/resolution limits, "
     "reference-material rules).\n"
-    "For MiniMax H3 / FastH3 video prompts, load h3-playbook FIRST for the correct "
-    "prompt structure and limits; consult roundabout when unsure which tool or parameter to use."
+    "- qwen-image-prompt-writing skill (https://github.com/0c0/qwen-image2.1-prompt-writing-skill): the Qwen-Image-2.1 prompt contract "
+    "(t2i observer report / edit instruction + wh_ratio / ratio_follow) behind this server's "
+    "qwen-image-2.1 model.\n"
+    "- h3-prompt-writing skill (https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing): MiniMax's OWN writing guide for H3 prompt "
+    "fields, section order and timing notation (T2VA / I2VA / FL2VA / L2VA / Ref2VA) — maintained "
+    "by MiniMax, not by this server.\n"
+    "For MiniMax H3 / FastH3 prompts load h3-playbook FIRST for limits, then h3-prompt-writing for "
+    "the field format; for Qwen-Image-2.1 prompts load qwen-image-prompt-writing; consult "
+    "roundabout when unsure which tool or parameter to use."
 )
 
 mcp = MCPServer(name="comfyui-roundabout", version=VERSION, instructions=SERVER_INSTRUCTIONS)
@@ -557,6 +564,7 @@ async def get_skills() -> dict[str, Any]:
                 "install_url": "https://github.com/0c0/roundabout-skill",
                 "purpose": "本 MCP 服务器的总入口用法：模型选择、请求参数、排障、注册/下线工作流。",
                 "when_to_use": "拿不准用哪个工具/参数、要注册或排查工作流、或想看某模型能力边界时查它。",
+                "source": "roundabout",
                 "published": True,
             },
             {
@@ -565,11 +573,29 @@ async def get_skills() -> dict[str, Any]:
                 "purpose": "MiniMax H3 / FastH3 官方使用手册口径：提示词三段式公式、三类生成模式写法差异、"
                            "时长/分辨率/宽高比/输入上限。",
                 "when_to_use": "写 MiniMax H3 / FastH3 视频提示词前必查，确保提示词结构正确、不踩能力边界。",
+                "source": "roundabout",
+                "published": True,
+            },
+            {
+                "name": "qwen-image-prompt-writing",
+                "install_url": "https://github.com/0c0/qwen-image2.1-prompt-writing-skill",
+                "purpose": "Qwen-Image-2.1 官方 Prompt Enhancer 契约的手写替身：t2i 观察者报告与 edit 改写指令，产出 rewritten_prompt + wh_ratio / ratio_follow 结构。",
+                "when_to_use": "用网关 qwen-image-2.1 档出图/改图，或要把一句粗糙需求扩写成该模型能吃的描述前必查。",
+                "source": "roundabout",
+                "published": True,
+            },
+            {
+                "name": "h3-prompt-writing",
+                "install_url": "https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing",
+                "purpose": "MiniMax 官方的 H3 提示词写作指南：T2VA / I2VA / FL2VA / L2VA 的最终提示词结构，以及 Ref2VA 六段改写格式。",
+                "when_to_use": "写 H3 提示词时与 h3-playbook 配合：playbook 管能不能做，writing 管字段与段落怎么写。",
+                "source": "official",
                 "published": True,
             },
         ],
-        "note": "两 skill 均公开发布；其余专精 skill 不随本仓库发布，"
-                "不在此列出。安装方式：把 install_url 交给 agent 的 skill 安装流程（裸 URL 即可，无需指定目录）。",
+        "note": "source 区分两类：roundabout = 本网关维护，official = 模型厂商自己维护（内容以其仓库为准）。"
+                "其余专精 skill 不随本仓库发布，不在此列出。安装方式：把 install_url 交给 agent 的 skill "
+                "安装流程（裸 URL 即可，无需指定目录）。",
     }
 
 

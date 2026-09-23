@@ -438,7 +438,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `health` | 网关与 ComfyUI 后端健康状态 |
 | `get_view_url` | 返回可视化页面地址（`{url}`，浏览器直接打开）：浏览 input/output 资源 + 实时任务进度。用户问「生成的东西在哪看」「给我查看页面」时调用，把 `url` 原样给用户 |
 | `check_weights` | **权重体检**（只读、不占 GPU）：列出内置工作流当前缺失的权重文件与每条的下载命令，避免等到 `generate*` 报 400 才发现权重没下 |
-| `get_skills` | 返回配套 agent-skills 的清单与安装地址（`roundabout` / `h3-playbook`） |
+| `get_skills` | 返回配套 agent-skills 的清单与安装地址（`roundabout` / `h3-playbook` / `qwen-image-prompt-writing` / `h3-prompt-writing`），每条带 `source` 标明是本网关维护还是模型官方维护 |
 
 > ⚠️ MCP 工具的形参是**逐个手写**的，与 REST 的 pydantic 请求模型是两条独立路径，二者并不自动对齐。
 > MCP SDK 的参数模型沿用 pydantic 默认的 `extra="ignore"`：**传入未声明的字段不报错、被直接丢弃**。
