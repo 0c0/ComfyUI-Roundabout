@@ -59,6 +59,8 @@ def register_routes(app) -> None:
         ("GET", "/roundabout/admin/models/structured", admin.get_models_structured),
         ("PUT", "/roundabout/admin/models/structured", admin.put_models_structured),
         ("DELETE", "/roundabout/admin/models/{name}", admin.delete_model),
+        # ---- 调用结构自描述：模型 × 字段生效性 + 全局限制（前端渲染表单 / agent 选型）----
+        ("GET", "/roundabout/admin/tool-info", admin.get_tool_info),
         # ---- 可视化页面：浏览器直接浏览 input/output 资源 + 任务进度（MCP get_view_url 给出地址）----
         ("GET", "/roundabout/view", viewer.view_page),
         ("GET", "/roundabout/view/files", viewer.list_dir),

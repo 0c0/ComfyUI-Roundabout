@@ -18,7 +18,7 @@ import yaml
 from aiohttp import web
 from pydantic import ValidationError
 
-from . import weights
+from . import toolinfo, weights
 from .analyze import analyze_workflow, workflow_seed
 from .auth import verify
 from .comfy_client import ComfyClient
@@ -400,6 +400,23 @@ async def get_models_structured(request: web.Request) -> web.Response:
         "available_workflows": _list_available_workflows(),
         "known_params": sorted(KNOWN_PARAMS),
     })
+
+
+@gateway_handler
+async def get_tool_info(request: web.Request) -> web.Response:
+    """完整调用结构（模型 × 字段生效性 + 全局限制）。
+
+    与 MCP 的 `get_tool_info` 同源（同在 `gateway/toolinfo.py`，输出分别取 `build` /
+    `compact`）：这里默认给完整版供前端渲染表单，那边给裁剪版供 agent 选型。
+    `?view=compact` 可切到裁剪版；`&model=<名>` 限定单模型，`&fields=0` 省掉字段清单。
+    """
+    verify(request)
+    if (request.query.get("view") or "").lower() == "compact":
+        return web.json_response(toolinfo.compact(
+            model=request.query.get("model") or None,
+            include_fields=(request.query.get("fields") or "1") != "0",
+        ))
+    return web.json_response(toolinfo.build())
 
 
 def merge_model_entry(existing: dict[str, Any] | None, incoming: dict[str, Any]) -> dict[str, Any]:

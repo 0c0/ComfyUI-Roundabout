@@ -21,7 +21,10 @@ task_store 异步任务表、ComfyClient 后端客户端），本文件只做协
 
 工具清单：
     list_models       列出可用模型（模式 / 能力 / 默认参数）
+    get_tool_info     调用结构自描述：逐模型「哪些字段生效 / 区间 / 枚举 / 默认值」（选型前先看它）
     generate_image    文生图 / 图生图（同步或异步，异步返回 task 对象）
+    edit_image        提示词驱动的图像编辑（含多图参考）
+    remove_background 图片去背景（BiRefNet，无需提示词）
     generate_video    文生视频 / 参考生视频（同步或异步，异步返回 task 对象）
     get_task          查询异步任务状态与产物（含 prompt_id / 工作流快照）
     cancel_task       取消 ComfyUI 中运行的任务
@@ -29,7 +32,11 @@ task_store 异步任务表、ComfyClient 后端客户端），本文件只做协
     get_workflow      三层查找任务的工作流 JSON（队列 / history / 任务快照）
     reload            热加载 models.yaml 模型配置
     health            网关与后端健康状态
+    get_view_url      可视化页面地址（浏览 input/output 素材 + 任务进度）
     get_skills        返回配套 agent-skill 清单（安装 URL + 何时用），生成/注册前应先调用
+    check_weights     权重体检：列出缺失权重文件与下载命令
+
+工具描述只保留一句话定位；参数细节（逐模型生效性、区间、枚举、默认值）一律查 get_tool_info。
 """
 
 from __future__ import annotations
@@ -57,7 +64,7 @@ import sys  # noqa: E402
 #   - 嵌入 ComfyUI 进程：本模块属于节点包（__package__ 非空），走相对导入，与 __init__.py 共用同一份；
 #   - 直接运行脚本：没有包上下文，把节点根目录挂到 sys.path 后按顶层包导入。
 if __package__:
-    from .gateway import weights  # noqa: E402
+    from .gateway import toolinfo, weights  # noqa: E402
     from .gateway.comfy_client import ComfyClient  # noqa: E402
     from .gateway.config import settings  # noqa: E402
     from .gateway.errors import APIError  # noqa: E402
@@ -75,7 +82,7 @@ if __package__:
 else:
     if str(_ROOT) not in sys.path:
         sys.path.insert(0, str(_ROOT))
-    from gateway import weights  # noqa: E402
+    from gateway import toolinfo, weights  # noqa: E402
     from gateway.comfy_client import ComfyClient  # noqa: E402
     from gateway.config import settings  # noqa: E402
     from gateway.errors import APIError  # noqa: E402
@@ -204,27 +211,34 @@ async def list_models() -> list[dict[str, Any]]:
     return models
 
 
-# ---- 工具 2：generate_image ----------------------------------------------
+# ---- 工具 2：get_tool_info ------------------------------------------------
+@mcp.tool(
+    name="get_tool_info",
+    description=(
+        "调用结构自描述（本地直读运行期状态，不占 GPU、不触发生成）。"
+        "返回逐模型的**字段生效性**：每个请求字段的类型 / 区间 / 枚举 / 默认值 / "
+        "对本模型是否生效与不生效原因，外加参考槽数量、张数上限、尺寸档位与种子上限。"
+        "拿不准「这个模型能不能传某参数」「该用哪个模型」时先调它，不要猜。"
+        "完整版（含字段说明与尺寸预设表）见 REST GET /roundabout/admin/tool-info。"
+    ),
+)
+async def get_tool_info(model: str = "", include_fields: bool = True) -> dict[str, Any]:
+    return toolinfo.compact(model=model or None, include_fields=include_fields)
+
+
+# ---- 工具 3：generate_image ----------------------------------------------
 @mcp.tool(
     name="generate_image",
     description=(
-        "生成图像（文生图为主）。model 不传则用默认；支持 negative_prompt / seed / "
-        "size / steps / cfg 等精调参数；response_format=path 返回磁盘绝对路径。"
-        "返回 OpenAI 风格响应（created/data/seed 回显）。"
-        "【编辑已有图片不要用本工具】改图/去背景请用专门的 edit_image / remove_background 工具。"
-        "filename_prefix 指定落盘前缀（可含 \"/\" 建子目录），不传则用工作流模板自带前缀。"
+        "文生图 / 图生图。参数细节与逐模型生效性查 get_tool_info。"
+        "改图请用 edit_image，去背景请用 remove_background。"
     ),
 )
 async def generate_image(
     prompt: str,
     model: str = Field(
         default="",
-        description=(
-            "模型选择（不传=默认 z-image-turbo）。用途：z-image-turbo=8 步快速文生图（日常首选）；"
-            "z-image=30 步高质量；boogu-image-turbo / boogu-image-base-4step=4 步极速预览；"
-            "boogu-image-base=30 步高质量备选。"
-            "编辑已有图片请用 edit_image 工具，去背景用 remove_background 工具。"
-        ),
+        description="模型选择（不传=默认 z-image-turbo）；逐模型能力与默认参数查 get_tool_info。",
     ),
     n: int = 1,
     size: str = "",
@@ -267,19 +281,14 @@ async def generate_image(
     return _absolutize_urls(result.model_dump(exclude_none=True))
 
 
-# ---- 工具 3：edit_image ---------------------------------------------------
+# ---- 工具 4：edit_image ---------------------------------------------------
 @mcp.tool(
     name="edit_image",
     description=(
-        "编辑已有图片（提示词驱动的图像编辑，独立工具）。prompt 描述要改什么，"
-        "image 传待编辑的图（本地绝对路径 / http(s) URL / dataURL / base64 / 相对 ComfyUI input 的路径）。"
-        "model 可选：默认 flux2-klein-image-edit-turbo（语义改写首选：换背景/换材质/增删物体，指令跟随好）；"
-        "改写/添加图内文字传 model='boogu-image-edit-turbo'（快）或 'boogu-image-edit'（高质量）。"
-        "尺寸跟随输入图（输出约 1MP，size 不生效）。response_format=url/path/b64_json；"
-        "返回 OpenAI 风格响应。只做文生图请用 generate_image。"
-        "多图参考编辑传 reference_images（按序接入模型声明的参考槽，张数上限由模型决定）："
-        "flux2-klein-image-edit-turbo 与 qwen-image-2.1-edit 都最多 4 张；"
-        "这类模型可以不传 image，只用 reference_images。"
+        "提示词驱动的图像编辑（换背景 / 换材质 / 增删物体 / 改图内文字），含多图参考。"
+        "不传 model 默认 flux2-klein-image-edit-turbo；改图内文字用 boogu-image-edit-turbo（快）"
+        "或 boogu-image-edit（高质量）。纯文生图请用 generate_image。"
+        "各模型的可编辑性、参考槽数量与生效字段查 get_tool_info。"
     ),
 )
 async def edit_image(
@@ -322,14 +331,12 @@ async def edit_image(
     return _absolutize_urls(result.model_dump(exclude_none=True))
 
 
-# ---- 工具 4：remove_background --------------------------------------------
+# ---- 工具 5：remove_background --------------------------------------------
 @mcp.tool(
     name="remove_background",
     description=(
-        "图片去背景（BiRefNet 高精度抠图，独立工具，无需提示词）。"
-        "image 支持：本地绝对路径 / http(s) URL / dataURL / base64 / 相对 ComfyUI input 目录的路径。"
-        "输出透明背景 PNG；response_format=url 返回可访问链接，path 返回磁盘绝对路径，b64_json 返回 base64。"
-        "返回 OpenAI 风格响应（created/data/usage）。"
+        "图片去背景（BiRefNet 高精度抠图，无需提示词）。输出透明背景 PNG；"
+        "response_format 默认 url，可改 path（磁盘绝对路径）/ b64_json。"
     ),
 )
 async def remove_background(
@@ -347,43 +354,23 @@ async def remove_background(
     return _absolutize_urls(result.model_dump(exclude_none=True))
 
 
-# ---- 工具 5：generate_video ----------------------------------------------
+# ---- 工具 6：generate_video ----------------------------------------------
 @mcp.tool(
     name="generate_video",
     description=(
-        "生成视频（文生视频 / 参考生视频）。model 默认 minimax-h3；支持 duration(1-15s) / "
-        "fps / size(如 480p-16:9 / 576p-16:9 / 720p-16:9 / 768p-16:9 / 1080p-16:9 / 1440p-16:9=2560x1440，1440p 需大显存) / seed / reference_images(参考图，最多 6 张，"
-        "支持 base64/URL/本地路径) / reference_videos / reference_audios。"
-        "minimax-h3-lift / -lift-edit = base / edit 骨架 + 尾部确定性潜空间放大（输出画布 x1.875）；"
-        "fasth3=FastVideo 8 步蒸馏档（reference_images 传 0/1/2 张 = 文生 / 首帧 / 首尾帧）；"
-        "fasth3-edit=FastH3 参考生视频（6 图 + 3 视频 + 3 音频）；"
-        "filename_prefix 指定落盘前缀（可含 \"/\" 建子目录，不传则用模板默认）。"
-        "默认同步等待（长任务建议 background=pending 异步，再轮询 get_task）。"
-        "【写 MiniMax H3 / FastH3 提示词前，先调用 get_skills 工具拿到配套 skill 并安装，"
-        "再按 skill 里的官方口径写提示词】"
+        "文生视频 / 参考生视频（MiniMax H3 / FastH3 系列）。model 默认 minimax-h3；"
+        "lift 两支 = base/edit 骨架 + 尾部确定性放大（scale 指定倍率）；"
+        "fasth3 两支 = 8 步蒸馏档（更快，牺牲动作与音频保真，适合草稿）。"
+        "默认同步等待；长任务传 background=\"pending\" 异步，再用 get_task 轮询。"
+        "尺寸档位、参考槽数量与各字段生效性查 get_tool_info。"
+        "写 H3 / FastH3 提示词前先调 get_skills 装配套 skill。"
     ),
 )
 async def generate_video_tool(
     prompt: str,
     model: str = Field(
         default="minimax-h3",
-        description=(
-            "模型选择（MiniMax H3 / FastH3 系列）：minimax-h3=base 档（默认 1344x768@30；"
-            "草稿传 size=\"576p-16:9\" + steps=8）；"
-            "minimax-h3-edit=参考/编辑变体"
-            "（配合 reference_images/videos/audios 使用，最多 6 图 + 3 视频 + 3 音频）；"
-            "minimax-h3-lift-edit=edit 骨架 + 尾部确定性放大"
-            "（参考槽同为 6 图 + 3 视频 + 3 音频，输出画布 x1.875）；"
-            "fasth3=FastVideo FastH3 8 步蒸馏档（文生 / 首尾帧）；"
-            "fasth3-edit=FastH3 参考生视频（配合 reference_images/videos/audios，最多 6 图 + 3 视频 + 3 音频）；"
-            "minimax-h3-lift=H3 确定性放大档（原生 1344x768 采样 → 学习式 lift，默认输出 2520x1440，"
-            "构图零重掷、纹理强于白放大；scale 直接作为参数传（默认 1.875 → 2520x1440），"
-            "rho 精调用 workflow_overrides 点名 910.inputs.rho）。"
-            "attention 可选：sparse（默认，块稀疏注意力，更快、更省显存，"
-            "画质与致密高度一致、差异只在高频细节）/ dense（关闭稀疏换致密画质，更慢、更吃显存）。"
-            "仅 base 四支（minimax-h3 / -edit / -lift / -lift-edit）支持；FastH3 两支恒定稀疏、"
-            "传了报错。"
-        ),
+        description="模型选择（MiniMax H3 / FastH3 系列）；逐模型能力、尺寸档位与生效字段查 get_tool_info。",
     ),
     duration: float | None = None,
     fps: int | None = None,
@@ -396,7 +383,7 @@ async def generate_video_tool(
     steps: int | None = None,
     scale: float | None = Field(
         None, ge=1.0, le=4.0,
-        description="放大倍率（仅 minimax-h3-lift / -lift-edit）：输出 = 768p 画布 × scale，默认 1.875 → 2520x1440；其它模型传了报错",
+        description="输出 = 768p 画布 × scale（默认 1.875 → 2520x1440）；仅 minimax-h3-lift / -lift-edit，其它模型传了报 400。",
     ),
     attention: str = "",  # "sparse"（默认，稀疏加速）| "dense"（关闭稀疏，画质优先）；仅 base 四支
     background: str = "",  # "pending" 触发异步

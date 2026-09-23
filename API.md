@@ -20,7 +20,7 @@
                           │        ▼                                     │
                           │   内部 uvicorn (127.0.0.1, streamable-http)   │
                           │        端口由系统分配或按映射表指定          │
-                          │        = MCP Server (12 tools)               │
+                          │        = MCP Server (15 tools)               │
                           └───────────────┬──────────────────────────────┘
                                           │ 复用
                           ┌───────────────▼──────────────────────────────┐
@@ -162,7 +162,7 @@ MCP 客户端配置（`mcp.json`）：
 - **产物 url 绝对化**：`response_format=url` 时返回绝对 `http(s)` 地址。基准顺序：`PUBLIC_BASE_URL` → REST 用请求 host / MCP 用 `comfy_base_url`。若填 `b64_json` 则内联 base64；`file`/`path` 返回磁盘绝对路径。
 - **seed 回显与监控**：生成响应回显本次实际生效 `seed`；队列监控的 running / pending / tasks 三表均带 `seed` 字段，便于区分批量同 prompt 提交。
 - **取消语义**：pending 任务从 ComfyUI 队列移除；running 任务只能 `interrupt`（ComfyUI 无按 id 中断接口，会中断当前正在执行的那个）。本地任务标记为 `cancelled`，且 `complete/fail` 不再覆盖它（防后台协程冲掉）。
-- **编辑模型（`image-to-image`）**：`boogu-image-edit` / `boogu-image-edit-turbo` 与 `flux2-klein-image-edit-turbo`（含别名 `flux2-edit-turbo`、`image_flux2_klein_image_edit_turbo`）**必须传图**（不传返回 400，文案统一是 `requires an input \`image\`` —— 多图档只传 `reference_images` 也算通过）；`qwen-image-2.1-edit` 是**多图**档，传 `image`（单图，等价第 1 张）或 `reference_images`（1–4 张，按序喂槽，超上限 400）皆可。boogu 系列擅长**改写 / 添加图像内的文字**，prompt 里可用「图1」指代输入图；flux2 klein 与 qwen edit 擅长**语义改写**（换背景/材质、增删物体）；klein 与 qwen edit 都能吃多张参考做组合，输出尺寸跟随输入图（boogu / klein 缩放到 1MP；qwen edit 按官方默认不重采样、直接跟随第 1 张参考图），因此 `size` 不生效；编辑模型均不继承全局默认负向提示词（全局负向含 text / watermark，会与写字的用途冲突）。
+- **编辑模型（`image-to-image`）**：`boogu-image-edit` / `boogu-image-edit-turbo` 与 `flux2-klein-image-edit-turbo`（含别名 `flux2-edit-turbo`、`image_flux2_klein_image_edit_turbo`）**必须传图**（不传返回 400，文案统一是 `requires an input `image`` —— 多图档只传 `reference_images` 也算通过）；`qwen-image-2.1` 是**文生与多图编辑同一支**：6 个参考槽（超上限 400），**一张参考图都不传即纯文生**，是唯一不要求传图的图像模型。它没有 `image` 绑定，但保留了 `image` 单图入口 —— 由网关当作第 1 张参考图接入，等价 `reference_images[0]`（之所以不能给它配绑定：槽一旦被绑定保护就删不掉，纯文生那一支会把模板占位图当参考喂进去）。**klein 的 `image` 与 `reference_images[0]` 落在同一个参考槽上**：先按 `reference_images[i]` 逐槽写入、再套 `image` 的绑定，同节点后者覆盖前者 —— 所以**两者同时传时 `image` 静默失效**（要改第 1 张就写 `reference_images[0]`，别用 `image` 去覆盖它）。boogu 系列擅长**改写 / 添加图像内的文字**，prompt 里可用「图1」指代输入图；flux2 klein 与 qwen 擅长**语义改写**（换背景/材质、增删物体）；klein 与 qwen 都能吃多张参考做组合，输出尺寸跟随输入图（boogu / klein 缩放到 1MP；qwen 按官方默认不重采样、直接跟随第 1 张参考图），此时 `size` 不生效（qwen 只在纯文生那一支用 `size`）；编辑模型均不继承全局默认负向提示词（全局负向含 text / watermark，会与写字的用途冲突）。
 - **跨模型误用**：给文生图模型传 `image` 会被拒绝，错误信息里列出所有支持输入图的模型名，agent 可据此自助换模型。
 
 ---
@@ -183,11 +183,11 @@ MCP 客户端配置（`mcp.json`）：
 | `size` | string? | `"1024x1024"` / `"auto"` / 空=模型默认 |
 | `style` | string? | `vivid|natural`（在 models.yaml 的 `style_presets` 里映射为提示词后缀） |
 | `response_format` | enum? | `b64_json` / `url` / `file` / `path` |
-| `negative_prompt` | string? | 反向提示词 |
+| `negative_prompt` | string? | 反向提示词。**只在 `cfg > 1` 时参与计算**：`cfg = 1` 时 ComfyUI 走 cfg1 优化、整条负向分支根本不执行 —— 传了不报错也不生效。实测同一张图（同 seed 同 prompt）只改负向：`cfg=1` ⇒ MAE `0.0000`，`cfg=4` ⇒ `23.5`（阳性对照）。模板默认 `cfg=1` 的模型（如 `qwen-image-2.1`）要负向起作用就得抬 `cfg`。自动负向分流（`AUTO_SPLIT_NEGATIVE`）同理 |
 | `seed` | int? | 不传/`-1` 随机；`0` 与正整数固定 |
 | `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 采样精调；`denoise` 为图生图重绘幅度 |
-| `image` | string\|string[]? | 图生图输入（base64 / dataURL / URL / 本地路径） |
-| `reference_images` | string[]? | **多图参考**输入（仅声明了 `references` 的图像模型：`qwen-image-2.1-edit` / `flux2-klein-image-edit-turbo`，各最多 4 张）；按序对应参考槽，超过该模型槽数返回 400；这类模型也可以不传 `image` |
+| `image` | string? | 图生图**基图（单张）**，base64 / dataURL / URL / 本地路径。传数组返回 400（改走 `reference_images`）。有 `image` 绑定的模型（klein / boogu）由绑定写进模型声明的落点，**与 `reference_images[0]` 是同一个参考槽的两个入口**（见 §4），两者同时传时 `image` 被静默覆盖；没有 `image` 绑定的模型（`qwen-image-2.1`）由网关把它当作第 1 张参考图接入 |
+| `reference_images` | string[]? | **多图参考**输入（仅声明了 `references` 的图像模型：`qwen-image-2.1` 6 张 / `flux2-klein-image-edit-turbo` 4 张）；按序对应参考槽，超过该模型槽数返回 400。**klein / boogu 编辑档至少要有一张输入**（`image` 或 `reference_images`，谁都不给返回 400 `requires an input image`）；`qwen-image-2.1` 例外 —— 不给参考即纯文生 |
 | `mask` | string? | 局部重绘遮罩 |
 | `mode` | string? | 生图模式；仅当模型在 `models.yaml` 声明了 `mode_choices` 时生效（当前内置模型均未声明） |
 | `workflow_overrides` | object? | 直接改写节点，如 `{"3.inputs.cfg": 4.5}` |
@@ -241,7 +241,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 **promptless 模型**：`models.yaml` 里声明 `promptless: true` 的模型不绑 prompt、请求也不需要 prompt——适合纯工具类工作流（去背景、放大、转格式等）。走通用 `/v1/images/edits` 调用也可以（`prompt` 已改为可选字段），但绑定 prompt 的模型缺 prompt 仍会 400。
 
-**`flux2-klein-image-edit-turbo`（Flux2 Klein 9B）**：Qwen3-VL 文本编码 + ReferenceLatent 单参考图编辑，语义改写能力强（换背景/换材质/增删物体，指令跟随好），不擅长往图里写字。尺寸跟随输入图（`GetImageSize` → `EmptyFlux2LatentImage`），输入会先被 `ImageScaleToTotalPixels` 缩到 1MP，所以 `size` 不生效、输出约 1MP；负向提示词默认空（cfg=1 时负向不参与）。工作流模板由 4 参考图版本经 `flux2_api_refs.py --count 1` 收敛而来（4 参考图原件在 `user/default/workflows/`，其 `92:145.image` 的断链已修复）；**2–4 张参考图已在工作流层实测通过**（参考图主体的色彩/物体会被引入画面，prompt 需明确各参考图用途），但网关单次只收一张 `image`，多参考图需用该脚本直接提交 ComfyUI，或等网关支持多图入参。
+**`flux2-klein-image-edit-turbo`（Flux2 Klein 9B）**：Qwen3-VL 文本编码 + ReferenceLatent 链式参考编辑（网关侧开到 **4 个参考槽**），语义改写能力强（换背景/换材质/增删物体，指令跟随好），不擅长往图里写字。尺寸跟随输入图（`GetImageSize` → `EmptyFlux2LatentImage`），输入会先被 `ImageScaleToTotalPixels` 缩到 1MP，所以 `size` 不生效、输出约 1MP；负向提示词默认空（cfg=1 时负向不参与）。工作流模板由 4 参考图版本经 `flux2_api_refs.py --count 1` 收敛而来（4 参考图原件在 `user/default/workflows/`，其 `92:145.image` 的断链已修复）；**2–4 张参考图已在工作流层实测通过**（参考图主体的色彩/物体会被引入画面，prompt 需明确各参考图用途），网关侧对应 `reference_images` 的 4 个参考槽（`image` 绑在第 1 槽，只收单张）。
 
 ### 5.2 视频生成
 
@@ -331,8 +331,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `boogu-image-base` / `boogu-image-base-4step` / `boogu-image-turbo` | image | text-to-image | Boogu 文生图三档 |
 | **`boogu-image-edit`** / **`boogu-image-edit-turbo`** | image | **image-to-image** | 单图编辑，改图内文字首选（见 5.1） |
 | **`flux2-klein-image-edit-turbo`** | image | **image-to-image** | Flux2 Klein 9B **多图参考**编辑（最多 4 张），语义改写/换背景首选（见 5.1） |
-| **`qwen-image-2.1`** | image | text-to-image | Qwen-Image 2.1 文生图，25 步（Qwen3-VL 文本编码）；原生 2K 档位，默认 1024x1024 |
-| **`qwen-image-2.1-edit`** | image | **image-to-image** | Qwen-Image 2.1 Edit：**多图参考**编辑，1–4 张参考图（`reference_images`）；输出尺寸跟随第 1 张参考图 |
+| **`qwen-image-2.1`** | image | text-to-image / **image-to-image** | Qwen-Image 2.1：**文生与多图参考编辑同一支**（40 步，Qwen3-VL 文本编码）。不带参考图即纯文生，原生 2K 档位、默认 1024x1024（`size` 直传，支持非方图）；带 1–6 张参考图（`reference_images`）即多图编辑，输出尺寸跟随第 1 张参考图 |
 | **`utility-birefnet-remove-background`** | image | **image-to-image**（promptless） | 去背景独立工具，无 prompt，透明 PNG；专属端点 `/v1/images/remove-background` |
 | `minimax-h3` | video | text-to-video | H3 文生视频（base 30 步）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@30（网关无 `quality` 分档 —— 它只能表达 size + steps，与直接传参等价） |
 | `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，30 步（支持图/视频/音频参考） |
@@ -373,6 +372,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `GET /roundabout/admin/queue` | **队列监控合并视图**：ComfyUI running/pending + 网关 tasks，**每个条目含 `seed`** |
 | `GET /roundabout/admin/queue/workflow/{prompt_id}` | 三层查找工作流 JSON：队列 → history → 任务快照 |
 | `GET /roundabout/admin/weights` | **权重体检**：内置工作流引用的权重里当前缺哪些，每条的下载命令与目标目录（`?unreferenced=1` 附带当前无工作流引用的条目，`?mirror=modelscope` 换下载源） |
+| `GET /roundabout/admin/tool-info` | **调用结构自描述**：逐模型的字段生效性（类型 / 区间 / 枚举 / 默认值 / 是否生效 + 不生效原因）、参考槽数量、别名、生效默认值，加全局限制（张数上限、尺寸档位表、种子上限）。`?view=compact` 取裁剪版，`&model=<名>` 限定单模型，`&fields=0` 省掉字段清单 |
 | `GET /roundabout/admin/workflows` | 列出工作流文件（含校验状态、被哪些模型引用） |
 | `POST /roundabout/admin/workflows/upload` | 上传工作流 JSON（multipart；可选 `create_model` 自动建模型条目） |
 | `DELETE /roundabout/admin/workflows/{name}` | 删除工作流（被模型引用时 409） |
@@ -409,20 +409,26 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 ---
 
-## 7. MCP 网关（14 个工具）
+## 7. MCP 网关（15 个工具）
 
 **默认启用**（`MCP_ENABLED` 默认 `true`）：装好 `mcp` / `uvicorn`、重启 ComfyUI 即可用，不需要任何配置。
 
 传输：`streamable-http`，端点 `/mcp`（共享端口挂在 ComfyUI 端口，或 `MCP_HOST:<MCP_PORT>` 独立，端口由 `MCP_PORT` / `MCP_PORT_MAP` 决定）。与 REST 完全互通。
 
-工具分三类：**生成**（`generate_image` / `edit_image` / `remove_background` / `generate_video`）、**查询与控制**（`list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`）、**运维**（`reload` / `get_view_url` / `get_skills`）。
+工具分三类：**生成**（`generate_image` / `edit_image` / `remove_background` / `generate_video`）、**查询与控制**（`get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`）、**运维**（`reload` / `get_view_url` / `get_skills`）。
+
+> 工具的 `description` **只保留一句话定位**；参数细节（逐模型生效性、区间、枚举、默认值、参考槽
+> 数量、尺寸档位）一律查 `get_tool_info`。该工具与 REST 的 `/roundabout/admin/tool-info` 同源，
+> 都由 `gateway/toolinfo.py` 从**运行期状态**推导（`registry` 的绑定与 `references` 拓扑、
+> `schemas.py` 的字段约束、`params.py` 的档位表、`settings` 的上限），因此不写散文、不会漂移。
 
 | 工具 | 说明 |
 |---|---|
+| `get_tool_info` | **调用结构自描述**（只读、不占 GPU）：逐模型列出每个请求字段的类型 / 区间 / 枚举 / 默认值 / **对本模型是否生效与原因**，加参考槽数量、张数上限、尺寸档位与种子上限。可选 `model` 限定单模型、`include_fields=false` 省掉字段清单。**拿不准「这个模型能不能传某参数」「该用哪个模型」时先调它** |
 | `list_models` | 列出可用模型及其能力 / 模式 / 默认参数 / 别名 |
 | `generate_image` | 文生图；支持 `negative_prompt`/`seed`/`size`/`steps`/`cfg`/`workflow_overrides`(JSON 字符串)/`filename_prefix`/`mode`；返回 OpenAI 风格响应（含 `seed` 回显，url 已绝对化）；视频模型自动转视频链路。**编辑图片不要用本工具**（用 `edit_image` / `remove_background`） |
-| `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写，最多 4 张参考），改图内文字传 `boogu-image-edit-turbo` / `boogu-image-edit`，**多图参考**传 `qwen-image-2.1-edit` / `flux2-klein-image-edit-turbo` + `reference_images`；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
-| `generate_video` | 文生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`reference_images|videos|audios`/`steps`/`attention`/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
+| `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写），改图内文字传 `boogu-image-edit-turbo` / `boogu-image-edit`；**多图参考**传 `reference_images`（klein 4 槽 / qwen 6 槽）；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
+| `generate_video` | 文生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`reference_images|videos|audios`/`steps`/`attention`/`scale`/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
 | `remove_background` | 图片去背景（BiRefNet，独立工具，无需提示词）；参数 `image`(本地路径/URL/dataURL/base64)、`response_format`(默认 url)、`filename_prefix` |
 | `get_task` | 查询异步任务状态与产物（含 `prompt_id`、是否有工作流快照、`output`、`error`） |
 | `cancel_task` | 取消任务：`task_id` 非空取消指定任务（pending 移出队列 / running 中断）；**空则中断 ComfyUI 当前执行任务** |
@@ -439,6 +445,8 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 > 所以遇到「文档里有的参数传了却没生效」时，先核对本表 —— 参数名不在上面就是被静默吃掉了。
 > 覆盖度由 `tests/test_mcp_param_coverage.py` 守护（REST 新增字段而 MCP 漏暴露、或加了形参忘了透传，都会直接测试失败）。
 > 另注：MCP 未暴露的字段仍可走 REST 端点传（两条路径最终汇入同一个 pipeline）。
+> 增删 MCP 工具要同步 `tests/test_mcp_default_on.py` 的 `tools/list` 计数断言、本节的表与计数、
+> 以及 `toolinfo._endpoints()["mcp"]`（后者由 `tests/test_toolinfo.py` 核对）。
 
 ### 7.1 可视化页面（view.html）
 
@@ -546,6 +554,7 @@ call generate_video(prompt="a cat walking in rain", model="minimax-h3", size="57
 | 生成后 `url` 是相对路径 | 未设 `PUBLIC_BASE_URL` 且请求 host 不可达客户端 | 设 `PUBLIC_BASE_URL=http://<对外地址>` |
 | MCP `list_models` 看不到刚加的模型 / 新改的 `models.yaml` | 旧版 `mcp_server.py` 用绝对导入 `gateway.*`，与节点侧相对导入形成**两份 registry** | 升级代码后重启（已修，见 `tests/test_mcp_import_identity.py`）；平时加模型后 `POST /admin/reload` 即可 |
 | MCP 创建的异步任务在 `/v1/videos/tasks/{id}` 或任务面板里查不到 | 同上（`task_store` 也是两份） | 同上 |
+| 生成报 400 `Value not in list (vae_name: '...')`，但工作流 JSON 里已经是新文件名 | **工作流模板是进程启动时读进内存的** —— 改了 `workflows/*.json` 后进程仍持旧图（`registry.load` 期 `json.loads`，之后不再读盘）。该报错指的就是内存里那份旧值 | `POST /admin/reload`（只重读 yaml + workflows，不用重启）。改动 `.py` 才需要重启 |
 | 视图页看不到刚生成的产物 | 页面每 4 秒探测一次；或标签页在后台（暂停探测）；或产物落在 input/output 之外 | 手动点「刷新」；确认产物目录是 ComfyUI 的 output |
 | 任务面板一直空 | 后端未重启（旧代码只在异步视频时记任务）；或标签页后台 | `handlers.py` / `tasks.py` / `viewer.py` 改动需重启 ComfyUI |
 | 生成报 400 `ComfyUI rejected the workflow: ... Value not in list (...)` | **权重文件没装**，不是参数写错 —— ComfyUI 的 combo 校验把本地已装的列成了候选值 | 该报错已被网关改写成下载指引（文件名 + 目标目录 + `curl`）；想知道还缺哪些用 `GET /roundabout/admin/weights` 或 MCP `check_weights`。逐条来源见 [README 权重清单](README.md) |

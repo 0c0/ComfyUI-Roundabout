@@ -110,7 +110,7 @@ git clone https://github.com/0c0/h3-playbook-skill.git <agent 的 skills 目录>
 **两套接入层，共享同一个引擎**
 
 - **OpenAI 兼容 REST**：`/v1/images/generations`（文生图 / 图生图）、`/v1/images/edits`（multipart 标准编辑）、`/v1/images/remove-background`（去背景）、`/v1/videos/generations`（视频，支持异步）。返回格式可选 `b64_json` / `url` / `file` / `path`，可直接替换 OpenAI 官方地址使用。
-- **MCP 服务（14 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `generate_video`，查询类 `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills`。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 拿产物」全流程。
+- **MCP 服务（15 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `generate_video`，查询类 `get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills`。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 拿产物」全流程。
 - **共享端口**：MCP 端点 `/mcp` 直接挂在 ComfyUI 同一端口（`http://<comfyui>:8188/mcp`），不用额外开端口、不用另起进程；REST 与 MCP 共用同一份注册表、生成链路与任务表。
 
 **声明式模型注册**
@@ -284,10 +284,9 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 文生图 | `z-image` | 30 步高质量 |
 | 文生图 | `boogu-image-turbo` / `boogu-image-base-4step` | 4 步极速预览 |
 | 文生图 | `boogu-image-base` | 30 步高质量 |
-| 文生图 | `qwen-image-2.1` | 25 步；原生 2K 档位，默认 1024x1024（要更大传 `size`） |
+| 文生图 / 多图编辑 | `qwen-image-2.1` | 40 步，**文生与多图参考编辑同一支**：不带参考图即纯文生（原生 2K 档位，默认 1024x1024，尺寸直传 `size`）；带 1–6 张参考图（`reference_images`）即多图编辑，输出尺寸跟随第 1 张参考图 |
 | 图像编辑 | `flux2-klein-image-edit-turbo` | 语义改写首选：换背景 / 换材质 / 增删物体（`edit_image` 默认）；**多图参考**最多 4 张 |
 | 图像编辑 | `boogu-image-edit` / `boogu-image-edit-turbo` | 擅长改写 / 添加**图内文字**，30 步 / 6 步 |
-| 图像编辑 | `qwen-image-2.1-edit` | **多图参考编辑**：1–4 张参考图（`reference_images` 按序喂槽；单图也可直接传 `image`，二者等价）；输出尺寸跟随第 1 张参考图 |
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
 | 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base / edit 均 30 步），支持 6 图 + 3 视频 + 3 音频参考；低显存分块按档位自适应（`vram_adaptive`） |
 | 视频 | `minimax-h3-lift` | **base 骨架 + 确定性放大**：30 步原生采样 → 学习式 latent lift（1344x768 × scale 1.875 = 2520x1440），构图零重掷、纹理最强；支持首尾帧（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）；产物落 `video/H3_Lift`；`scale` 是请求参数（默认 1.875 → 2520x1440）；`rho` 精调走 `workflow_overrides`（`910.inputs.rho`） |
@@ -295,7 +294,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 视频 | `fasth3` | FastVideo FastH3 8 步蒸馏档；文生 / 首尾帧生视频（`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧）。首尾帧走**关键帧**槽 `first_frame` / `last_frame`，与自成一族的 `minimax-h3` 走参考图槽不是一条路。**定位草稿 / 快周转**：官方口径 8 步最优、改步数掉质量，且 09-20 分频实测其高频段整体过量（**不是 49/50 步的无损替代**），要最大质量用 `minimax-h3` |
 | 视频 | `fasth3-edit` | 同权重改用 Ref2VA 聚合节点做参考生视频，参考槽全套 6 图 + 3 视频 + 3 音频；产物落 `video/FastH3`（不混进 `video/MiniMax_H3`）。⚠️ **占位档**：官方未蒸馏 Ref2VA，与 `fasth3` 共用同一份 fl2v 权重，参考效果未标定 |
 
-- 编辑类模型**必须传图**：单图模型传 `image`；**多图模型**（`qwen-image-2.1-edit` / `flux2-klein-image-edit-turbo`，各最多 4 张）传 `reference_images` 按序喂槽，单图也可以直接传 `image`（等价第 1 张）。输出尺寸跟随输入图（boogu / klein 缩放到 1MP；qwen edit 按官方默认不做重采样，直接跟随第 1 张参考图），`size` 不生效。
+- 编辑类模型**必须传图**：单图模型传 `image`；**多图模型**（`flux2-klein-image-edit-turbo` 4 张 / `qwen-image-2.1` 6 张）传 `reference_images` 按序喂槽，单图也可以直接传 `image`（等价第 1 张）。输出尺寸跟随输入图（boogu / klein 缩放到 1MP；qwen 按官方默认不做重采样，直接跟随第 1 张参考图），此时 `size` 不生效 —— `qwen-image-2.1` 是**文生与编辑同一支**，一张参考图都不传就是纯文生，那一支才用 `size`。
 - 给文生图模型传 `image` 会被拒绝，错误信息里会列出所有支持输入图的模型名。
 - 别名与绑定路径见 `models.yaml` 与 [API.md §5.4](API.md)。
 
@@ -468,7 +467,7 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 | `boogu-image-base` / `-base-4step` / `-turbo` | `diffusion_models/` `boogu_image_base_fp8_scaled.safetensors`、`boogu_image_turbo_hotfix_int8_convrot.safetensors` · `loras/` `boogu_image_turbo_hotfix_lora_rank_128_bf16.safetensors` · `text_encoders/` `qwen3vl_8b_fp8_scaled.safetensors` · `vae/` `flux1_vae_bf16.safetensors` |
 | `boogu-image-edit` / `-edit-turbo` | `diffusion_models/` `boogu_image_edit_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_8b_fp8_scaled.safetensors` · `vae/` `flux1_vae_bf16.safetensors` ·（turbo 另需）`loras/` `boogu_image_turbo_hotfix_lora_rank_128_bf16.safetensors` |
 | `flux2-klein-image-edit-turbo` | `diffusion_models/` `flux-2-klein-9b-kv-fp8.safetensors` · `text_encoders/` `qwen3vl_8b_fp8_scaled.safetensors` · `vae/` `flux2-vae.safetensors` |
-| `qwen-image-2.1` / `qwen-image-2.1-edit` | `diffusion_models/` `qwen_image_2.1_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_8b_int8_convrot.safetensors` · `vae/` `qwen_image_2.1_vae_bf16.safetensors` |
+| `qwen-image-2.1` | `diffusion_models/` `qwen_image_2.1_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_8b_int8_convrot.safetensors` · `vae/` `qwen_image_2.1_vae_bf16.safetensors` |
 | `utility-birefnet-remove-background` | `background_removal/` `birefnet.safetensors` |
 | `minimax-h3` / `minimax-h3-edit` | `diffusion_models/` `minimax_h3_fl2va_int8_convrot.safetensors`、`minimax_h3_ref2va_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` · `vae/` `minimax_h3_video_vae_int8_convrot.safetensors`、`minimax_h3_audio_vae_fp32.safetensors` |
 | `minimax-h3-lift` / `-lift-edit` | 同 `minimax-h3` / `minimax-h3-edit`，另需 `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors`（**不需要** `loras/`） |
