@@ -64,7 +64,7 @@ import sys  # noqa: E402
 #   - 嵌入 ComfyUI 进程：本模块属于节点包（__package__ 非空），走相对导入，与 __init__.py 共用同一份；
 #   - 直接运行脚本：没有包上下文，把节点根目录挂到 sys.path 后按顶层包导入。
 if __package__:
-    from .gateway import toolinfo, weights  # noqa: E402
+    from .gateway import board, toolinfo, weights  # noqa: E402
     from .gateway.comfy_client import ComfyClient  # noqa: E402
     from .gateway.config import settings  # noqa: E402
     from .gateway.errors import APIError  # noqa: E402
@@ -82,7 +82,7 @@ if __package__:
 else:
     if str(_ROOT) not in sys.path:
         sys.path.insert(0, str(_ROOT))
-    from gateway import toolinfo, weights  # noqa: E402
+    from gateway import board, toolinfo, weights  # noqa: E402
     from gateway.comfy_client import ComfyClient  # noqa: E402
     from gateway.config import settings  # noqa: E402
     from gateway.errors import APIError  # noqa: E402
@@ -526,6 +526,9 @@ async def health() -> dict[str, Any]:
         "视频播放），以及异步生成任务的实时进度（排队中/执行中/已完成/失败，含耗时与产物预览）。"
         "当用户问「生成的东西在哪看」「给我一个查看页面」「有没有界面」「任务进度怎么看」"
         "或想浏览素材目录时，调用本工具并把 url 原样给用户。"
+        "**要不要给用户这个地址由你自己判断**：用户在等结果、一次出了很多张、或他明显没在看页面时，"
+        "主动给（或直接替他打开）；他已经在页面上盯着、或只是顺手改一张图，就不必打扰——"
+        "不要变成每生成一次就复读一遍地址的噪音。"
     ),
 )
 async def get_view_url() -> dict[str, Any]:
@@ -536,6 +539,96 @@ async def get_view_url() -> dict[str, Any]:
         payload["url"] = f"{url}?key={settings.api_keys[0]}"
         payload["auth_required"] = True
     return payload
+
+
+@mcp.tool(
+    name="pin_view_item",
+    description=(
+        "把一张产出卡片钉到可视化页面的**任务看板**（顶部那块无限画布），用户在页面上一眼看全，"
+        "不必你逐个把文件拉给他看。产物来源三选一：`url` / `path` / `task_id`（优先级依次降低）。"
+        "`x`/`y` 给了就摆在那个坐标（画布可平移缩放、坐标允许负数），不给就自动排到空位 —— "
+        "要表达顺序、对照或分组（例如分镜 1-5 横排、A/B 两列、按角色分区）就自己给坐标，"
+        "卡片尺寸用 `w`/`h`。没有产物也能钉纯文本卡（`note` + kind=text），用来写进度说明或小结。"
+        "一轮钉完、或准备切换任务时，用 clear_view_board 清空（内容会存进历史，随时可回看）。"
+        "**钉完自己判断要不要帮用户打开页面**：用户在等结果 / 一次钉了很多 / 他没在看页面时，"
+        "调 get_view_url 把地址给他（或替他打开）；他正盯着页面看、或只是补一张图，就不必打扰。"
+    ),
+)
+async def pin_view_item(
+    title: str = "",
+    url: str = "",
+    path: str = "",
+    task_id: str = "",
+    note: str = "",
+    kind: str = "",
+    model: str = "",
+    x: float | None = None,
+    y: float | None = None,
+    w: float | None = None,
+    h: float | None = None,
+) -> dict[str, Any]:
+    """钉一张卡片到任务看板。详见工具描述；坐标缺省时后端自动找空位。"""
+    item = board.pin(
+        title=title, url=url, path=path, task_id=task_id, note=note,
+        kind=kind, model=model, x=x, y=y, w=w, h=h,
+    )
+    payload: dict[str, Any] = {
+        "ok": True,
+        "id": item["id"],
+        "item": item,
+        "count": len(board.snapshot()),
+        "view_url": view_url(),
+    }
+    if not item.get("url") and item.get("path"):
+        # 产物在 input/output 之外，页面没法预览，明确告诉 agent 别以为钉成功了
+        payload["warning"] = (
+            f"产物不在 ComfyUI 的 input/output 目录内，页面上只能看到路径、点不开：{item['path']}"
+        )
+    return payload
+
+
+@mcp.tool(
+    name="clear_view_board",
+    description=(
+        "清空任务看板。内容会**存进历史归档**，随时可在页面「历史」里回看，或用 "
+        "get_view_board_history 列出 —— 所以换任务时尽管清，不会丢。"
+        "什么时候清：这一轮成果已经交付完、或要切到另一个任务时，别把上一轮的卡片留在旁边造成混淆。"
+        "`label` 给这份归档起个名字（如「第 1 轮 · 分镜草图」），回看时好认。"
+    ),
+)
+async def clear_view_board(label: str = "") -> dict[str, Any]:
+    """清空看板并归档。返回归档摘要（id / label / 条数）。"""
+    entry = board.archive(label)
+    return {
+        "ok": True,
+        "cleared": entry["count"] if entry else 0,
+        "archived": (
+            {"id": entry["id"], "label": entry["label"], "count": entry["count"]} if entry else None
+        ),
+        "count": len(board.snapshot()),
+    }
+
+
+@mcp.tool(
+    name="get_view_board_history",
+    description=(
+        "列出任务看板的历史归档（每次 clear_view_board 都会存一份），用来回顾上一轮钉过什么、"
+        "或给用户做总结时还原当时都出了哪些东西。传 `archive_id` 看某一份的完整卡片"
+        "（含标题、地址、note 与画布坐标）；不传就只列摘要（id / label / 时间 / 张数）。"
+    ),
+)
+async def get_view_board_history(archive_id: str = "", limit: int = 20) -> dict[str, Any]:
+    """历史归档：不传 id 列摘要，传了就回该份的完整卡片。"""
+    if archive_id:
+        entry = next((h for h in board._history if h["id"] == archive_id), None)
+        if not entry:
+            return {"ok": False, "error": f"No archived board with id '{archive_id}'."}
+        return {"ok": True, "archive": entry}
+    rows = [
+        {"id": h["id"], "label": h["label"], "created": h["created"], "count": h["count"]}
+        for h in reversed(board._history)
+    ][:max(1, limit)]
+    return {"ok": True, "history": rows, "count": len(board._history)}
 
 
 # ---- 工具 13：get_skills -------------------------------------------------

@@ -190,6 +190,72 @@
   }
   .lightbox .cap a { color: #9dc0ff; }
 </style>
+
+  /* ---- 任务看板：一块可平移/缩放的无限画布，卡片由 agent 钉入并排布 ---- */
+  section.board { margin-bottom: 14px; }
+  section.board > h2 .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  section.board > h2 .acts .btn { padding: 3px 10px; font-size: 12px; }
+  .canvas-wrap {
+    position: relative; height: 420px; overflow: hidden;
+    background: repeating-linear-gradient(45deg, #fafbfc, #fafbfc 12px, #f4f6f8 12px, #f4f6f8 24px);
+    border-top: 1px solid var(--border); cursor: grab; touch-action: none;
+  }
+  .canvas-wrap.grabbing { cursor: grabbing; }
+  .canvas-world { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+  .board-card {
+    position: absolute; display: flex; flex-direction: column; overflow: hidden;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--card);
+    box-shadow: 0 1px 3px rgba(16,20,28,.08); cursor: pointer;
+    transition: border-color .12s, box-shadow .12s;
+  }
+  .board-card:hover { border-color: var(--accent); box-shadow: 0 3px 10px rgba(37,99,235,.16); }
+  .board-card .bc-thumb {
+    flex: 1; min-height: 0; background: #eceef1; display: flex;
+    align-items: center; justify-content: center; overflow: hidden; color: var(--muted);
+  }
+  .board-card .bc-thumb img, .board-card .bc-thumb video { width: 100%; height: 100%; object-fit: cover; }
+  .board-card .bc-thumb svg { width: 30px; height: 30px; opacity: .55; }
+  .board-card .bc-meta { padding: 5px 8px; font-size: 12px; border-top: 1px solid var(--border); background: var(--card); }
+  .board-card .bc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .board-card .bc-sub { color: var(--muted); font-size: 11px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .board-card.is-note .bc-thumb { align-items: flex-start; justify-content: flex-start; padding: 9px 10px; }
+  .board-card.is-note .bc-note { font-size: 12px; line-height: 1.5; color: var(--text); overflow: hidden; }
+  .bc-del {
+    position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; line-height: 1;
+    border: 0; border-radius: 50%; background: rgba(31,35,40,.55); color: #fff;
+    font-size: 14px; cursor: pointer; opacity: 0; transition: opacity .12s;
+  }
+  .board-card:hover .bc-del { opacity: 1; }
+  .bc-del:hover { background: var(--fail); }
+  .canvas-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: 13px; text-align: center; padding: 0 24px; }
+  .canvas-empty[hidden] { display: none; }
+  .canvas-hint { padding: 6px 14px 0; color: var(--muted); font-size: 12px; }
+  .history {
+    position: absolute; inset: 0; z-index: 3; background: rgba(246,247,249,.97);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .history[hidden] { display: none; }
+  .history-head {
+    display: flex; align-items: center; gap: 8px; padding: 9px 14px;
+    border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600;
+  }
+  .history-head .btn { margin-left: auto; padding: 3px 10px; font-size: 12px; }
+  .hist-list { overflow-y: auto; padding: 6px 0; }
+  .hist-row {
+    display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid var(--border);
+  }
+  .hist-row .hl { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hist-row .hm { color: var(--muted); font-size: 12px; flex: none; }
+  .hist-row .sp { flex: 1; }
+  .hist-row .btn { padding: 3px 10px; font-size: 12px; }
+  .hist-empty { color: var(--muted); font-size: 13px; padding: 24px; text-align: center; }
+  .viewing-bar {
+    display: flex; align-items: center; gap: 10px; padding: 7px 14px;
+    background: var(--accent-soft); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--accent);
+  }
+  .viewing-bar[hidden] { display: none; }
+  .viewing-bar .btn { margin-left: auto; padding: 3px 10px; font-size: 12px; }
 </head>
 <body class="tasks-collapsed" data-page-node-id="N3jDFDZRRIHYVK1iurF0Jg">
 
@@ -205,6 +271,32 @@
 </header>
 
 <main data-page-node-id="fnHUc98MK0S6WRbYvYAQG8">
+
+  <section class="panel board" id="boardPanel" hidden>
+    <h2>
+      任务看板<span class="count" id="boardCount"></span>
+      <span class="acts">
+        <button class="btn" id="boardHistoryBtn">历史<span id="boardHistoryN"></span></button>
+        <button class="btn" id="boardFitBtn">复位</button>
+        <button class="btn" id="boardClearBtn">清空并归档</button>
+      </span>
+    </h2>
+    <div class="viewing-bar" id="boardViewing" hidden>
+      <span id="boardViewingText">正在查看历史归档</span>
+      <button class="btn" id="boardBackBtn">返回当前看板</button>
+    </div>
+    <div class="canvas-wrap" id="canvasWrap">
+      <div class="canvas-world" id="canvasWorld"></div>
+      <div class="canvas-empty" id="boardEmpty" hidden>
+        看板是空的 —— agent 拿到产出后会钉到这里（可拖拽平移、滚轮缩放）。
+      </div>
+      <div class="history" id="boardHistory" hidden>
+        <div class="history-head">历史归档<button class="btn" id="boardHistoryClose">关闭</button></div>
+        <div class="hist-list" id="boardHistoryList"></div>
+      </div>
+    </div>
+    <div class="canvas-hint">拖拽平移 · 滚轮缩放 · 点卡片看大图 · 卡片右上角 × 移除单张</div>
+  </section>
   <section class="panel" data-page-node-id="K2EaJ58EtVu3IC5amy6oHo">
     <h2 data-page-node-id="cubbnU3dbJIC7H9v8oGt0M"><span class="crumbs" id="crumbs" data-page-node-id="uRnOCKezveV3kCAnOd0iMe"></span><span class="count" id="fileCount" data-page-node-id="P2j9njuQ68844OtFxGQszE"></span></h2>
     <div class="panel-body" data-page-node-id="r7hu7FRJqDqGXCHEBj3LiK">
@@ -583,6 +675,195 @@ $('taskList').addEventListener('click', e => {
   openLightbox({ kind, name: fname, url: u });
 });
 
+// ---- 任务看板：无限画布（agent 钉入 + 排布，清空即归档可回看）----------------
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+const authQ = () => KEY ? '?key=' + encodeURIComponent(KEY) : '';
+
+const view = { x: 40, y: 20, s: 1 };        // 画布平移/缩放
+let boardItems = [];
+let boardSig = '';
+let viewingArchive = null;                  // 非 null = 正在看某份归档，暂停被轮询覆盖
+
+const applyView = () => {
+  $('canvasWorld').style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.s})`;
+};
+
+// 签名比对：内容没变就不重绘，否则每 2 秒的轮询会把用户正在拖的视图打回原点
+const cardSig = i => `${i.id}:${i.x},${i.y},${i.w},${i.h}:${i.title}:${i.note || ''}`;
+const boardSignature = items => items.map(cardSig).join('|');
+
+function renderBoard(items) {
+  const world = $('canvasWorld');
+  world.innerHTML = '';
+  items.forEach(it => {
+    const el = document.createElement('div');
+    el.className = 'board-card' + (it.kind === 'text' ? ' is-note' : '');
+    el.style.cssText = `left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px`;
+    const thumb =
+      it.kind === 'image' ? `<img src="${esc(it.thumb || it.url)}" alt="">`
+        : it.kind === 'video' ? `<video src="${esc(it.url)}" muted preload="metadata"></video>`
+          : it.kind === 'audio' ? AUDIO_SVG
+            : it.kind === 'text' ? `<div class="bc-note">${esc(it.note || it.title)}</div>`
+              : FILE_SVG;
+    el.innerHTML = `<div class="bc-thumb">${thumb}</div>
+      <div class="bc-meta">
+        <div class="bc-title" title="${esc(it.title)}">${esc(it.title)}</div>
+        <div class="bc-sub">${esc(it.model || it.kind)}${it.note && it.kind !== 'text' ? ' · ' + esc(it.note) : ''}</div>
+      </div>
+      <button class="bc-del" data-del="${esc(it.id)}" title="移除这张">×</button>`;
+    el.onclick = e => {
+      if (e.target.closest('.bc-del') || dragMoved) return;    // 拖过画布就不算点击
+      if (it.url) openLightbox({ kind: it.kind, name: it.title, url: it.url });
+    };
+    world.appendChild(el);
+  });
+  $('boardEmpty').hidden = items.length > 0;
+}
+
+// 复位：把全部卡片框进可视区（首次渲染与点「复位」时用）
+function fitBoard(items) {
+  const wrap = $('canvasWrap');
+  const rect = wrap.getBoundingClientRect();
+  if (!items.length || !rect.width) { view.x = 40; view.y = 20; view.s = 1; applyView(); return; }
+  const pad = 24;
+  const minX = Math.min(...items.map(i => i.x)), minY = Math.min(...items.map(i => i.y));
+  const maxX = Math.max(...items.map(i => i.x + i.w)), maxY = Math.max(...items.map(i => i.y + i.h));
+  const w = Math.max(1, maxX - minX), h = Math.max(1, maxY - minY);
+  view.s = Math.max(0.2, Math.min(1.4, Math.min((rect.width - pad * 2) / w, (rect.height - pad * 2) / h)));
+  view.x = (rect.width - w * view.s) / 2 - minX * view.s;
+  view.y = (rect.height - h * view.s) / 2 - minY * view.s;
+  applyView();
+}
+
+async function loadBoard() {
+  if (viewingArchive) return;                 // 看历史时不覆盖
+  const r = await fetch(`${API}/board${authQ()}`);
+  const d = await r.json().catch(() => null);
+  if (!d || d.error) return;
+  const items = d.items || [];
+  // 空看板也留着面板（只要有历史归档）：否则「历史」按钮随面板一起隐藏，就再也回看不了了
+  $('boardPanel').hidden = items.length === 0 && !d.history_count;
+  $('boardCount').textContent = `${items.length} 张`;
+  $('boardHistoryN').textContent = d.history_count ? ` (${d.history_count})` : '';
+  const sig = boardSignature(items);
+  if (sig === boardSig) return;
+  const first = boardSig === '';
+  boardSig = sig;
+  boardItems = items;
+  renderBoard(items);
+  if (first) fitBoard(items);                 // 只在内容从无到有时自动取景，之后尊重用户视角
+}
+
+// ---- 平移 / 缩放 ----
+let dragging = false, dragMoved = false, lastPX = 0, lastPY = 0;
+const wrapEl = $('canvasWrap');
+wrapEl.addEventListener('mousedown', e => {
+  if (e.target.closest('.board-card .bc-thumb video')) return;
+  dragging = true; dragMoved = false; lastPX = e.clientX; lastPY = e.clientY;
+  wrapEl.classList.add('grabbing');
+});
+window.addEventListener('mousemove', e => {
+  if (!dragging) return;
+  const dx = e.clientX - lastPX, dy = e.clientY - lastPY;
+  if (Math.abs(dx) + Math.abs(dy) > 3) dragMoved = true;
+  lastPX = e.clientX; lastPY = e.clientY;
+  view.x += dx; view.y += dy; applyView();
+});
+window.addEventListener('mouseup', () => { dragging = false; wrapEl.classList.remove('grabbing'); });
+wrapEl.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = wrapEl.getBoundingClientRect();
+  const px = e.clientX - rect.left, py = e.clientY - rect.top;
+  const s2 = Math.max(0.2, Math.min(3, view.s * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+  // 以指针位置为锚点缩放：指针下的画布坐标保持不动
+  view.x = px - (px - view.x) * (s2 / view.s);
+  view.y = py - (py - view.y) * (s2 / view.s);
+  view.s = s2;
+  applyView();
+}, { passive: false });
+
+// ---- 卡片上的 ×：删单条 ----
+$('canvasWorld').addEventListener('click', e => {
+  const b = e.target.closest('[data-del]');
+  if (!b) return;
+  e.stopPropagation();
+  fetch(`${API}/board/items/${b.dataset.del}${authQ()}`, { method: 'DELETE' })
+    .then(() => { boardSig = ''; loadBoard(); });
+});
+
+$('boardFitBtn').onclick = () => fitBoard(boardItems);
+$('boardClearBtn').onclick = async () => {
+  if (!boardItems.length) return;
+  await fetch(`${API}/board${authQ()}`, { method: 'DELETE' });
+  boardSig = '';
+  loadBoard();
+  loadHistory();
+};
+
+// ---- 历史归档：看 / 载入 ----
+async function loadHistory() {
+  const r = await fetch(`${API}/board/history${authQ()}`);
+  const d = await r.json().catch(() => null);
+  const list = $('boardHistoryList');
+  if (!d || d.error) { list.innerHTML = '<div class="hist-empty">加载失败</div>'; return; }
+  const rows = d.history || [];
+  if (!rows.length) {
+    list.innerHTML = '<div class="hist-empty">还没有归档 —— 清空看板时会把内容存到这里。</div>';
+    return;
+  }
+  list.innerHTML = rows.map(h => `<div class="hist-row">
+      <span class="hl" title="${esc(h.label)}">${esc(h.label)}</span>
+      <span class="hm">${h.count} 张 · ${fmtTime(h.created)}</span>
+      <span class="sp"></span>
+      <button class="btn" data-view="${esc(h.id)}">查看</button>
+      <button class="btn" data-load="${esc(h.id)}">载入</button>
+    </div>`).join('');
+}
+
+$('boardHistoryBtn').onclick = () => {
+  $('boardHistory').hidden = !$('boardHistory').hidden;
+  if (!$('boardHistory').hidden) loadHistory();
+};
+$('boardHistoryClose').onclick = () => { $('boardHistory').hidden = true; };
+
+$('boardHistoryList').addEventListener('click', async e => {
+  const v = e.target.closest('[data-view]');
+  const l = e.target.closest('[data-load]');
+  if (!v && !l) return;
+  const id = (v || l).dataset.view || (v || l).dataset.load;
+  if (v) {
+    const r = await fetch(`${API}/board/history/${id}${authQ()}`);
+    const d = await r.json().catch(() => null);
+    if (!d || d.error) return;
+    viewingArchive = id;
+    boardItems = (d.archive && d.archive.items) || [];
+    boardSig = boardSignature(boardItems);
+    renderBoard(boardItems);
+    fitBoard(boardItems);
+    $('boardViewing').hidden = false;
+    $('boardViewingText').textContent = `正在查看历史归档「${(d.archive || {}).label || ''}」`;
+    $('boardHistory').hidden = true;
+    $('boardPanel').hidden = false;
+  } else {
+    await fetch(`${API}/board/history/${id}/load${authQ()}`, { method: 'POST' });
+    viewingArchive = null;
+    $('boardViewing').hidden = true;
+    boardSig = '';
+    loadBoard();
+    loadHistory();
+  }
+});
+
+$('boardBackBtn').onclick = () => {
+  viewingArchive = null;
+  $('boardViewing').hidden = true;
+  boardSig = '';
+  loadBoard();
+};
+
+
 async function loadTasks() {
   const r = await fetch(`${API}/tasks${KEY ? '?key=' + encodeURIComponent(KEY) : ''}`);
   const d = await r.json().catch(() => null);
@@ -653,7 +934,7 @@ function setTab() {
   $('tabOutput').classList.toggle('on', root === 'output');
   $('tabInput').classList.toggle('on', root === 'input');
 }
-$('refresh').onclick = () => { loadFiles(); loadTasks(); };
+$('refresh').onclick = () => { loadFiles(); loadTasks(); boardSig = ''; loadBoard(); };
 
 // 视口尺寸（或任务面板展开导致网格变窄）变化后重新量每页条数。
 // 延迟到布局动画（padding-right .18s）结束再量，否则量到的是过渡中的旧宽度。
@@ -675,7 +956,9 @@ $('taskHeader').onclick = () => {
 
 loadFiles();
 loadTasks();
+loadBoard();
 setInterval(() => { if ($('auto').checked) loadTasks(); }, 2000);
+setInterval(() => { if ($('auto').checked) loadBoard(); }, 2000);
 setInterval(() => { if ($('auto').checked) probeFiles(); }, 4000);
 </script>
 </body>

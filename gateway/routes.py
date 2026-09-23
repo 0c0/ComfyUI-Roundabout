@@ -13,7 +13,7 @@ import logging
 
 from aiohttp import web
 
-from . import admin, handlers, viewer
+from . import admin, board, handlers, viewer
 from .config import settings
 from .registry import registry
 
@@ -65,6 +65,14 @@ def register_routes(app) -> None:
         ("GET", "/roundabout/view", viewer.view_page),
         ("GET", "/roundabout/view/files", viewer.list_dir),
         ("GET", "/roundabout/view/tasks", viewer.tasks),
+        # ---- 任务看板：agent 把产出钉到画布上，换任务时自己清空（清空即归档，可回看）----
+        ("GET", "/roundabout/view/board", board.board),
+        ("POST", "/roundabout/view/board/items", board.pin_item),
+        ("DELETE", "/roundabout/view/board/items/{id}", board.remove_item),
+        ("DELETE", "/roundabout/view/board", board.clear_board),
+        ("GET", "/roundabout/view/board/history", board.history),
+        ("GET", "/roundabout/view/board/history/{id}", board.history_detail),
+        ("POST", "/roundabout/view/board/history/{id}/load", board.history_load),
     ]
     registered = 0
     for method, path, h in route_specs:

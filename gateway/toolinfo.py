@@ -235,12 +235,20 @@ def _endpoints() -> dict[str, list[str]]:
             "DELETE /v1/images/tasks/{id}",
             "GET /roundabout/admin/tool-info",
             "GET /roundabout/view",
+            "GET /roundabout/view/board",
+            "POST /roundabout/view/board/items",
+            "DELETE /roundabout/view/board/items/{id}",
+            "DELETE /roundabout/view/board",
+            "GET /roundabout/view/board/history",
+            "GET /roundabout/view/board/history/{id}",
+            "POST /roundabout/view/board/history/{id}/load",
         ],
         "mcp": [
             "list_models", "generate_image", "edit_image", "remove_background",
             "generate_video", "get_task", "cancel_task", "queue_status",
             "get_workflow", "reload", "health", "get_view_url", "get_skills",
             "check_weights", "get_tool_info",
+            "pin_view_item", "clear_view_board", "get_view_board_history",
         ],
     }
 

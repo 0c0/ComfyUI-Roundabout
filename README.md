@@ -118,7 +118,7 @@ git clone https://github.com/0c0/qwen-image2.1-prompt-writing-skill.git <agent �
 **两套接入层，共享同一个引擎**
 
 - **OpenAI 兼容 REST**：`/v1/images/generations`（文生图 / 图生图）、`/v1/images/edits`（multipart 标准编辑）、`/v1/images/remove-background`（去背景）、`/v1/videos/generations`（视频，支持异步）。返回格式可选 `b64_json` / `url` / `file` / `path`，可直接替换 OpenAI 官方地址使用。
-- **MCP 服务（15 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `generate_video`，查询类 `get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills`。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 拿产物」全流程。
+- **MCP 服务（18 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `generate_video`，查询类 `get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills`，看板类 `pin_view_item` / `clear_view_board` / `get_view_board_history`。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 钉到看板」全流程。
 - **共享端口**：MCP 端点 `/mcp` 直接挂在 ComfyUI 同一端口（`http://<comfyui>:8188/mcp`），不用额外开端口、不用另起进程；REST 与 MCP 共用同一份注册表、生成链路与任务表。
 
 **声明式模型注册**
@@ -135,6 +135,7 @@ git clone https://github.com/0c0/qwen-image2.1-prompt-writing-skill.git <agent �
 **看得见、管得了**
 
 - **可视化页面** `http://<comfyui>:8188/roundabout/view`：浏览 `input/` `output/` 资源（缩略图分批懒加载、自适应分页、产物自动同步），右下角悬浮任务面板实时显示 ComfyUI 队列 + 网关任务表，产物一键弹层预览。
+- **任务看板**：页面顶部一块无限画布，agent 把产出钉上去并按语义排布（分镜顺序 / A/B 对照 / 按角色分组），用户一眼看全；清空即归档进历史，随时回看或载回。
 - **ComfyUI 内管理面板**：菜单「Roundabout」提供工作流管理（上传 / 校验 / 删除）、模型配置（结构化编辑）、队列监控（含 seed，便于区分批量提交）。
 - **任务留痕**：同步与异步生成都记一条（状态 / 耗时 / seed / 产物地址），终态记录保留 6 小时。
 
@@ -570,7 +571,7 @@ MCP_PORT_MAP=[8188,888],[8189,999]
 ```
 ComfyUI-Roundabout/
 ├── __init__.py            # ComfyUI 节点入口（启动网关、加载模型）
-├── mcp_server.py          # MCP 服务（14 工具）+ 共享端口嵌入启动
+├── mcp_server.py          # MCP 服务（18 工具）+ 共享端口嵌入启动
 ├── gateway/               # REST 网关
 │   ├── config.py          # 配置（.env / 环境变量）
 │   ├── registry.py        # models.yaml 解析、绑定校验、热加载

@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.3.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.4.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -20,7 +20,7 @@
                           │        ▼                                     │
                           │   内部 uvicorn (127.0.0.1, streamable-http)   │
                           │        端口由系统分配或按映射表指定          │
-                          │        = MCP Server (15 tools)               │
+                          │        = MCP Server (18 tools)               │
                           └───────────────┬──────────────────────────────┘
                                           │ 复用
                           ┌───────────────▼──────────────────────────────┐
@@ -409,7 +409,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 ---
 
-## 7. MCP 网关（15 个工具）
+## 7. MCP 网关（18 个工具）
 
 **默认启用**（`MCP_ENABLED` 默认 `true`）：装好 `mcp` / `uvicorn`、重启 ComfyUI 即可用，不需要任何配置。
 
@@ -439,6 +439,9 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `get_view_url` | 返回可视化页面地址（`{url}`，浏览器直接打开）：浏览 input/output 资源 + 实时任务进度。用户问「生成的东西在哪看」「给我查看页面」时调用，把 `url` 原样给用户 |
 | `check_weights` | **权重体检**（只读、不占 GPU）：列出内置工作流当前缺失的权重文件与每条的下载命令，避免等到 `generate*` 报 400 才发现权重没下 |
 | `get_skills` | 返回配套 agent-skills 的清单与安装地址（`roundabout` / `h3-playbook` / `qwen-image-prompt-writing` / `h3-prompt-writing`），每条带 `source` 标明是本网关维护还是模型官方维护 |
+| `pin_view_item` | 把产出钉到可视化页面的**任务看板**（顶部无限画布）：产物来源 `url` / `path` / `task_id` 三选一（优先级依次降低），`x`/`y` 给坐标（不给则自动排到空位），`w`/`h` 定尺寸，`note` 可写说明。返回 `view_url`；**要不要把页面地址给用户由 agent 自行判断** |
+| `clear_view_board` | 清空看板并**归档进历史**（`label` 给这份归档命名）。这一轮交付完、或要切换任务时调用；归档可在页面「历史」里回看，也可用 `get_view_board_history` 取回 |
+| `get_view_board_history` | 列出看板的历史归档（每次清空存一份，最近 20 份）；传 `archive_id` 返回该份完整卡片（含地址、note 与坐标），用于回顾上一轮产出、给用户做总结 |
 
 > ⚠️ MCP 工具的形参是**逐个手写**的，与 REST 的 pydantic 请求模型是两条独立路径，二者并不自动对齐。
 > MCP SDK 的参数模型沿用 pydantic 默认的 `extra="ignore"`：**传入未声明的字段不报错、被直接丢弃**。
@@ -461,6 +464,8 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 > 队列区与任务表是两层信息：任务表记录「谁提交了什么、成了什么」，队列反映「此刻 ComfyUI 在算什么」。
 > 后端不可达时队列区标记不可达，任务表照常显示。
 
+- **任务看板**：页面顶部一块可平移 / 缩放的**无限画布**，由 agent 把产出**钉**上去（可按语义排布：分镜顺序、A/B 对照、按角色分组），用户在页面上一眼看全，不必 agent 逐个把文件拉出来。卡片点开走同一个灯箱；右上角 × 移除单张。agent 换任务时调 `clear_view_board` 清空 —— **清空即归档**，随时可在页面「历史」里回看或载回当前看板。看板落在节点 `.cache/board.json`，重启 ComfyUI 后仍在。
+
 支撑端点：
 
 | 端点 | 说明 |
@@ -468,6 +473,13 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `GET /roundabout/view` | 页面本身（读 `web/view.html`） |
 | `GET /roundabout/view/files?root=output\|input&path=子/目录&offset=0&limit=120&sort=mtime&order=desc` | 列目录，返回 `crumbs`/`dirs`(全量，按名升序在前)/`files(name,size,mtime,kind,url,thumb)` + 分页元信息 `total`/`dir_count`/`offset`/`limit`/`has_more`/`sort`/`order`。`limit` 默认 120、上限 500；`sort=mtime`(默认，新的在前)\|`name`，`order=desc`(默认)\|`asc`；扫描硬上限 20000 条，超出置 `truncated` |
 | `GET /roundabout/view/tasks` | 任务快照：`tasks[]`（`status`(OpenAI 枚举) / `model` / `elapsed` / `prompt_id` / `url`(已绝对化) / `path`(产物在 input/output 之外时给原路径，不可点) / `error`）+ `queue`（ComfyUI `running`/`pending` 的 prompt_id 列表，`reachable` 标记）。产物地址基准：`PUBLIC_BASE_URL` → 请求 origin，保证远程浏览器可打开；结果是磁盘路径时自动翻译成 `/view?filename=..&type=..` |
+| `GET /roundabout/view/board` | 当前看板：`items[]`（`id`/`title`/`kind`(image\|video\|audio\|file\|text)/`url`/`thumb`/`note`/`model`/`x`/`y`/`w`/`h`/`origin`/`task_id`）+ `count` + `history_count`。前端每 2 秒轮询 |
+| `POST /roundabout/view/board/items` | 钉一张卡片。产物来源 `url` \| `path` \| `task_id` **三选一**（优先级依次降低，未知 task_id 返回 404 `task_not_found`）；`x`/`y` 给坐标（不给则按网格自动找空位，坐标允许负数）、`w`/`h` 定尺寸、`note` 写说明；都没有则退化为纯文本卡（`kind=text`），全空返回 400。产物在 input/output 之外时只回显 `path`（页面点不开） |
+| `DELETE /roundabout/view/board/items/{id}` | 删单条（卡片右上角 ×）。不存在返回 404 `board_item_not_found` |
+| `DELETE /roundabout/view/board?label=xxx` | 清空当前看板并**归档**（`label` 给这份归档命名，缺省按时间）。空看板不产生归档；返回 `cleared` 与 `archived` |
+| `GET /roundabout/view/board/history` | 历史归档摘要列表（`id`/`label`/`created`/`count`，新的在前；最多保留 20 份） |
+| `GET /roundabout/view/board/history/{id}` | 某份归档的完整卡片（含坐标，可直接画出来），顺带返回当前看板快照。不存在返回 404 `archive_not_found` |
+| `POST /roundabout/view/board/history/{id}/load` | 把某份归档载回当前看板。当前看板非空会**先自动归档**，不静默覆盖（`auto_archived` 回该归档 id） |
 
 > 目录解析走 `folder_paths`，根目录固定为 input/output 两个，`..` 穿越返回 400 `bad_path`。
 > 鉴权开启时浏览器无法带自定义头，页面支持 `?key=<api_key>`；`get_view_url` 会自动把 key 拼进返回的 url。
