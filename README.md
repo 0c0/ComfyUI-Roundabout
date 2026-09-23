@@ -85,23 +85,31 @@ agent 全程**看不到也用不着**工作流 JSON。它只传语义参数，�
 |---|---|---|
 | [`roundabout-skill`](https://github.com/0c0/roundabout-skill) | 本插件的**总入口**：选模型、走 REST / MCP 生成、把工作流接进网关或下线、权重下载、排障运维、核对「文档与实现是否一致」 | agent 要驱动本机 ComfyUI 出图出视频，或要改 `models.yaml` / 加工作流时 |
 | [`h3-playbook-skill`](https://github.com/0c0/h3-playbook-skill) | MiniMax H3 的官方口径：提示词公式、三类生成模式（文生 / 首尾帧 / 全能参考）的写法差异、素材用途标签、时长与宽高比边界 | 写 / 改 H3 提示词，或判断某个需求 H3 能不能做时 |
+| [`qwen-image2.1-prompt-writing-skill`](https://github.com/0c0/qwen-image2.1-prompt-writing-skill) | Qwen-Image-2.1 官方 Prompt Enhancer 契约的手写替身：t2i 观察者报告与 edit 改写指令，产出 `rewritten_prompt` + `wh_ratio` / `ratio_follow` 结构 | 用网关 `qwen-image-2.1` 档出图 / 改图，或要把一句粗糙需求扩写成该模型能吃的描述前必查 |
+| [`h3-prompt-writing`](https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing) **（MiniMax 官方）** | H3 提示词写作：T2VA / I2VA / FL2VA / L2VA 的最终结构，以及 Ref2VA 六段改写格式 | 写 H3 提示词时与上面的 playbook 配合：playbook 管能不能做，这份管字段与段落怎么写 |
 
 装法就是把这个目录放进 agent 的 skills 目录（目录名与 skill 的 `name` 保持一致）：
 
 ```bash
 git clone https://github.com/0c0/roundabout-skill.git <agent 的 skills 目录>/roundabout
 git clone https://github.com/0c0/h3-playbook-skill.git <agent 的 skills 目录>/h3-playbook
+git clone https://github.com/0c0/qwen-image2.1-prompt-writing-skill.git <agent 的 skills 目录>/qwen-image-prompt-writing
 ```
+
+第四份 `h3-prompt-writing` 是**模型官方 skill**，它**不是独立仓库**，而是 MiniMax-H3 仓库里的一个子目录（`skills/h3-prompt-writing`），所以没有对应的整仓 clone 命令 —— 按下面的 tree 链接进去取该目录即可（该仓体量不小，别整仓克隆）。
 
 **一句话安装**（把这句丢给 agent 即可，装在哪、怎么落位由它按自家约定处理）：
 
 ```text
 安装这个skill https://github.com/0c0/roundabout-skill
 安装这个skill https://github.com/0c0/h3-playbook-skill
+安装这个skill https://github.com/0c0/qwen-image2.1-prompt-writing-skill
+安装这个skill https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing
 ```
 
-> 两个 skill 都按「先自己探、探不到再问」的方式取 ComfyUI 路径与端口，**不含硬编的内网地址**，换机器可直接用。
-> 两者边界互不重叠：`roundabout-skill` 只管网关这一侧（怎么调用、怎么注册、怎么排障），`h3-playbook-skill` 只管 H3 本身（提示词结构、素材用途、能力边界）。
+> 前三份由本仓库维护（`MCP get_skills` 里标 `source="roundabout"`），最后一份是 **MiniMax 官方**（`source="official"`）——用的时候留意：它的内容更新由 MiniMax 决定，我们不跟进。
+> 都按「先自己探、探不到再问」的方式取 ComfyUI 路径与端口，**不含硬编的内网地址**，换机器可直接用。
+> 边界互不重叠：`roundabout` 只管网关这一侧（怎么调用、怎么注册、怎么排障）；剩余三份只管模型侧，其中 H3 占两份（playbook 管能力边界与能不能做，writing 管提示词字段与段落怎么写），Qwen-Image-2.1 占一份。
 
 ---
 
