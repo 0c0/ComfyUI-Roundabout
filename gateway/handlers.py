@@ -134,6 +134,9 @@ async def generate_tracked(
         _record_failure(task_id, exc)
         raise
     task_store.complete(task_id, result.model_dump(exclude_none=True))
+    # 注入放在落库之后：任务表里那条记录不必自引用自己的 id。
+    # 回给调用方的 task_id 让「生成 → 钉卡」能只传 id（后端按任务反查产物）。
+    result.task_id = task_id
     return result
 
 
@@ -146,6 +149,7 @@ async def generate_video_tracked(req: VideoGenerationRequest):
         _record_failure(task_id, exc)
         raise
     task_store.complete(task_id, result.model_dump(exclude_none=True))
+    result.task_id = task_id  # 同 generate_tracked：落库后再注入，任务表不自引用
     return result
 
 

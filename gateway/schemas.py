@@ -22,7 +22,9 @@ class ImageGenerationRequest(BaseModel):
     n: int = Field(1, ge=1, description="生成张数")
     size: str | None = Field(None, description='如 "1024x1024" / "auto"')
     style: str | None = Field(None, description="vivid / natural（可在 models.yaml 里映射为提示词后缀）")
-    response_format: Literal["b64_json", "url", "file", "path"] | None = Field(None)
+    response_format: Literal["b64_json", "url", "file", "path"] | None = Field(
+        None, description='产物形态，默认 "url"（可打开的地址）；需要内联字节才传 b64_json'
+    )
     user: str | None = Field(None)
     background: str | None = None
     output_format: str | None = None
@@ -79,6 +81,10 @@ class ImageResponse(BaseModel):
     # 回显本次实际使用的种子：n=1 时为整数；n>1（非 batch）时为整数列表（每项对应一张图）。
     # 不传 seed 时网关随机生成，这里回显随机出的实际值，便于复现。
     seed: int | list[int] | None = None
+    # 本次请求在网关任务表里的 id —— 同步链路也留一条记录，于是「生成完再钉卡」可以
+    # 只传 `task_id` 让后端自己反查产物，不必由调用方拼地址。异步链路同 id 见
+    # GET /v1/videos/tasks/{id}（那边回执的顶层字段名叫 `id`）。
+    task_id: str | None = None
 
 
 # ============================================================================
@@ -192,6 +198,8 @@ class VideoResponse(BaseModel):
     # 回显已接入的「image 类」参考素材（按 response_format 输出 url / path / b64_json）。
     # 仅当请求携带 reference_images 时存在；reference_videos / reference_audios 仅接入不回显。
     references: list[dict[str, Any]] | None = None
+    # 同 ImageResponse.task_id：本次同步请求在网关任务表里的 id，可交给 pin_view_item 反查产物。
+    task_id: str | None = None
 
 
 class ModelCard(BaseModel):

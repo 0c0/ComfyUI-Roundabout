@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.10.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.11.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -182,7 +182,7 @@ MCP 客户端配置（`mcp.json`）：
 | `n` | int | 张数，1–`MAX_N`（默认 1） |
 | `size` | string? | `"1024x1024"` / `"auto"` / 空=模型默认 |
 | `style` | string? | `vivid|natural`（在 models.yaml 的 `style_presets` 里映射为提示词后缀） |
-| `response_format` | enum? | `b64_json` / `url` / `file` / `path` |
+| `response_format` | enum? | `url`（**默认**，图像与视频一致；局域网内直接给可打开的地址）/ `b64_json`（内联字节）/ `file` / `path` |
 | `negative_prompt` | string? | 反向提示词。**只在 `cfg > 1` 时参与计算**：`cfg = 1` 时 ComfyUI 走 cfg1 优化、整条负向分支根本不执行 —— 传了不报错也不生效。实测同一张图（同 seed 同 prompt）只改负向：`cfg=1` ⇒ MAE `0.0000`，`cfg=4` ⇒ `23.5`（阳性对照）。模板默认 `cfg=1` 的模型（如 `qwen-image-2.1`）要负向起作用就得抬 `cfg`。自动负向分流（`AUTO_SPLIT_NEGATIVE`）同理 |
 | `seed` | int? | 不传/`-1` 随机；`0` 与正整数固定 |
 | `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 采样精调；`denoise` 为图生图重绘幅度 |
@@ -200,9 +200,14 @@ MCP 客户端配置（`mcp.json`）：
   "created": 1700000000,
   "data": [ { "url": "http://host:8188/v1/images/files/xxxx.png", "revised_prompt": null } ],
   "seed": 123456789,
-  "usage": null
+  "usage": null,
+  "task_id": "1700000000-a1b2c3"
 }
 ```
+
+> **同步回执也带 `task_id`**：同步链路同样在网关任务表留一条记录，把它交给
+> `POST /roundabout/view/board/items` 的 `task_id` 来源即可钉卡，不必自己拼产物地址。
+> 任务表记录 6 小时后过期（见 §错误处理）。
 
 #### `POST /v1/images/edits`
 
@@ -402,7 +407,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 ## 6. 响应模型（schemas）
 
-- **ImageResponse / VideoResponse**：`created`(int) + `data`(list, 每项 `url`/`b64_json`/`path`/`revised_prompt`) + `seed`(int|int[]|null) + `usage`(null) + `references`(视频参考图回显)。
+- **ImageResponse / VideoResponse**：`created`(int) + `data`(list, 每项 `url`/`b64_json`/`path`/`revised_prompt`) + `seed`(int|int[]|null) + `usage`(null) + `task_id`(同步链路在任务表的 id，供钉卡反查) + `references`(视频参考图回显)。
 - **异步 task 对象**：`id` / `object:"image_generation.task"` / `status` / `created_at` / `model` / (`output`|`error`)。
 - **错误**：`{ "error": { "message": "...", "code": "...", "param": "..." } }`，HTTP 状态对应 4xx/5xx（如 `400` 参数错误、`404` task_not_found、`422` 配置校验失败、`500` 内部错误）。
 - **权重缺失会被改写成下载指引**：ComfyUI 的 combo 校验拒掉提交时（`value_not_in_list`，报错形态 `Value not in list (unet_name: 'x.safetensors' not in [...])`），网关把该 400 的 `message` 补成「文件名 + 目标目录 + `curl` 命令」。数据来自仓库根的 `weights.yaml`；索引里没有的文件（如 `LoadImage` 的输入图）**保持原报错不变**，不会给出错的下载地址。
@@ -430,7 +435,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写），改图内文字传 `boogu-image-edit-turbo` / `boogu-image-edit`；**多图参考**传 `reference_images`（klein 4 槽 / qwen 6 槽）；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
 | `generate_video` | 文生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`reference_images|videos|audios`/`steps`/`attention`/`scale`/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
 | `remove_background` | 图片去背景（BiRefNet，独立工具，无需提示词）；参数 `image`(本地路径/URL/dataURL/base64)、`response_format`(默认 url)、`filename_prefix` |
-| `get_task` | 查询异步任务状态与产物（含 `prompt_id`、是否有工作流快照、`output`、`error`） |
+| `get_task` | 查询异步任务状态与产物（含 `prompt_id`、是否有工作流快照、`output`、`error`）；同步回执里的 `task_id` 同样能查 |
 | `cancel_task` | 取消任务：`task_id` 非空取消指定任务（pending 移出队列 / running 中断）；**空则中断 ComfyUI 当前执行任务** |
 | `queue_status` | 队列监控：ComfyUI running/pending + 网关 tasks（与 REST `/roundabout/admin/queue` 同源） |
 | `get_workflow` | 三层查找工作流 JSON：队列 → history → 任务快照 |
@@ -445,6 +450,11 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `get_view_board` | 读**当前看板**上有哪些卡片（`id` / 标题 / 类别 / 地址 / 说明 / 模型 / 画布坐标），外加历史归档份数，并**内联最近 3 份归档摘要**（`history_limit` 可调、0 = 不要 —— 「板上有什么」与「上一轮钉了什么」几乎总是一起问）。要接着往上钉之前先看一眼，免得钉重、或与已有卡片叠在一起；用户问「板上有什么」时也用它。看某一轮归档里的卡片用 `get_view_board_history` |
 | `get_view_board_history` | 列出看板的历史归档（每次清空存一份，最近 20 份），摘要带**内容指纹** `kinds` / `preview`（前 3 张标题）/ `models` —— 扫一眼就认得出该载哪一份，不必逐份拉详情探测；传 `archive_id` 返回该份完整卡片（含地址、note 与坐标），用于回顾上一轮产出、给用户做总结 |
 | `load_view_board` | 把某份归档**载回**当前看板（**替换**语义）：上一轮钉过的卡片回到画布上，接着往下钉。`archive_id` 优先取**用户从页面「历史」复制的 ID**（12 位十六进制）—— 拿到就直接载入，不必先列摘要去猜；**留空 = 载回最近一份**。当前看板非空会**先自动归档**它（`auto_archived` 回该归档 id），不静默丢。页面上用户只能只读回看、复制 ID，**载回是 agent 侧入口** |
+
+> **错误形态（MCP）**：「目标不存在」一族（`task_not_found` / `prompt_not_in_queue` /
+> `archive_not_found`，含钉卡时给未知 `task_id`）**不抛工具异常**，统一回
+> `{ok:false, error, code, status:404}` —— agent 按同一结构解析即可，不必逐工具写分支。
+> 参数非法（如 `items` 非数组、批量同传单卡字段）与上游/内部错误**照常抛异常**：那些是 bug，不伪装成业务失败。
 
 > ⚠️ MCP 工具的形参是**逐个手写**的，与 REST 的 pydantic 请求模型是两条独立路径，二者并不自动对齐。
 > MCP SDK 的参数模型沿用 pydantic 默认的 `extra="ignore"`：**传入未声明的字段不报错、被直接丢弃**。

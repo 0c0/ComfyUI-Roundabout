@@ -214,7 +214,9 @@ async def generate(
             param="model",
         )
     n = _validate_n(req.n)
-    response_format = (req.response_format or "b64_json").lower()
+    # 默认回 url：本机/局域网用的是这个网关的主场，而 b64 会把整张图（512² 就有 ~700KB）
+    # 灌进调用方上下文，除真正需要内联字节的客户端外没有收益。
+    response_format = (req.response_format or "url").lower()
 
     # prompt 必填校验（从 schema 下沉到这）：绑定 prompt 的模型就必须给提示词；
     # promptless 工具类模型（去背景等）跳过。

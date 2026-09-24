@@ -591,7 +591,7 @@ ComfyUI-Roundabout/
 ├── weights.yaml           # 权重 → 下载来源索引（报错里的下载指引与体检的数据源）
 ├── pyproject.toml         # 节点包元数据（供 ComfyUI-Manager 等抓取识别）
 ├── requirements.txt       # mcp + uvicorn（MCP 默认启用故默认需要；关掉 MCP 可不装）
-├── tests/                 # 回归测试（run_tests.py 为入口；分发时由 .comfyignore 排除）
+├── tests/                 # 冒烟连通性测试（run_tests.py 为入口；分发时由 .comfyignore 排除）
 ├── WORKFLOWS.md           # 接入自己的工作流
 └── API.md                 # 完整接口文档
 ```
@@ -600,23 +600,15 @@ ComfyUI-Roundabout/
 
 ## 测试
 
+仓库只保留**冒烟连通性**用例：服务起得来、MCP 工具注册齐、端点在、参数覆盖对，外加两支
+踩过坑的轻量守卫（`test_admin_structured_merge` 锁 PUT 合并语义、`test_weights_index` 锁
+权重表一致性）。全部离线、用临时端口，不需要 ComfyUI 在跑。
+
 ```bash
-<ComfyUI>/python/python.exe tests/run_tests.py                # 全量离线自测（默认跳过会驱动 ComfyUI 的用例）
-<ComfyUI>/python/python.exe tests/run_tests.py --list         # 只列出将执行 / 跳过的文件
-<ComfyUI>/python/python.exe tests/run_tests.py test_vram_adaptive.py   # 跑单个文件
-<ComfyUI>/python/python.exe tests/run_tests.py --all          # 连 GPU 用例一起（会真出图、真去背景）
-node tests/test_view_frontend.cjs                             # 前端 jsdom（需 node + jsdom）
+<ComfyUI>/python/python.exe tests/run_tests.py                # 全部用例
+<ComfyUI>/python/python.exe tests/run_tests.py --list         # 只列出将执行的文件
+<ComfyUI>/python/python.exe tests/run_tests.py test_port_map.py   # 跑单个文件
 ```
-
-**用例分两类**，别用 `for f in tests/test_*.py` 一把梭——那会把下面两个也扫进去，它们会**真的占用 GPU 并落产物**：
-
-| 用例 | 行为 |
-|---|---|
-| `test_e2e_sync_generation.py` | 真提交一次生图（z-image-turbo 512x512，真实占用 GPU） |
-| `test_removebg_e2e.py` | 真跑 BiRefNet 去背景 |
-
-`tests/run_tests.py` 默认跳过它们（名字含 `e2e`，或列在脚本顶部的 `GPU_TESTS` 里），要跑得显式加 `--all`。
-其余用例全部离线、用系统分配的临时端口，不需要 ComfyUI 在跑。
 
 ## 许可
 

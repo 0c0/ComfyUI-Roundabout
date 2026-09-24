@@ -202,6 +202,29 @@ SERVER_INSTRUCTIONS = (
 
 mcp = MCPServer(name="comfyui-roundabout", version=VERSION, instructions=SERVER_INSTRUCTIONS)
 
+
+# --------------------------------------------------------------- 错误形态
+# 「目标不存在」这一族：请求本身合法，只是给的 id 查不到。统一成 ok=false 回执，不让它们
+# 以工具异常的形式出去 —— MCP 客户端拿到未捕获异常时只见一段 `Error executing tool ...`
+# 文本，结构与正常回执完全不同，agent 得给每个工具分别写解析分支（同一族里
+# get_view_board_history 回结构、load_view_board 回文本，就是踩过的坑）。
+# 判据用 code 白名单而非 HTTP 状态码：ModelNotFound 同样是 404，但那是「model 字段填错」
+# 的参数校验，应当照常抛。参数非法与上游/内部错误一并照抛 —— 那些是 bug，不该伪装成业务失败。
+_MISSING_CODES = frozenset({"task_not_found", "archive_not_found", "prompt_not_in_queue"})
+
+
+def _missing(error: str, code: str) -> dict[str, Any]:
+    """构造「目标不存在」回执（形态与 _missing_or_raise 一致）。"""
+    return {"ok": False, "error": error, "code": code, "status": 404}
+
+
+def _missing_or_raise(exc: APIError) -> dict[str, Any]:
+    """网关抛的业务异常：属于「目标不存在」就转统一回执，否则原样抛。"""
+    if exc.code not in _MISSING_CODES:
+        raise exc
+    return {"ok": False, "error": exc.message, "code": exc.code, "status": exc.status_code}
+
+
 # ---- 工具 1：list_models --------------------------------------------------
 @mcp.tool(name="list_models", description="列出网关可用模型及其能力、模式、默认参数。")
 async def list_models() -> list[dict[str, Any]]:
@@ -420,11 +443,18 @@ async def generate_video_tool(
 
 
 # ---- 工具 6：get_task -----------------------------------------------------
-@mcp.tool(name="get_task", description="查询异步生成任务的状态与产物（含 prompt_id 与工作流快照标记）。")
+@mcp.tool(
+    name="get_task",
+    description=(
+        "查询异步生成任务的状态与产物（含 prompt_id 与工作流快照标记）。"
+        "task_id 不存在时回 `{ok:false, code:\"task_not_found\"}`，不是工具异常 —— 同步生成"
+        "回执里的 `task_id` 也能查（同步链路同样留任务记录）。"
+    ),
+)
 async def get_task(task_id: str) -> dict[str, Any]:
     task = task_store.get(task_id)
     if task is None:
-        raise APIError("Task not found.", status_code=404, code="task_not_found")
+        return _missing(f"No such task: '{task_id}'.", "task_not_found")
     return {
         "id": task.id,
         "status": _openai_status(task.status),
@@ -472,7 +502,13 @@ async def queue_status() -> dict[str, Any]:
 
 
 # ---- 工具 9：get_workflow ------------------------------------------------
-@mcp.tool(name="get_workflow", description="三层查找任务的工作流 JSON：ComfyUI 队列 → history → 网关任务快照。")
+@mcp.tool(
+    name="get_workflow",
+    description=(
+        "三层查找任务的工作流 JSON：ComfyUI 队列 → history → 网关任务快照。"
+        "prompt_id 三层都查不到时回 `{ok:false, code:\"prompt_not_in_queue\"}`。"
+    ),
+)
 async def get_workflow(prompt_id: str) -> dict[str, Any]:
     info = await comfy.queue()
     for key in ("queue_running", "queue_pending"):
@@ -490,8 +526,10 @@ async def get_workflow(prompt_id: str) -> dict[str, Any]:
     task = task_store.get(prompt_id)
     if task is not None and task.workflow is not None:
         return {"prompt_id": prompt_id, "status": task.status, "workflow": task.workflow, "source": "task"}
-    raise APIError(f"Prompt/task `{prompt_id}` not found in queue, history or task store.",
-                   status_code=404, code="prompt_not_in_queue")
+    return _missing(
+        f"Prompt/task `{prompt_id}` not found in queue, history or task store.",
+        "prompt_not_in_queue",
+    )
 
 
 # ---- 工具 10：reload --------------------------------------------------------
@@ -600,7 +638,12 @@ async def pin_view_item(
                 "Batch mode takes only 'items'; drop the single-card fields: "
                 + ", ".join(given) + "."
             )}
-        result = board.pin_many(items)
+        try:
+            result = board.pin_many(items)
+        except APIError as exc:
+            # 「某张卡的 task_id 查不到」属目标不存在 ⇒ 统一回 ok=false（整批未落盘）；
+            # 其余（items 非数组等参数错）继续抛。
+            return _missing_or_raise(exc)
         payload: dict[str, Any] = {
             "ok": True,
             "added": len(result["items"]),
@@ -617,10 +660,14 @@ async def pin_view_item(
             )
         return payload
 
-    item = board.pin(
-        title=title, url=url, path=path, task_id=task_id, note=note,
-        kind=kind, model=model, x=x, y=y, w=w, h=h,
-    )
+    try:
+        item = board.pin(
+            title=title, url=url, path=path, task_id=task_id, note=note,
+            kind=kind, model=model, x=x, y=y, w=w, h=h,
+        )
+    except APIError as exc:
+        # `task_id` 查不到 → ok=false（没钉上去，别让 agent 以为钉成功了）；参数错继续抛。
+        return _missing_or_raise(exc)
     payload: dict[str, Any] = {
         "ok": True,
         "id": item["id"],
@@ -702,6 +749,7 @@ async def get_view_board(history_limit: int = 3) -> dict[str, Any]:
         "三样指纹，正常情况下扫一眼就认得出该载哪一份，不必逐份拉详情探测。"
         "**已经拿到 id 就别调本工具**（用户粘贴的、或上一次调用的回执都算）—— 认一轮归档靠的是"
         "指纹，不是把全部卡片再拉一遍；要继续某一份直接 load_view_board。"
+        "archive_id 不存在时回 `{ok:false, code:\"archive_not_found\"}`（不是工具异常）。"
     ),
 )
 async def get_view_board_history(archive_id: str = "", limit: int = 20) -> dict[str, Any]:
@@ -709,7 +757,7 @@ async def get_view_board_history(archive_id: str = "", limit: int = 20) -> dict[
     if archive_id:
         entry = board.find_archive(archive_id)
         if not entry:
-            return {"ok": False, "error": f"No archived board with id '{archive_id}'."}
+            return _missing(f"No archived board with id '{archive_id}'.", "archive_not_found")
         return {"ok": True, "archive": {
             **board.summarize(entry),
             "items": _without_thumbs(entry.get("items") or []),
@@ -731,14 +779,18 @@ async def get_view_board_history(archive_id: str = "", limit: int = 20) -> dict[
         "不会静默丢内容；载回后卡片的 id 与坐标与归档一致。用户那边只有「复制 ID」把这一份交给"
         "你（页面不提供「载回」按钮），所以载回是你的事。"
         "`archive_id` 也可以留空 —— 那就是「载回最近一份」，省掉先查一遍的往返。"
+        "给的 id 不存在时回 `{ok:false, code:\"archive_not_found\"}`，看板内容原样不动。"
     ),
 )
 async def load_view_board(archive_id: str = "") -> dict[str, Any]:
     """把某份归档载回当前看板（替换当前内容；当前非空则先自动归档）。`archive_id` 留空 = 最近一份。"""
     target = archive_id or board.latest_archive_id()
     if not target:
-        return {"ok": False, "error": "还没有任何归档可载回 —— 归档在清空看板时产生。"}
-    result = board.load_archived(target)
+        return _missing("还没有任何归档可载回 —— 归档在清空看板时产生。", "archive_not_found")
+    try:
+        result = board.load_archived(target)
+    except APIError as exc:
+        return _missing_or_raise(exc)
     return {"ok": True, **result, "items": _without_thumbs(board.snapshot()), "view_url": view_url()}
 
 

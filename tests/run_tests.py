@@ -1,15 +1,14 @@
-"""回归测试统一入口。
+"""冒烟连通性测试统一入口。
 
-为什么需要它：仓库里有两类测试混在同一个 `test_*.py` 命名空间下 ——
-一类是纯离线的逻辑/接线断言，另一类会**真的驱动 ComfyUI 出图**（占 GPU、落产物）。
-`for f in test_*.py; do ...` 这种一把梭的写法会把后者一起扫进去：曾经因此在无人察觉的
-情况下跑掉一张 z-image-turbo 512x512 和一次 BiRefNet 去背景。所以把那批用例写进
-GPU_TESTS 名单，默认跳过；要跑就显式 `--all`。
+仓库只留连通性冒烟：每支都是独立 aiohttp 实例（临时端口）或纯逻辑断言，
+不需要正在跑的 ComfyUI、不占 GPU、不落产物。两支轻量守卫例外地留在集里——
+`test_admin_structured_merge.py` 锁 /admin/models/structured PUT 的合并语义、
+`test_weights_index.py` 锁 weights.yaml ↔ README ↔ workflows 的一致性，
+都是历史上真踩过坑、靠机械断言兜底的规则。
 
-    python tests/run_tests.py                 # 全量离线自测（跳过 GPU 用例）
-    python tests/run_tests.py --all           # 连 GPU / 依赖实跑 ComfyUI 的用例一起
+    python tests/run_tests.py                 # 全部用例
     python tests/run_tests.py --list          # 只列不跑
-    python tests/run_tests.py test_vram_adaptive.py test_save_prefix.py   # 指定文件
+    python tests/run_tests.py test_port_map.py    # 指定文件
 """
 from __future__ import annotations
 
@@ -22,27 +21,8 @@ from pathlib import Path
 TESTS = Path(__file__).resolve().parent          # 本文件所在（tests/）
 ROOT = TESTS.parent                              # 节点目录，子进程在此 cwd 下跑
 
-# 名字里含这些片段的用例一律不打真实 ComfyUI（真出图/真去背景）
-GPU_NAME_HINTS = ("e2e",)
 
-# 补充名单：名字看不出来但同样会占 GPU 的，写这里并给出理由
-GPU_TESTS: dict[str, str] = {
-    "test_e2e_sync_generation.py": "真提交一次生图（z-image-turbo 512x512）",
-    "test_removebg_e2e.py": "真跑 BiRefNet 去背景",
-}
-
-
-def is_gpu(path: Path) -> str:
-    """返回跳过理由，非 GPU 用例返回空串。"""
-    if path.name in GPU_TESTS:
-        return GPU_TESTS[path.name]
-    name = path.name.lower()
-    if any(hint in name for hint in GPU_NAME_HINTS):
-        return "名字含 e2e，默认按真实调用处理"
-    return ""
-
-
-def collect(explicit: list[str]) -> tuple[list[Path], list[tuple[Path, str]]]:
+def collect(explicit: list[str]) -> list[Path]:
     if explicit:
         targets: list[Path] = []
         for item in explicit:
@@ -53,36 +33,20 @@ def collect(explicit: list[str]) -> tuple[list[Path], list[tuple[Path, str]]]:
             if not p.exists():
                 raise SystemExit(f"找不到测试文件：{item}")
             targets.append(p)
-        return targets, []
-
-    run: list[Path] = []
-    skipped: list[tuple[Path, str]] = []
-    for path in sorted(TESTS.glob("test_*.py")):
-        reason = is_gpu(path)
-        if reason:
-            skipped.append((path, reason))
-        else:
-            run.append(path)
-    return run, skipped
+        return targets
+    return sorted(TESTS.glob("test_*.py"))
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Roundabout 回归测试入口")
-    ap.add_argument("files", nargs="*", help="只跑指定文件（默认跑全部离线用例）")
-    ap.add_argument("--all", action="store_true", help="连会驱动真实 ComfyUI 的用例一起跑")
-    ap.add_argument("--list", action="store_true", help="只列出将执行/跳过的文件")
+    ap = argparse.ArgumentParser(description="Roundabout 冒烟连通性测试入口")
+    ap.add_argument("files", nargs="*", help="只跑指定文件（默认跑全部）")
+    ap.add_argument("--list", action="store_true", help="只列出将执行的文件")
     args = ap.parse_args()
 
-    run, skip = collect(args.files)
-    if args.all:
-        run = sorted(set(run) | {p for p, _ in skip})
-        skip = []
-
+    run = collect(args.files)
     if args.list:
         for p in run:
             print(f"RUN   {p.name}")
-        for p, reason in skip:
-            print(f"SKIP  {p.name}  ({reason})")
         return 0
 
     passed, failed = [], []
@@ -105,13 +69,7 @@ def main() -> int:
             for ln in tail[-8:]:
                 print(f"        {ln.strip()[:160]}")
 
-    for path, reason in skip:
-        print(f"SKIP  {path.name}  ({reason})")
-
-    print(f"\n===== {len(passed)} passed / {len(failed)} failed"
-          f"{f' / {len(skip)} skipped' if skip else ''} =====")
-    if skip and not args.all:
-        print("跳过的用例会真的跑 ComfyUI；确认要跑时加 --all。")
+    print(f"\n===== {len(passed)} passed / {len(failed)} failed =====")
     return 1 if failed else 0
 
 
