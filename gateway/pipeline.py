@@ -25,6 +25,7 @@ from .params import (
     resolve_attention,
     resolve_seed,
     resolve_video_size,
+    resolve_output_scale,
     sniff_image,
     split_negative_prompt,
 )
@@ -473,12 +474,24 @@ def build_video_values(
             )
         values["sparse_start_percent"] = resolve_attention(req.attention)
     # Lift 放大倍率：仅 lift 两支有 `scale` 绑定；其它模型显式拒绝，别静默忽略。
-    if getattr(req, "scale", None) is not None and "scale" not in spec.bindings:
+    out_size = getattr(req, "output_size", None)
+    req_scale = getattr(req, "scale", None)
+    if (out_size is not None or req_scale is not None) and "scale" not in spec.bindings:
+        param = "output_size" if out_size is not None else "scale"
         raise APIError(
-            f"Model `{spec.name}` has no latent-lift stage, so `scale` has nothing to "
-            "scale. It is only supported by minimax-h3-lift / minimax-h3-lift-edit.",
-            param="scale",
+            f"Model `{spec.name}` has no latent-lift stage: its output size IS `size` "
+            f"({values.get('width')}x{values.get('height')}). `output_size`/`scale` only "
+            "apply to minimax-h3-lift / minimax-h3-lift-edit.",
+            param=param,
         )
+    if out_size is not None and req_scale is not None:
+        raise APIError(
+            "Pass either `output_size` or `scale`, not both (`output_size` is translated "
+            "into a scale factor; `scale` is the direct entry).",
+            param="output_size",
+        )
+    if out_size is not None:
+        values["scale"] = resolve_output_scale(out_size, values["width"], values["height"], spec)
     return values
 
 
@@ -654,7 +667,12 @@ async def generate_video(
 
     references = _build_reference_echo(all_refs, response_format)
     seed_field: int | list[int] | None = used_seeds[0] if len(used_seeds) == 1 else used_seeds
-    return VideoResponse(created=int(time.time()), data=data, seed=seed_field, references=references)  # type: ignore[arg-type]
+    # 实际输出尺寸回显：lift 档 = latent(画布/16) × scale 取整后再 ×16；其余 = 画布本身。
+    eff_scale = values.get("scale") or 1.0
+    out_w = int(round(values["width"] // 16 * eff_scale)) * 16
+    out_h = int(round(values["height"] // 16 * eff_scale)) * 16
+    return VideoResponse(created=int(time.time()), data=data, seed=seed_field, references=references,
+                         size=f"{out_w}x{out_h}")  # type: ignore[arg-type]
 
 
 async def _run_once(

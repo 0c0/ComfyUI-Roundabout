@@ -86,7 +86,10 @@ def _round8(v: int) -> int:
 
 # ------------------------------------------------------------------ 视频分辨率预设
 # 视频模型（MiniMax H3 等）用「画质档位 × 宽高比」描述分辨率。这里把用户友好的
-# 预设键换算成具体 width/height，所有维度对齐到 16 的倍数（扩散视频模型隐空间约束）。
+# 预设键换算成具体 width/height。**所有维度必须是 32 的倍数**：隐空间 16 倍下采样后
+# 还要过 DiT 的 2×2 patch ⇒ latent 宽高必须为偶数（16×2=32；latent 出现奇数会在
+# patchify 时炸 shape 错误，如 1360→latent 85）。档位基准边不是 32 倍数时就近上取
+# （1080→1088、720→736），与扩散对齐约束一致。
 #
 # 约定：「p」指该档位的基准边——横向比例(16:9/4:3/1:1)取 height=档位，纵向比例(9:16/3:4)
 # 取 width=档位。例如 480p-16:9 = 848×480，720p-9:16 = 720×1280，1080p-16:9 = 1920×1088。
@@ -99,8 +102,8 @@ VIDEO_RES_PRESETS: dict[int, dict[str, tuple[int, int]]] = {
         "1:1": (480, 480),
         "4:3": (640, 480),
         "3:4": (480, 640),
-        "16:9": (848, 480),
-        "9:16": (480, 848),
+        "16:9": (864, 480),
+        "9:16": (480, 864),
     },
     576: {
         "1:1": (576, 576),
@@ -110,18 +113,20 @@ VIDEO_RES_PRESETS: dict[int, dict[str, tuple[int, int]]] = {
         "9:16": (576, 1024),
     },
     720: {
-        "1:1": (720, 720),
-        "4:3": (960, 720),
-        "3:4": (720, 960),
-        "16:9": (1280, 720),
-        "9:16": (720, 1280),
+        # 720 是 16 的倍数但 720/16=45 为奇数 ⇒ 与 1080 同样需要上取，就近取 736（46×16、23×32）。
+        "1:1": (736, 736),
+        "4:3": (992, 736),
+        "3:4": (736, 992),
+        "16:9": (1312, 736),
+        "9:16": (736, 1312),
     },
     768: {
         "1:1": (768, 768),
         "4:3": (1024, 768),
         "3:4": (768, 1024),
-        "16:9": (1360, 768),
-        "9:16": (768, 1360),
+        # 768×16/9 = 1365.3 → 上取 1376（86×16、43×32）；1360 的 latent 宽是 85（奇数）会炸
+        "16:9": (1376, 768),
+        "9:16": (768, 1376),
     },
     1080: {
         # 1080 不是 16 的倍数（1080 / 16 = 67.5），就近上取到 1088 = 16×68 = 32×34，
@@ -172,8 +177,46 @@ def resolve_video_size(size: str | None, spec: ModelSpec) -> tuple[int | None, i
             )
         return table[ratio]
 
-    # 回退：显式 WxH
-    return parse_size(size, spec)
+    # 回退：显式 WxH —— 视频档要求 32 对齐（比图像档的 8 对齐更严，见上方注释）
+    w, h = parse_size(size, spec)
+    return _round32(w), _round32(h)
+
+
+def _round32(v: int) -> int:
+    return max(64, int(round(v / 32.0)) * 32)
+
+
+def resolve_output_scale(output_size: str, in_w: int, in_h: int, spec: ModelSpec) -> float:
+    """由期望输出尺寸反推 lift 放大倍率。
+
+    lift 的 latent 上采样是**等比**的（单一 scale 因子），输出保持画布宽高比：
+    scale = 输出短边 / 画布短边，长边随画布比例走（预设键两边比例若与画布不一致，
+    长边会有少量偏差，实际输出尺寸由响应 `size` 回显）。
+
+    宽高比偏差超过 5%（如 16:9 画布配 9:16 输出）直接 400 —— 那是换构图，不是放大。
+    """
+    out_w, out_h = resolve_video_size(output_size, spec)
+    # 宽高比带方向直接比（先比比例再算 scale）：只用长短边比会漏掉「横竖旋转」——
+    # 如 7:4 画布配 9:16 输出，长短边的比值恰好接近（2560/1344≈1.905 vs 1440/768=1.875）。
+    in_ar, out_ar = in_w / in_h, out_w / out_h
+    if abs(out_ar - in_ar) / in_ar > 0.05:
+        scale0 = min(out_w, out_h) / min(in_w, in_h)
+        raise APIError(
+            f"`output_size` {out_w}x{out_h} does not match the input canvas aspect "
+            f"({in_w}x{in_h}): the lift stage scales uniformly, so the output keeps the "
+            f"canvas aspect. Closest achievable from this canvas: "
+            f"{round(in_w * scale0)}x{round(in_h * scale0)} "
+            "(actual output size is echoed in the response `size`).",
+            param="output_size",
+        )
+    scale = min(out_w, out_h) / min(in_w, in_h)
+    if not 1.0 <= scale <= 4.0:
+        raise APIError(
+            f"`output_size` {out_w}x{out_h} implies scale {scale:.3f}, outside the "
+            f"supported 1.0–4.0 range (canvas {in_w}x{in_h}).",
+            param="output_size",
+        )
+    return round(scale, 6)
 
 
 # ------------------------------------------------------------------ 注意力档位

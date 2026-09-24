@@ -131,13 +131,23 @@ class VideoGenerationRequest(BaseModel):
         ),
     )
     # ---- H3 Lift 确定性放大（minimax-h3-lift 两支）----
+    output_size: str | None = Field(
+        None,
+        description=(
+            "期望输出尺寸（仅 minimax-h3-lift / -lift-edit）：支持分辨率预设键"
+            "（如 \"1440p-16:9\"）或 WxH；网关据此反推放大倍率"
+            " scale = 输出短边 / 画布短边（输出保持画布宽高比，长边可能有少量偏差，"
+            "实际输出尺寸见响应 `size`）。与 `scale` 互斥；其它模型传了报 400"
+            "（它们的输出尺寸就是 `size`）。"
+        ),
+    )
     scale: float | None = Field(
         None,
         ge=1.0,
         le=4.0,
         description=(
             "放大倍率（仅 minimax-h3-lift / -lift-edit）：输出 = 768p 画布 × scale，"
-            "默认 1.875 → 2520x1440。其它模型传了报 400。"
+            "默认 1.875 → 2520x1440。与 `output_size` 互斥；其它模型传了报 400。"
         ),
     )
     # rho / w_min / w_max 仍不设请求字段：默认（0.0 / 0.5 / 1.0）写死在工作流模板，
@@ -207,6 +217,9 @@ class VideoResponse(BaseModel):
     # 回显已接入的「image 类」参考素材（按 response_format 输出 url / path / b64_json）。
     # 仅当请求携带 reference_images 时存在；reference_videos / reference_audios 仅接入不回显。
     references: list[dict[str, Any]] | None = None
+    # 实际输出尺寸 "WxH"：lift 档为 latent × scale 换算的精确值（与产物像素一致），
+    # 其余档位 = 画布尺寸。请求传了 output_size 时以这里为准（长边可能有少量偏差）。
+    size: str | None = None
     # 同 ImageResponse.task_id：本次同步请求在网关任务表里的 id，可交给 pin_view_item 反查产物。
     task_id: str | None = None
 

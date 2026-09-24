@@ -174,6 +174,12 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
         if spec.binds(name):
             return True, None
         return False, "lift only (minimax-h3-lift / -lift-edit)"
+    if name == "output_size":
+        if spec.binds("scale"):
+            return True, None
+        if spec.is_video:
+            return False, "model has no latent-lift stage: its output size IS `size`"
+        return False, "video-only (lift stage)"
     if name in ("reference_images", "reference_videos", "reference_audios"):
         ref = spec.references or {}
         if name == "reference_images" and (ref.get("frame_params") or []):

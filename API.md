@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.14.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.15.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -258,12 +258,13 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 |---|---|---|
 | `prompt` | string | 正向提示词（必填） |
 | `model` | string? | 默认 `minimax-h3`；视频模型 |
-| `size` | string? | `<tier>p-<ratio>` 或 `<ratio>@<tier>`，tier∈{`480p`,`576p`,`720p`,`768p`,`1080p`,`1440p`}，ratio∈{`1:1`,`3:4`,`4:3`,`16:9`,`9:16`}；或直接 `WxH`；空=模型默认。`1440p-16:9` = 2560×1440，需大显存（8GB 直接生跑不动，改用 lift 放大） |
+| `size` | string? | `<tier>p-<ratio>` 或 `<ratio>@<tier>`，tier∈{`480p`,`576p`,`720p`,`768p`,`1080p`,`1440p`}，ratio∈{`1:1`,`3:4`,`4:3`,`16:9`,`9:16`}；或直接 `WxH`；空=模型默认。**所有视频尺寸都对齐到 32 的倍数**（latent 16 倍下采样后还要过 DiT 2×2 patch，奇数 latent 会炸 shape）：`720p` 实际 736、`768p-16:9` = 1376×768，`WxH` 自动 round 到 32。注意模型默认画布 1344×768 是 **7:4**，不等于 `768p-16:9`（1376×768）。`1440p-16:9` = 2560×1440，需大显存（8GB 直接生跑不动，改用 lift 放大） |
 | `duration` | float? | 时长 1–15 秒 |
 | `fps` | int? | 帧率 |
 | `num_frames` | int? | 总帧数（部分工作流用帧数而非时长） |
 | `attention` | `"sparse"`\|`"dense"`? | **注意力档位**（更快 ↔ 更高质量，仅 base 四支 H3 视频档）：`sparse`（默认，块稀疏加速，更快、更省显存；画质与致密高度一致、差异只在高频细节）/ `dense`（关闭稀疏，画质优先，耗时回满）。不传 = 保持模板默认（稀疏）。**FastH3 两支恒稀疏**（其 `vsa` 与蒸馏权重配对训练，关掉不是更高画质而是脱离训练分布），传了报 400；其它模型同样报 400 |
-| `scale` | float? | **放大倍率**（仅 `minimax-h3-lift` / `-lift-edit`）：输出 = 768p 画布 × scale，默认 1.875 → 2520x1440；其它模型传了报 400 |
+| `output_size` | string? | **期望输出尺寸**（仅 `minimax-h3-lift` / `-lift-edit`）：格式同 `size`，网关反推放大倍率 `scale = 输出短边 / 画布短边`（输出保持画布宽高比，比例偏差 >5% 报 400 —— 那是换构图不是放大）。与 `scale` 互斥；其它模型传了报 400（输出尺寸就是 `size`）。实际输出尺寸见响应 `size` 回显 |
+| `scale` | float? | **放大倍率**（仅 `minimax-h3-lift` / `-lift-edit`）：输出 = 画布 × scale，默认 1.875 → 2520x1440。与 `output_size` 互斥；其它模型传了报 400 |
 | `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"910.inputs.rho": 0.3}`。`minimax-h3-lift` 的可调项：`910.inputs.rho`（SelfLift-zero 像素锚阻尼，默认 0=纯学习 lift 纹理最强；调高会压高频细节）、`910.inputs.w_min`/`w_max`（阻尼强度上下限，默认 0.5/1.0）。放大倍率 `scale` 已是正式请求参数，不必走透传 |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |
 | `image` | string\|string[]? | 图生视频输入（视频档不收，传了 400 并指路：fl2va 用 `first_frame`/`last_frame`，edit 用 `reference_images`） |
@@ -279,7 +280,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 > **外部来源的参考素材会被复制进 ComfyUI 的 `input/`**：`http(s)` / `dataURL` / `base64`，以及**不在 `input/` 目录下**的本地路径（含 `output/`、`temp/`）都要先转存；命名形如 `{请求id}_ref{img|vid|aud}_{槽位序号}.{ext}`（如 `18ae9470d11a-0_refvid_0.mp4`，其中 `18ae9470d11a-0` 是 `请求id-批次号`）。**已经在 `input/` 内的文件免转存、沿用原名**。输入图与 mask 同理，命名为 `{请求id}_src.{ext}` / `{请求id}_mask.{ext}`。这些副本会留在 `input/` 里，需要时自行清理。
 
-**同步响应**（200）：`{ "created", "data":[{ "url" }], "seed", "references":[...] }`。
+**同步响应**（200）：`{ "created", "data":[{ "url" }], "seed", "references":[...], "size":"2528x1440" }`（`size` = 实际输出尺寸；lift 档为 latent × scale 的精确换算）。
 
 **异步响应**（200）：
 
@@ -409,7 +410,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 ## 6. 响应模型（schemas）
 
-- **ImageResponse / VideoResponse**：`created`(int) + `data`(list, 每项 `url`/`b64_json`/`path`/`revised_prompt`) + `seed`(int|int[]|null) + `usage`(null) + `task_id`(同步链路在任务表的 id，供钉卡反查) + `references`(视频参考图回显)。
+- **ImageResponse / VideoResponse**：`created`(int) + `data`(list, 每项 `url`/`b64_json`/`path`/`revised_prompt`) + `seed`(int|int[]|null) + `usage`(null) + `task_id`(同步链路在任务表的 id，供钉卡反查) + `references`(视频参考图回显) + `size`(实际输出尺寸 "WxH")。
 - **异步 task 对象**：`id` / `object:"image_generation.task"` / `status` / `created_at` / `model` / (`output`|`error`)。
 - **错误**：`{ "error": { "message": "...", "code": "...", "param": "..." } }`，HTTP 状态对应 4xx/5xx（如 `400` 参数错误、`404` task_not_found、`422` 配置校验失败、`500` 内部错误）。
 - **权重缺失会被改写成下载指引**：ComfyUI 的 combo 校验拒掉提交时（`value_not_in_list`，报错形态 `Value not in list (unet_name: 'x.safetensors' not in [...])`），网关把该 400 的 `message` 补成「文件名 + 目标目录 + `curl` 命令」。数据来自仓库根的 `weights.yaml`；索引里没有的文件（如 `LoadImage` 的输入图）**保持原报错不变**，不会给出错的下载地址。
@@ -435,7 +436,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `list_models` | 列出可用模型及其能力 / 模式 / 默认参数 / 别名 |
 | `generate_image` | 文生图；支持 `negative_prompt`/`seed`/`size`/`steps`/`cfg`/`workflow_overrides`(JSON 字符串)/`filename_prefix`/`mode`；返回 OpenAI 风格响应（含 `seed` 回显，url 已绝对化）；视频模型自动转视频链路。**编辑图片不要用本工具**（用 `edit_image` / `remove_background`） |
 | `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写），改图内文字传 `boogu-image-edit-turbo` / `boogu-image-edit`；**多图参考**传 `reference_images`（klein 4 槽 / qwen 6 槽）；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
-| `generate_video` | 文生视频 / 首尾帧生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`first_frame`/`last_frame`（fl2va 三支）/`reference_images|videos|audios`（edit 三支）/`steps`/`attention`/`scale`/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
+| `generate_video` | 文生视频 / 首尾帧生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`first_frame`/`last_frame`（fl2va 三支）/`reference_images|videos|audios`（edit 三支）/`steps`/`attention`/`output_size`/`scale`（仅 lift，互斥）/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
 | `remove_background` | 图片去背景（BiRefNet，独立工具，无需提示词）；参数 `image`(本地路径/URL/dataURL/base64)、`response_format`(默认 url)、`filename_prefix` |
 | `get_task` | 查询异步任务状态与产物（含 `prompt_id`、是否有工作流快照、`output`、`error`）；同步回执里的 `task_id` 同样能查 |
 | `cancel_task` | 取消任务：`task_id` 非空取消指定任务（pending 移出队列 / running 中断）；**空则中断 ComfyUI 当前执行任务** |
