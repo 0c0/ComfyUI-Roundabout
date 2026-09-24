@@ -264,7 +264,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `num_frames` | int? | 总帧数（部分工作流用帧数而非时长） |
 | `attention` | `"sparse"`\|`"dense"`? | **注意力档位**（更快 ↔ 更高质量，仅 base 四支 H3 视频档）：`sparse`（默认，块稀疏加速，更快、更省显存；画质与致密高度一致、差异只在高频细节）/ `dense`（关闭稀疏，画质优先，耗时回满）。不传 = 保持模板默认（稀疏）。**FastH3 两支恒稀疏**（其 `vsa` 与蒸馏权重配对训练，关掉不是更高画质而是脱离训练分布），传了报 400；其它模型同样报 400 |
 | `scale` | float? | **放大倍率**（仅 `minimax-h3-lift` / `-lift-edit`）：输出 = 768p 画布 × scale，默认 1.875 → 2520x1440；其它模型传了报 400 |
-| `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"910.inputs.rho": 0.3}`。`minimax-h3-lift` 的可调项：`910.inputs.rho`（SelfLift-zero 像素锚阻尼，默认 0=纯学习 lift 纹理最强；0.3 实测高频 -18%）、`910.inputs.w_min`/`w_max`（阻尼强度上下限，默认 0.5/1.0）。放大倍率 `scale` 已是正式请求参数，不必走透传 |
+| `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"910.inputs.rho": 0.3}`。`minimax-h3-lift` 的可调项：`910.inputs.rho`（SelfLift-zero 像素锚阻尼，默认 0=纯学习 lift 纹理最强；调高会压高频细节）、`910.inputs.w_min`/`w_max`（阻尼强度上下限，默认 0.5/1.0）。放大倍率 `scale` 已是正式请求参数，不必走透传 |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |
 | `image` | string\|string[]? | 图生视频输入（视频档不收，传了 400 并指路：fl2va 用 `first_frame`/`last_frame`，edit 用 `reference_images`） |
 | `first_frame` | string? | **首帧图**（仅 fl2va：`minimax-h3` / `-lift` / `fasth3`）：成为输出第 1 帧，按画布 size 做 **cover 等比铺满 + 居中裁剪**（不变形）；支持 base64/URL/本地路径。edit 三支传了报 400 —— 参考档输出尺寸由 `size` 决定、参考图只是 conditioning，没有首尾帧语义。⚠️ **模型侧跟随度（09-24 实测）**：base 系 keyframe 需要**足够步数**（8 步不跟随、30 步完美跟随，lift 产物为证）；fasth3 在 **576p 档 keyframe 失效**（768p 正常）—— 要首帧严格跟随：base 系 ≥30 步、fasth3 ≥768p |
