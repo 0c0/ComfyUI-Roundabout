@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.12.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.13.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 

@@ -232,6 +232,24 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 - `fasth3` / `fasth3-edit` 就是这么接的：前者用 `image_keys` 接管首尾帧，后者聚合节点是
   `MiniMaxH3ReferenceToVideo`，仍走默认键名。
 
+### 第 1 参考槽的 cover 式裁剪缩放：`RoundaboutCoverResize`
+
+H3 / FastH3 六支视频工作流的**第 1 参考槽**都串了一个本包自带的节点
+`RoundaboutCoverResize`（`nodes.py`，纯本地节点，不进 MCP / tool-info）：
+`LoadImage → RoundaboutCoverResize(width, height) → 聚合节点`。
+
+动机：fl2va 聚合节点对 `first_frame` 的内部处理是**拉伸**到画布（`plain stretch`，
+见 `comfy_extras/nodes_minimax_h3.py`），参考图纵横比与画布不一致时首帧会变形；
+ref2va 档参考图超过画布尺寸时还会白养一堆大尺寸参考 token。先经 cover 节点
+（等比铺满 + 居中裁剪，输出恰好 width×height），构图不变形、尺寸确定。
+
+- 节点的 `width` / `height` 在 `bindings` 里与聚合节点绑到**同一个请求参数**
+  （`width: ['136.inputs.width', '147.inputs.width']`），画布改档位时裁剪目标自动跟随。
+- 只接第 1 槽：其余参考槽维持上游原行为（ref2va 的 `ref_image_size` / fl2va 的尾帧
+  内部 cover-crop 不受影响）。
+- 剪枝兼容：未提供第 1 槽时，`_prune_unused_references` 的级联删除会连同 resize
+  节点一起删掉（loader → resize 的下游级联），纯文生提交不会悬空。
+
 ### 参考槽是「链式」而非聚合时：`slots`
 
 上面两种都假定参考图汇聚到**一个聚合节点**（删槽 = 删 loader + 删聚合器上那个键）。也有工作流把参考图串成一条链 —— 每个槽自带 `LoadImage → ImageScaleToTotalPixels → VAEEncode → ReferenceLatent`，前一个 `ReferenceLatent` 的 conditioning 喂给下一个，**没有 aggregator**。

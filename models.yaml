@@ -465,8 +465,8 @@ models:
       sampler_name: 123.inputs.sampler_name
       scheduler: 124.inputs.scheduler
       denoise: 124.inputs.denoise
-      width: 136.inputs.width
-      height: 136.inputs.height
+      width: [136.inputs.width, 147.inputs.width]
+      height: [136.inputs.height, 147.inputs.height]
       duration: 132.inputs.value
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
@@ -520,8 +520,8 @@ models:
       sampler_name: 123.inputs.sampler_name
       scheduler: 124.inputs.scheduler
       denoise: 124.inputs.denoise
-      width: 136.inputs.width
-      height: 136.inputs.height
+      width: [136.inputs.width, 160.inputs.width]
+      height: [136.inputs.height, 160.inputs.height]
       duration: 132.inputs.value
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
@@ -584,8 +584,8 @@ models:
       sampler_name: 105:17.inputs.sampler_name
       scheduler: 105:9.inputs.scheduler
       denoise: 105:9.inputs.denoise
-      width: 105:104.inputs.width
-      height: 105:104.inputs.height
+      width: [105:104.inputs.width, '105:222.inputs.width']
+      height: [105:104.inputs.height, '105:222.inputs.height']
       duration: 105:111.inputs.value
       fps: 105:91.inputs.fps
       chunks: 105:221.inputs.chunks
@@ -647,8 +647,8 @@ models:
       sampler_name: 105:17.inputs.sampler_name
       scheduler: 105:9.inputs.scheduler
       denoise: 105:9.inputs.denoise
-      width: 105:145.inputs.width
-      height: 105:145.inputs.height
+      width: [105:145.inputs.width, '105:223.inputs.width']
+      height: [105:145.inputs.height, '105:223.inputs.height']
       duration: 105:111.inputs.value
       fps: 105:91.inputs.fps
       chunks: 105:221.inputs.chunks
@@ -710,8 +710,8 @@ models:
       sampler_name: 123.inputs.sampler_name
       scheduler: 124.inputs.scheduler
       denoise: 124.inputs.denoise
-      width: 136.inputs.width
-      height: 136.inputs.height
+      width: [136.inputs.width, 147.inputs.width]
+      height: [136.inputs.height, 147.inputs.height]
       duration: 132.inputs.value
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
@@ -773,8 +773,8 @@ models:
       sampler_name: 123.inputs.sampler_name
       scheduler: 124.inputs.scheduler
       denoise: 124.inputs.denoise
-      width: 136.inputs.width
-      height: 136.inputs.height
+      width: [136.inputs.width, 160.inputs.width]
+      height: [136.inputs.height, 160.inputs.height]
       duration: 132.inputs.value
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks

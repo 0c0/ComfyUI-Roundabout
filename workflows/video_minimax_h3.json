@@ -225,7 +225,7 @@
         1
       ],
       "first_frame": [
-        "137",
+        "147",
         0
       ],
       "last_frame": [
@@ -311,6 +311,17 @@
     "class_type": "BlockSparseAttention",
     "_meta": {
       "title": "块稀疏注意力(sol-attn)"
+    }
+  },
+  "147": {
+    "class_type": "RoundaboutCoverResize",
+    "inputs": {
+      "image": [
+        "137",
+        0
+      ],
+      "width": 1344,
+      "height": 768
     }
   }
 }
