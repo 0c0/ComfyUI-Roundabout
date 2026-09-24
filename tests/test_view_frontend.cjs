@@ -59,9 +59,50 @@ function filesPayload(offset, limit) {
 }
 
 const jsonResponse = obj => Promise.resolve({ status: 200, ok: true, json: async () => obj });
+const errResponse = (status, code, message) =>
+  Promise.resolve({ status, ok: false, json: async () => ({ error: { code, message } }) });
 
-function fakeFetch(url) {
+// ---- 看板：一张普通图卡 + 两张外部卡（后端会把 input/output 之外的路径标成 ext）----
+const boardItems = [
+  { id: 'card_img_1', title: '分镜 1', kind: 'image', note: '', model: 'z-image-turbo',
+    url: 'http://127.0.0.1:8188/view?filename=a.png&type=output', thumb: null,
+    x: 0, y: 0, w: 200, h: 168, origin: 'url', task_id: null },
+  { id: 'card_ext_dir', title: '外部产出目录', kind: 'file', note: '', model: '',
+    url: null, thumb: null, x: 216, y: 0, w: 200, h: 168, origin: 'path', task_id: null,
+    path: 'E:\\work\\out', ext: { path: 'E:\\work\\out', is_dir: true } },
+  { id: 'card_ext_file', title: '外部视频', kind: 'video', note: '', model: '',
+    url: null, thumb: null, x: 432, y: 0, w: 200, h: 168, origin: 'path', task_id: null,
+    path: 'E:\\work\\out\\demo.mp4', ext: { path: 'E:\\work\\out\\demo.mp4', is_dir: false } },
+];
+
+let revealCalls = [];        // 每次 POST /reveal 的请求体
+let revealStatus = 200;      // 改成 403 模拟「后端在另一台机器上」
+let histDeletes = [];        // 每次 DELETE 归档的 id
+let histListLoads = 0;
+
+function fakeFetch(url, init) {
   const u = new URL(url, 'http://127.0.0.1:8188');
+  const method = (init && init.method) || 'GET';
+  if (u.pathname.endsWith('/board/history') && method === 'GET') {
+    histListLoads += 1;
+    return jsonResponse({ history: [{ id: 'arch_1', label: '第一轮 · 草图', created: 1, count: 5 }], count: 1 });
+  }
+  if (u.pathname.includes('/board/history/') && method === 'DELETE') {
+    histDeletes.push(u.pathname.split('/').pop());
+    return jsonResponse({ ok: true, id: 'arch_1', removed: 5, count: 0 });
+  }
+  if (u.pathname.endsWith('/board')) {
+    return jsonResponse({ server_time: Date.now() / 1000, items: boardItems,
+                          count: boardItems.length, history_count: 1 });
+  }
+  if (u.pathname.endsWith('/reveal')) {
+    revealCalls.push(JSON.parse((init && init.body) || '{}'));
+    if (revealStatus !== 200) {
+      return errResponse(revealStatus, 'reveal_not_local',
+                         'This action opens a window on the machine running ComfyUI.');
+    }
+    return jsonResponse({ ok: true, id: 'card_ext_dir', path: 'E:\\work\\out', is_dir: true });
+  }
   if (u.pathname.endsWith('/files')) {
     const offset = Number(u.searchParams.get('offset') || 0);
     const limit = Number(u.searchParams.get('limit') || PAGE_SIZE);
@@ -155,6 +196,80 @@ async function main() {
   check('提示条显示（未强刷）', $('freshPill').hidden === false, String($('freshPill').hidden));
   check('弹层保持打开', $('lightbox').hidden === false);
   check('网格未被冲掉', !names($('grid')).includes(fresh3.name));
+
+  // ---- 看板：铺满视口 + 外部卡（点它先确认，再交给后端去拉系统文件管理器）----
+  console.log('== 看板：铺满视口 + 外部卡标记 ==');
+  $('tabBoard').click();
+  await settle();
+  const wrapH = parseInt($('canvasWrap').style.height, 10);
+  check('画布铺满视口（不再是固定 420px）', wrapH > 420 && wrapH <= window.innerHeight,
+        `${$('canvasWrap').style.height} / innerHeight=${window.innerHeight}`);
+  check('看板显示、资源面板收起', $('boardPanel').hidden === false && $('filesPanel').hidden === true);
+  const cards = [...window.document.querySelectorAll('.board-card')];
+  const extCards = [...window.document.querySelectorAll('.board-card.is-ext')];
+  check('三张卡都渲染出来', cards.length === 3, String(cards.length));
+  check('两张外部卡带「外部」徽标',
+        extCards.length === 2 && extCards.every(c => c.querySelector('.bc-ext').textContent === '外部'),
+        String(extCards.length));
+  check('外部卡副标题说清「外部目录 / 外部文件」',
+        extCards[0].querySelector('.bc-sub').textContent.includes('外部目录') &&
+        extCards[1].querySelector('.bc-sub').textContent.includes('外部文件'),
+        extCards.map(c => c.querySelector('.bc-sub').textContent).join(' | '));
+  check('外部卡写明「在资源管理器中打开」',
+        extCards[0].querySelector('.bc-dir-go').textContent.includes('资源管理器'));
+  check('普通图卡没有外部徽标', !cards[0].querySelector('.bc-ext'));
+
+  console.log('== 外部卡：先确认，再交给后端打开 ==');
+  extCards[0].click();
+  await settle();
+  check('点外部卡弹出确认层', $('askLayer').hidden === false);
+  check('标题说清要开的类型', $('askTitle').textContent.includes('打开这个目录'), $('askTitle').textContent);
+  check('确认层把路径摊开', $('askText').textContent === 'E:\\work\\out', $('askText').textContent);
+  check('说明窗口开在哪台机器', $('askNote').textContent.includes('运行 ComfyUI'), $('askNote').textContent);
+  check('还没点确定 → 一个请求都没发', revealCalls.length === 0, JSON.stringify(revealCalls));
+
+  $('askCancel').click();
+  await settle();
+  check('取消收起弹层', $('askLayer').hidden === true);
+  check('取消不触发打开', revealCalls.length === 0);
+
+  extCards[0].click();
+  await settle();
+  $('askOk').click();
+  await settle();
+  check('确定后发出打开请求', revealCalls.length === 1, JSON.stringify(revealCalls));
+  check('请求体只有卡片 id（前端不拼路径）',
+        JSON.stringify(revealCalls[0]) === '{"id":"card_ext_dir"}', JSON.stringify(revealCalls[0]));
+  check('成功后弹层已收起', $('askLayer').hidden === true);
+  check('成功给一句反馈', $('toast').textContent.includes('资源管理器'), $('toast').textContent);
+
+  // 远程访问时后端会拒（窗口只会开在服务器那台）—— 页面要把原因说清楚，而不是默默失败
+  revealStatus = 403;
+  extCards[1].click();
+  await settle();
+  $('askOk').click();
+  await settle();
+  check('被拒时点明「另一台机器」', $('toast').textContent.includes('另一台机器'), $('toast').textContent);
+  revealStatus = 200;
+
+  console.log('== 删一份归档：也要先确认 ==');
+  $('boardHistoryBtn').click();
+  await settle();
+  const dropBtn = $('boardHistoryList').querySelector('[data-drop]');
+  check('历史行有删除按钮', !!dropBtn);
+  dropBtn.click();
+  await settle();
+  check('弹确认层', $('askLayer').hidden === false && $('askTitle').textContent.includes('删除'),
+        $('askTitle').textContent);
+  check('被删的归档名摊在确认层里', $('askText').textContent.includes('第一轮'), $('askText').textContent);
+  check('确认按钮是危险色', $('askOk').classList.contains('danger'));
+  check('还没点确定 → 没发 DELETE', histDeletes.length === 0);
+  const listLoadsBefore = histListLoads;
+  $('askOk').click();
+  await settle();
+  check('确定后发出 DELETE', histDeletes.length === 1 && histDeletes[0] === 'arch_1', JSON.stringify(histDeletes));
+  check('删完刷新了历史列表', histListLoads > listLoadsBefore, `${listLoadsBefore} -> ${histListLoads}`);
+  $('boardHistoryClose').click();
 
   // jsdom 没有排版，前面所有用例走的都是兜底值；这里手动喂一套几何，
   // 验证「每页条数 = 一屏能放下的行数 × 列数」这条公式本身。

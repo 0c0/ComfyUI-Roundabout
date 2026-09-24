@@ -72,7 +72,10 @@ def register_routes(app) -> None:
         ("DELETE", "/roundabout/view/board", board.clear_board),
         ("GET", "/roundabout/view/board/history", board.history),
         ("GET", "/roundabout/view/board/history/{id}", board.history_detail),
+        ("DELETE", "/roundabout/view/board/history/{id}", board.history_remove),
         ("POST", "/roundabout/view/board/history/{id}/load", board.history_load),
+        # 看板上指向 input/output 之外的卡片：交给系统文件管理器打开（仅本机访问时执行）
+        ("POST", "/roundabout/view/reveal", board.reveal),
     ]
     registered = 0
     for method, path, h in route_specs:

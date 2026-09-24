@@ -18,6 +18,13 @@
      「不写就静默失效」的那类，页面看起来就是「点了没反应」。
   6. 取景必须在画布**可见**时做：面板隐藏时 `getBoundingClientRect()` 宽度为 0，
      取景会退化成默认视角。
+  7. 看板要**铺满**视口（固定 420px 会在宽屏上剩一大片空白），且铺高度必须早于取景 ——
+     取景要读画布的宽高。高度按 `offsetTop` 链算，不能用 `getBoundingClientRect().top`：
+     sticky 顶栏一滚动那个值就变 0。
+  8. 外部路径卡（后端带 `ext`）没有可预览的产物，点击要走「确认层 → 交给系统文件管理器」；
+     且**请求体只带卡片 id**（路径由后端从看板上取）—— 这条是安全判据：前端不拼路径，
+     就没有「传任意路径」这个口子。
+  9. 删归档不可恢复 ⇒ 必须先过确认层（危险色）再发 DELETE，删完刷新列表。
 
 这些用源码顺序断言即可覆盖，不必引入 jsdom：判据是「谁在谁前面」与「哪一支在不在」，
 与实现细节无关。
@@ -80,6 +87,9 @@ def invariants(script: str) -> dict[str, bool]:
     set_tab = fn_body(script, "function setTab()")
     open_dir = fn_body(script, "function openDir(")
     fit_pending = fn_body(script, "function fitIfPending()")
+    doc_top = fn_body(script, "function docTop(")
+    on_change = fn_body(script, "function onLayoutChange()")
+    hist_click = fn_body(script, "$('boardHistoryList').addEventListener('click', async e =>")
     # 清空按钮的 handler 是赋值形式，body 从箭头函数的大括号起算
     clear_i = script.index("$('boardClearBtn').onclick")
     clear_body = fn_body(script[clear_i:], "onclick = async ()")
@@ -127,6 +137,28 @@ def invariants(script: str) -> dict[str, bool]:
         "无可预览产物时给 toast 兜底": "toast(" in render_board and "it.path" in render_board,
         # 15. 取景只在画布可见时做（隐藏时量到 0 宽，取景会退化成默认视角）
         "面板隐藏时不取景": "$('boardPanel').hidden" in fit_pending,
+        # 16. 外部路径卡（后端带 ext）：页面既读不到内容也开不了它 ⇒ 点击必须走
+        #     「确认 → 交给系统文件管理器」，且分支要排在目录卡之前（外部目录没有 it.dir）
+        "外部卡分支排在目录卡之前": order(render_board, "if (ext)", "if (it.dir)"),
+        "外部卡带「外部」标记": "bc-ext" in render_board and "is-ext" in render_board,
+        "外部卡点击走确认层": "askReveal(it)" in render_board,
+        "归档里的外部卡只给提示不动手": "if (viewingArchive) { toast(" in render_board,
+        # 17. 确认层是通用的（打开外部路径 / 删归档共用），按钮真接了 handler
+        "确认层由 openAsk 统一驱动":
+            "function openAsk(" in script and "$('askOk').onclick" in script,
+        # 18. ★ 打开动作的请求体只带卡片 id：路径由后端从看板上取，前端不拼路径 ⇒
+        #     没有「传任意路径」这个口子（这条是安全判据，不是风格判据）
+        "打开请求只带卡片 id（不传路径）":
+            "JSON.stringify({ id: it.id })" in script and "/reveal" in script,
+        # 19. 看板铺满视口：先铺高度再取景（取景要读画布宽高），视口变了也要重算
+        "铺满高度早于取景": order(set_tab, "fitBoardHeight()", "fitIfPending()"),
+        "高度按文档位置算（sticky 顶栏滚动后 rect.top 会变 0）":
+            "offsetParent" in doc_top and "offsetTop" in doc_top,
+        "视口变化后重算高度": "fitBoardHeight()" in on_change,
+        # 20. 删归档：删掉不可恢复 ⇒ 先确认（危险色）再发 DELETE，删完刷新列表
+        "历史行有删除入口": "data-drop=" in script,
+        "删归档前先确认且用危险色": "openAsk(" in hist_click and "danger: true" in hist_click,
+        "删归档用 DELETE 并刷新列表": order(hist_click, "method: 'DELETE'", "loadHistory()"),
     }
 
 
@@ -178,6 +210,19 @@ def main() -> int:
     rb_mut = rb.replace("if (it.dir) { openDir(it.dir); return; }", "", 1)
     check("自校验：目录卡点击不再跳转，判据变红",
           rb_mut != rb and red_on(script.replace(rb, rb_mut, 1), "点击目录卡走 openDir"),
+          "变异后仍然通过 ⇒ 该判据抓不到回归")
+
+    # 自校验（本轮新增的两条）：外部卡不再走确认层、不再铺满高度
+    rb2 = fn_body(script, "function renderBoard(")
+    rb2_mut = rb2.replace("        askReveal(it);\n", "", 1)
+    check("自校验：外部卡点击不再走确认层，判据变红",
+          rb2_mut != rb2 and red_on(script.replace(rb2, rb2_mut, 1), "外部卡点击走确认层"),
+          "变异后仍然通过 ⇒ 该判据抓不到回归")
+
+    tab2 = fn_body(script, "function setTab()")
+    tab2_mut = tab2.replace("\n  fitBoardHeight();", "", 1)
+    check("自校验：不再铺满高度，判据变红",
+          tab2_mut != tab2 and red_on(script.replace(tab2, tab2_mut, 1), "铺满高度早于取景"),
           "变异后仍然通过 ⇒ 该判据抓不到回归")
 
     print(f"\n===== {passed} passed / {failed} failed =====")

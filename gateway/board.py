@@ -13,6 +13,11 @@
 **持久化**：落在 `节点/.cache/board.json`（已在 .gitignore 里，属运行期数据）。重启 ComfyUI
 后看板与历史都还在 —— 历史本来就是给人/给下一个会话回看用的。
 
+**外部路径**：产物落在 input/output 之外时页面里既没有 /view 地址也读不到缩略图，唯一有意义
+的动作是交给操作系统（`POST /roundabout/view/reveal` 拉起文件管理器）。为了不把这个能力开成
+「任意路径都能打开」，端点**只接受看板上已存在的卡片 id** —— 可打开的路径集合恒等于 agent
+自己钉过的那些；卡片被清空后这条路径也就随之失效。且只在本机访问时真的执行。
+
 端点：
   GET    /roundabout/view/board                   当前看板
   POST   /roundabout/view/board/items             钉入
@@ -21,13 +26,19 @@
   GET    /roundabout/view/board/history           历史归档列表
   GET    /roundabout/view/board/history/{id}      某份归档详情
   POST   /roundabout/view/board/history/{id}/load 把某份归档载入当前看板
+  POST   /roundabout/view/reveal                  在系统文件管理器里打开某张卡片指向的路径
 """
 
 from __future__ import annotations
 
+import asyncio
+import ipaddress
 import json
 import logging
+import os
 import re
+import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -52,6 +63,9 @@ NOTE_MAX = 400
 LABEL_MAX = 80
 # text = 无产物的说明卡（agent 可以钉「这轮做到哪了」这类进度说明，不必非得有文件）
 # dir  = 指向 input/output 内的目录：没有可预览的产物，点它跳去文件列表并进入该目录
+#
+# 注意 kind 只描述「产物是什么」，不描述「它在哪」。input/output 之外的路径（外部目录/外部文件）
+# 的 kind 仍按扩展名推（目录因无扩展名落到 file），「外部」这件事由 `ext` 字段单独标记。
 KINDS = ("image", "video", "audio", "file", "dir", "text")
 
 # ---- 画布几何：不传坐标时按这套网格找空位 ----
@@ -200,6 +214,37 @@ def _dir_target(source: str) -> dict[str, str] | None:
     return None
 
 
+def _external_target(source: str) -> dict[str, Any] | None:
+    """source 是 input/output **之外**的真实本地路径时返回定位信息，否则 None。
+
+    为什么单独认这一类：它们的 /view 地址不存在（`_local_view_url` 只覆盖两个 root），
+    缩略图也读不到，卡片在页面上就是一块空白。但「这个产物到底在哪」是个真实需求，
+    而页面能做的只有一件事 —— 交给操作系统的文件管理器去打开。
+    只认绝对路径：相对路径会按进程 CWD 解析，那是 ComfyUI 的启动目录，不是调用方的语境。
+    """
+    if not source or "://" in source or "?" in source:
+        return None                     # 外链与 `/view?...` 都是页面能自己打开的入口
+    if not Path(source).is_absolute():
+        return None                     # 判「绝对」要看传入的原文，resolve() 的结果永远是绝对的
+    try:
+        target = Path(source).resolve()
+    except OSError:
+        return None
+    if not (target.is_dir() or target.is_file()):
+        return None
+    # 落在这两个 root 里的不算外部：它们有 /view 或目录跳转的正路
+    for resolve_root in _ROOTS.values():
+        base = resolve_root()
+        if not base:
+            continue
+        try:
+            target.relative_to(Path(base).resolve())
+            return None
+        except ValueError:
+            continue
+    return {"path": str(target), "is_dir": target.is_dir()}
+
+
 def _overlaps(x: float, y: float, w: float, h: float, item: dict[str, Any]) -> bool:
     """矩形相交判定（留 1px 容差，避免贴边摆放被判重叠）。"""
     return not (
@@ -238,13 +283,16 @@ def pin(
 
     产物来源三选一，优先级 **url > path > task_id**（显式优先，任务 id 兜底）：
       - `url`：http(s) 地址 / ComfyUI 的 `/view?...` / input|output 内的磁盘路径
-      - `path`：磁盘绝对路径（在 input|output 内才翻译成 /view，否则只回显原文、不可点）
+      - `path`：磁盘绝对路径（在 input|output 内翻译成 /view，否则标记为外部路径）
       - `task_id`：网关任务 id，取该任务的产物
     三者都空时退化为纯文本卡（kind=text），让 agent 也能钉进度说明；
     连 note 都没有 → 400（空卡片没有意义）。
 
     `source` 指向 input/output 内的**目录**时自动落成 kind=dir，并附 `dir: {root, path}`
-    供前端「点卡片进入该目录」；显式 `kind=dir` 但路径不是那种目录 → 400（别钉出点了没反应的卡）。
+    供前端「点卡片进入该目录」；显式 `kind=dir` 但路径不是目录 → 400（别钉出点了没反应的卡）。
+
+    `source` 是本机 input/output **之外**的真实路径时附 `ext: {path, is_dir}`，标记为外部：
+    页面里读不到它，前端改为「点卡片 → 确认 → 交给系统文件管理器打开」。
 
     位置：`x`/`y` 给了就摆在那个坐标（画布原点在左上，允许负数），没给就自动找空位。
     """
@@ -259,16 +307,24 @@ def pin(
             origin = "task_id"
 
     dir_target = _dir_target(source)
-    if kind == "dir" and not dir_target:
+    ext_target = None if dir_target else _external_target(source)
+    if kind == "dir" and not (dir_target or (ext_target or {}).get("is_dir")):
         raise APIError(
-            "'kind=dir' needs a 'url'/'path' pointing at a folder inside input/output.",
+            "'kind=dir' needs a 'url'/'path' pointing at a folder"
+            " (inside input/output, or a real folder on this machine).",
             param="kind",
         )
-    # 目录没有可打开的 /view 地址（那个地址对目录无效），只留 dir 定位给前端跳转
-    resolved = None if dir_target else (
+    # 目录与外部路径都没有可打开的 /view 地址（那个地址对目录无效），只留定位给前端
+    resolved = None if (dir_target or ext_target) else (
         _absolutize_product(_base_for(request), source) if source else None
     )
-    item_kind = "dir" if dir_target else _guess_kind(resolved or source, kind)
+    if dir_target:
+        item_kind = "dir"
+    elif ext_target:
+        # 外部路径按扩展名给图标；目录没有扩展名 ⇒ file。是否「外部」由 ext 字段表达，不看 kind
+        item_kind = _guess_kind(source, "")
+    else:
+        item_kind = _guess_kind(resolved or source, kind)
     title_clean = _clip(title, TITLE_MAX)
     if not title_clean:
         # 没标题就退回文件名 / 任务号，避免页面上一排「未命名」
@@ -310,6 +366,9 @@ def pin(
     # 目录卡：带上可跳转的目标（root + 相对路径），前端点了就切到文件列表并进这个目录
     if dir_target:
         item["dir"] = dir_target
+    # 外部路径：页面读不到它，带上定位让前端走「交给系统文件管理器」那条路
+    if ext_target:
+        item["ext"] = ext_target
     # 产物落在 input/output 之外（自定义输出目录）：地址不可用，只把原路径给用户看
     if source and not resolved and not dir_target:
         item["path"] = source
@@ -369,6 +428,21 @@ def load_archived(archive_id: str, archive_current: bool = True) -> dict[str, An
     _items.extend(dict(i) for i in (entry.get("items") or []))
     _save()
     return {"loaded": entry["id"], "count": len(_items), "auto_archived": auto["id"] if auto else None}
+
+
+def remove_archive(archive_id: str) -> dict[str, Any] | None:
+    """删掉某份归档，返回被删那份的摘要；没有这份就 None。
+
+    归档是清空看板时的存档，删掉不可恢复 —— 判定交回调用方（HTTP 层返回 404），
+    这里只在真的删成功时落盘。
+    """
+    for i, entry in enumerate(_history):
+        if entry["id"] == archive_id:
+            del _history[i]
+            _save()
+            log.info("board archive removed %s (%s item(s))", archive_id, entry.get("count") or 0)
+            return entry
+    return None
 
 
 # ------------------------------------------------------------------ 端点
@@ -482,3 +556,94 @@ async def history_load(request: web.Request) -> web.Response:
     archive_id = request.match_info.get("id") or ""
     result = load_archived(archive_id)
     return web.json_response({"ok": True, **result, "items": snapshot()})
+
+
+@gateway_handler
+async def history_remove(request: web.Request) -> web.Response:
+    """删掉某份归档（不可恢复 —— 前端会先确认一次再发这条请求）。"""
+    _authorize(request)
+    archive_id = request.match_info.get("id") or ""
+    entry = remove_archive(archive_id)
+    if not entry:
+        raise APIError(
+            f"No archived board with id '{archive_id}'.", status_code=404, code="archive_not_found"
+        )
+    return web.json_response({
+        "ok": True, "id": archive_id, "removed": entry.get("count") or 0, "count": len(_history),
+    })
+
+
+# ------------------------------------------------------------------ 交给操作系统打开
+def _is_local(request: web.Request) -> bool:
+    """请求是否来自本机。
+
+    「打开文件管理器」只在后端与浏览器同机时才有意义：从局域网另一台机器点，窗口会开在
+    **服务器**那台机器上，点的人这边什么也看不到。与其静默无反应，不如明确拒绝并说清原因。
+    反向代理会把 remote 变成 127.0.0.1 ⇒ 只要带转发头就一律当远程，别被表象骗过。
+    """
+    if request.headers.get("X-Forwarded-For") or request.headers.get("X-Real-IP"):
+        return False
+    try:
+        return ipaddress.ip_address(request.remote or "").is_loopback
+    except ValueError:
+        return False
+
+
+def _reveal(target: Path, is_dir: bool) -> None:
+    """交给操作系统：目录 → 文件管理器进入该目录；文件 → 打开其所在目录并选中它。
+
+    这是同步阻塞调用（等 ShellExecute / xdg-open 起来），必须由调用方放进 executor，
+    否则会把 aiohttp 的事件循环按住。
+    """
+    if sys.platform.startswith("win"):
+        if is_dir:
+            os.startfile(str(target))                            # noqa: S606 - 进入目录
+        else:
+            # `/select,` 必须与路径紧邻，且含空格的路径要整体带引号 —— 交给 subprocess
+            # 按参数拼（手拼字符串在路径含空格时必断）
+            subprocess.Popen(["explorer", "/select,", str(target)])
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", str(target)] if is_dir else ["open", "-R", str(target)])
+    else:
+        # 桌面环境没有统一的「选中某个文件」入口 ⇒ 一律打开它所在的目录
+        subprocess.Popen(["xdg-open", str(target if is_dir else target.parent)])
+
+
+@gateway_handler
+async def reveal(request: web.Request) -> web.Response:
+    """在某张看板卡片指向的路径上拉起系统文件管理器。body: {id}。
+
+    只接受**看板上已存在的卡片 id**，不接受任意路径：这样「能打开什么」恒等于 agent 自己
+    钉过什么，卡片被清空后这条路径也随之失效 —— 既不用另立一套路径白名单，也不会把端点
+    开成「随便什么路径都能打开」。归档里的卡片不算（那些路径已不在当前看板）。
+    """
+    _authorize(request)
+    if not _is_local(request):
+        raise APIError(
+            "This action opens a window on the machine running ComfyUI,"
+            " which is not the machine this request came from.",
+            status_code=403, code="reveal_not_local", param="request",
+        )
+    try:
+        payload = await request.json()
+    except Exception:  # noqa: BLE001 - 非 JSON / 空 body 都归到「body 不是对象」
+        payload = None
+    item_id = _json_body(payload).get("id") or ""
+    item = next((i for i in _items if i["id"] == item_id), None)
+    if not item:
+        raise APIError(
+            f"No board item with id '{item_id}'.", status_code=404, code="board_item_not_found"
+        )
+    target = (item.get("ext") or {}).get("path") or ""
+    if not target:
+        raise APIError(
+            "That card carries no local path (only cards outside input/output do).",
+            param="id", code="not_external",
+        )
+    path = Path(target)
+    if not path.exists():
+        raise APIError(f"Path no longer exists: {target}", status_code=404, code="path_missing")
+    is_dir = path.is_dir()
+    await asyncio.get_running_loop().run_in_executor(None, _reveal, path, is_dir)
+    log.info("board revealed %s -> %s (%s)", item_id, target, "dir" if is_dir else "file")
+    return web.json_response({"ok": True, "id": item_id, "path": str(path), "is_dir": is_dir})

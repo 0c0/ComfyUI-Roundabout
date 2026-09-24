@@ -551,6 +551,9 @@ async def get_view_url() -> dict[str, Any]:
         "卡片尺寸用 `w`/`h`。没有产物也能钉纯文本卡（`note` + kind=text），用来写进度说明或小结。"
         "`path` 指向 input/output 内的目录时会自动落成**目录卡**（没有可预览的产物），"
         "用户在页面上点它就跳到该目录的文件列表。"
+        "`path` 落在 input/output **之外**的目录或文件会落成**外部卡片**"
+        "（页面读不到它，卡片上标「外部」），用户点它在系统文件管理器里打开 / 定位——"
+        "只在用户从跑 ComfyUI 那台机器打开页面时有效，从别的机器打开会被明确拒绝。"
         "一轮钉完、或准备切换任务时，用 clear_view_board 清空（内容会存进历史，随时可回看）。"
         "**钉完自己判断要不要帮用户打开页面**：用户在等结果 / 一次钉了很多 / 他没在看页面时，"
         "调 get_view_url 把地址给他（或替他打开）；他正盯着页面看、或只是补一张图，就不必打扰。"
@@ -582,9 +585,10 @@ async def pin_view_item(
         "view_url": view_url(),
     }
     if not item.get("url") and item.get("path"):
-        # 产物在 input/output 之外，页面没法预览，明确告诉 agent 别以为钉成功了
+        # 产物在 input/output 之外：页面没有缩略图/预览，只能交给系统文件管理器打开
         payload["warning"] = (
-            f"产物不在 ComfyUI 的 input/output 目录内，页面上只能看到路径、点不开：{item['path']}"
+            f"产物不在 ComfyUI 的 input/output 目录内，页面上看不到内容，"
+            f"卡片标记为「外部」、点它会在系统文件管理器里打开：{item['path']}"
         )
     return payload
 

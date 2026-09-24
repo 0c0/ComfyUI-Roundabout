@@ -41,12 +41,13 @@ def check(name: str, ok: bool, detail: str = "") -> None:
         failures += 1
 
 
-def req(method: str, path: str, body: dict | None = None):
+def req(method: str, path: str, body: dict | None = None, headers: dict[str, str] | None = None):
+    """默认从回环发起（就是「本机访问」）；要模拟远程访问就自己塞转发头。"""
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    r = urllib.request.Request(
-        BASE + path, data=data, method=method,
-        headers={"Content-Type": "application/json"} if data else {},
-    )
+    hdrs = {"Content-Type": "application/json"} if data else {}
+    if headers:
+        hdrs.update(headers)
+    r = urllib.request.Request(BASE + path, data=data, method=method, headers=hdrs)
     try:
         with urllib.request.urlopen(r, timeout=10) as resp:
             return resp.status, resp.read()
@@ -224,14 +225,99 @@ async def main() -> int:
     check("显式 kind=dir 但并非目录 -> 400", st == 400, f"status={st} {body[:200]}")
 
     outside = Path(tempfile.mkdtemp(prefix="_rb_outside_"))
+    ext_file = outside / "外部产物.mp4"
+    ext_file.write_bytes(b"\x00" * 8)
+    st, body = await loop.run_in_executor(
+        None, req, "POST", "/roundabout/view/board/items", {"title": "外部目录", "path": str(outside)},
+    )
+    itd3 = (json.loads(body) or {}).get("item") or {}
+    check("两个 root 之外的目录不当目录卡", itd3.get("kind") == "file", str(itd3.get("kind")))
+    check("外部目录保留原路径（可复制）", itd3.get("path") == str(outside), str(itd3)[:200])
+    check("外部目录标记 ext 且 is_dir=true",
+          (itd3.get("ext") or {}).get("is_dir") is True
+          and (itd3.get("ext") or {}).get("path") == str(outside), str(itd3.get("ext")))
+    check("外部目录不给 url（页面打不开它）", itd3.get("url") is None, str(itd3.get("url")))
+    check("外部目录不出现在 dir 字段里（那不是「点进文件列表」那条路）",
+          "dir" not in itd3, str(itd3)[:200])
+    ext_dir_id = itd3.get("id")
+
+    st, body = await loop.run_in_executor(
+        None, req, "POST", "/roundabout/view/board/items", {"title": "外部文件", "path": str(ext_file)},
+    )
+    itf = (json.loads(body) or {}).get("item") or {}
+    check("外部文件按扩展名给 kind（图标还能用）", itf.get("kind") == "video", str(itf.get("kind")))
+    check("外部文件标记 ext 且 is_dir=false",
+          (itf.get("ext") or {}).get("is_dir") is False
+          and (itf.get("ext") or {}).get("path") == str(ext_file), str(itf.get("ext")))
+    ext_file_id = itf.get("id")
+
+    # 显式 kind=dir 现在也认「本机上的真目录」：判据是「它是不是目录」，不是「它在不在 root 里」
+    st, body = await loop.run_in_executor(
+        None, req, "POST", "/roundabout/view/board/items",
+        {"title": "显式外部目录", "kind": "dir", "path": str(outside)},
+    )
+    check("显式 kind=dir 指向外部真目录 -> 放行", st == 200, f"status={st} {body[:200]}")
+    st, body = await loop.run_in_executor(
+        None, req, "POST", "/roundabout/view/board/items",
+        {"title": "谎称目录", "kind": "dir", "path": str(ext_file)},
+    )
+    check("显式 kind=dir 指向外部文件 -> 400", st == 400, f"status={st} {body[:200]}")
+
+    # 相对路径按**进程 CWD** 解析（ComfyUI 的启动目录），不是调用方的语境 ⇒ 不认
+    st, body = await loop.run_in_executor(
+        None, req, "POST", "/roundabout/view/board/items", {"title": "相对路径", "path": "some/rel/dir"},
+    )
+    itr = (json.loads(body) or {}).get("item") or {}
+    check("相对路径不当外部", "ext" not in itr, str(itr)[:200])
+
+    print("== 交给系统文件管理器打开 ==")
+    # 绝不能在测试里真弹窗口：把真正干活的那个函数换成记录器（handler 是从模块全局取它的）
+    calls: list[tuple[str, bool]] = []
+    real_reveal = board_mod._reveal
+    board_mod._reveal = lambda p, is_dir: calls.append((str(p), is_dir))
     try:
+        st, body = await loop.run_in_executor(None, req, "POST", "/roundabout/view/reveal", {"id": ext_dir_id})
+        d = json.loads(body)
+        check("本机请求 -> 200", st == 200, f"status={st} {body[:200]}")
+        check("回传打开的路径与类型", d.get("path") == str(outside) and d.get("is_dir") is True, str(d)[:200])
+        check("目录走「进入该目录」", calls == [(str(outside), True)], str(calls))
+
+        st, body = await loop.run_in_executor(None, req, "POST", "/roundabout/view/reveal", {"id": ext_file_id})
+        check("文件走「定位并选中」", st == 200 and calls[-1] == (str(ext_file), False), f"status={st} {calls}")
+
+        # 反向代理会把 remote 变成 127.0.0.1：带转发头就必须当远程，别被表象骗过
+        st, body = await loop.run_in_executor(None, lambda: req(
+            "POST", "/roundabout/view/reveal", {"id": ext_dir_id}, {"X-Forwarded-For": "10.0.0.9"}))
+        d = json.loads(body)
+        check("带转发头（= 远程）-> 403", st == 403, f"status={st} {body[:200]}")
+        check("错误码是 reveal_not_local", (d.get("error") or {}).get("code") == "reveal_not_local", str(d)[:200])
+        check("被拒时不会真去开窗口", len(calls) == 2, str(calls))
+
+        st, body = await loop.run_in_executor(None, req, "POST", "/roundabout/view/reveal", {"id": "no-such-card"})
+        check("未知卡片 -> 404", st == 404, f"status={st} {body[:200]}")
+        st, body = await loop.run_in_executor(None, req, "POST", "/roundabout/view/reveal", {})
+        check("缺 id -> 404", st == 404, f"status={st} {body[:200]}")
+        st, body = await loop.run_in_executor(None, req, "POST", "/roundabout/view/reveal", {"id": itd.get("id")})
+        d = json.loads(body)
+        check("页面内本来就能看的卡没有本地路径 -> 400", st == 400, f"status={st} {body[:200]}")
+        check("错误码是 not_external", (d.get("error") or {}).get("code") == "not_external", str(d)[:200])
+        check("这几发都没触发打开", len(calls) == 2, str(calls))
+
+        # 钉下去之后文件没了：别弹一个不存在的路径，明确报 404
+        gone = outside / "会被删掉.png"
+        gone.write_bytes(b"\x00" * 4)
         st, body = await loop.run_in_executor(
-            None, req, "POST", "/roundabout/view/board/items", {"title": "外部目录", "path": str(outside)},
+            None, req, "POST", "/roundabout/view/board/items", {"title": "待删", "path": str(gone)},
         )
-        itd3 = (json.loads(body) or {}).get("item") or {}
-        check("两个 root 之外的目录不当目录卡", itd3.get("kind") == "file", str(itd3.get("kind")))
-        check("外部目录保留原路径（前端据此提示不可预览）", itd3.get("path") == str(outside), str(itd3)[:200])
+        gone_id = ((json.loads(body) or {}).get("item") or {}).get("id")
+        gone.unlink()
+        st, body = await loop.run_in_executor(None, req, "POST", "/roundabout/view/reveal", {"id": gone_id})
+        d = json.loads(body)
+        check("路径已不存在 -> 404", st == 404, f"status={st} {body[:200]}")
+        check("错误码是 path_missing", (d.get("error") or {}).get("code") == "path_missing", str(d)[:200])
     finally:
+        board_mod._reveal = real_reveal
+        ext_file.unlink()
         outside.rmdir()
 
     print("== 落盘 ==")
@@ -241,6 +327,35 @@ async def main() -> int:
         check("落盘含 items 与 history", "items" in saved and "history" in saved, str(list(saved)))
         check("落盘 items 数与内存一致", len(saved["items"]) == len(board_mod._items),
               f'{len(saved["items"])} vs {len(board_mod._items)}')
+
+    print("== 归档里的卡片不能打开 ==")
+    # 「能打开什么」恒等于**当前看板**上有什么：清空之后就不再触发 —— 等于一条天然的撤销路径
+    st, body = await loop.run_in_executor(
+        None, req, "DELETE", "/roundabout/view/board?label=%E5%A4%96%E9%83%A8%E5%9C%BA%E6%99%AF", None)
+    archived_now = (json.loads(body) or {}).get("archived") or {}
+    check("清空到第二份归档", (archived_now.get("count") or 0) > 0, str(archived_now)[:200])
+    st, body = await loop.run_in_executor(None, req, "POST", "/roundabout/view/reveal", {"id": ext_dir_id})
+    check("已归档的卡片 -> 404", st == 404, f"status={st} {body[:200]}")
+
+    print("== 删除归档 ==")
+    st, body = await loop.run_in_executor(None, req, "GET", "/roundabout/view/board/history", None)
+    before = json.loads(body)
+    n0 = before.get("count") or 0
+    drop_id = ((before.get("history") or [{}])[0]).get("id")
+    st, body = await loop.run_in_executor(None, req, "DELETE", f"/roundabout/view/board/history/{drop_id}", None)
+    d = json.loads(body)
+    check("删一份归档 -> 200", st == 200, f"status={st} {body[:200]}")
+    check("回传被删掉的卡片数", (d.get("removed") or 0) > 0, str(d)[:200])
+    check("剩余归档数 -1", d.get("count") == n0 - 1, f'{d.get("count")} vs {n0}')
+    st, body = await loop.run_in_executor(None, req, "GET", "/roundabout/view/board/history", None)
+    after = json.loads(body)
+    check("列表里已经没有它", drop_id not in [h["id"] for h in (after.get("history") or [])], str(after)[:200])
+    check("列表计数同步", after.get("count") == n0 - 1, str(after.get("count")))
+    st, _ = await loop.run_in_executor(None, req, "GET", f"/roundabout/view/board/history/{drop_id}", None)
+    check("删掉的归档查详情 -> 404", st == 404, f"status={st}")
+    st, body = await loop.run_in_executor(None, req, "DELETE", f"/roundabout/view/board/history/{drop_id}", None)
+    check("重复删 -> 404", st == 404, f"status={st} {body[:200]}")
+    check("删除已落盘", drop_id not in tmp.read_text(encoding="utf-8"), "落盘文件里还留着它")
 
     print("== 容量上限 ==")
     for i in range(board_mod.MAX_ITEMS + 3):

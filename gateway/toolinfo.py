@@ -241,7 +241,9 @@ def _endpoints() -> dict[str, list[str]]:
             "DELETE /roundabout/view/board",
             "GET /roundabout/view/board/history",
             "GET /roundabout/view/board/history/{id}",
+            "DELETE /roundabout/view/board/history/{id}",
             "POST /roundabout/view/board/history/{id}/load",
+            "POST /roundabout/view/reveal",
         ],
         "mcp": [
             "list_models", "generate_image", "edit_image", "remove_background",

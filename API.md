@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.5.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.6.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -439,7 +439,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `get_view_url` | 返回可视化页面地址（`{url}`，浏览器直接打开）：浏览 input/output 资源 + 实时任务进度。用户问「生成的东西在哪看」「给我查看页面」时调用，把 `url` 原样给用户 |
 | `check_weights` | **权重体检**（只读、不占 GPU）：列出内置工作流当前缺失的权重文件与每条的下载命令，避免等到 `generate*` 报 400 才发现权重没下 |
 | `get_skills` | 返回配套 agent-skills 的清单与安装地址（`roundabout` / `h3-playbook` / `qwen-image-prompt-writing` / `h3-prompt-writing`），每条带 `source` 标明是本网关维护还是模型官方维护 |
-| `pin_view_item` | 把产出钉到可视化页面的**任务看板**（顶部无限画布）：产物来源 `url` / `path` / `task_id` 三选一（优先级依次降低），`x`/`y` 给坐标（不给则自动排到空位），`w`/`h` 定尺寸，`note` 可写说明；`path` 指向 input/output 内的目录时自动落成**目录卡**（有可跳转的 `dir`）。返回 `view_url`；**要不要把页面地址给用户由 agent 自行判断** |
+| `pin_view_item` | 把产出钉到可视化页面的**任务看板**（顶部无限画布）：产物来源 `url` / `path` / `task_id` 三选一（优先级依次降低），`x`/`y` 给坐标（不给则自动排到空位），`w`/`h` 定尺寸，`note` 可写说明；`path` 指向 input/output 内的目录时自动落成**目录卡**（有可跳转的 `dir`），落在 input/output **之外**的真实目录/文件则标记为**外部卡**（`ext:{path,is_dir}`，页面上看不到内容，点它在系统文件管理器里打开）。返回 `view_url`；**要不要把页面地址给用户由 agent 自行判断** |
 | `clear_view_board` | 清空看板并**归档进历史**（`label` 给这份归档命名）。这一轮交付完、或要切换任务时调用；归档可在页面「历史」里回看，也可用 `get_view_board_history` 取回 |
 | `get_view_board_history` | 列出看板的历史归档（每次清空存一份，最近 20 份）；传 `archive_id` 返回该份完整卡片（含地址、note 与坐标），用于回顾上一轮产出、给用户做总结 |
 
@@ -464,7 +464,8 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 > 队列区与任务表是两层信息：任务表记录「谁提交了什么、成了什么」，队列反映「此刻 ComfyUI 在算什么」。
 > 后端不可达时队列区标记不可达，任务表照常显示。
 
-- **任务看板**：`看板` 标签页里一块可平移 / 缩放的**无限画布**，由 agent 把产出**钉**上去（可按语义排布：分镜顺序、A/B 对照、按角色分组），用户在页面上一眼看全，不必 agent 逐个把文件拉出来。视频卡缩略图上叠播放角标、点开走同一个灯箱；**目录卡**（agent 钉 input/output 内的目录）点一下就切到资源列表并**进入该目录**；没有可预览产物的卡片（两个根目录之外的路径、纯文本卡）点了会给一条提示，不会毫无反应；右上角 × 移除单张。agent 换任务时调 `clear_view_board` 清空 —— **清空即归档**，随时可在页面「历史」里回看或载回当前看板。看板落在节点 `.cache/board.json`，重启 ComfyUI 后仍在。
+- **任务看板**：`看板` 标签页里一块可平移 / 缩放的**无限画布**（高度按视口铺满），由 agent 把产出**钉**上去（可按语义排布：分镜顺序、A/B 对照、按角色分组），用户在页面上一眼看全，不必 agent 逐个把文件拉出来。视频卡缩略图上叠播放角标、点开走同一个灯箱；**目录卡**（agent 钉 input/output 内的目录）点一下就切到资源列表并**进入该目录**；**外部卡**（产物落在 input/output 之外）左上角标「外部」，点它 → 确认 → 交给系统文件管理器打开（仅本机访问时有效，见下）；没有可预览产物的卡片（纯文本卡等）点了会给一条提示，不会毫无反应；右上角 × 移除单张。agent 换任务时调 `clear_view_board` 清空 —— **清空即归档**，随时可在页面「历史」里回看、载回当前看板，或**直接删掉某份归档**（删前会确认，不可恢复）。看板落在节点 `.cache/board.json`，重启 ComfyUI 后仍在。
+- **外部路径与文件管理器**：产物落在 ComfyUI 的 input/output 之外时，页面既拿不到 `/view` 地址也读不到缩略图，唯一有意义的动作就是交给操作系统 —— 点外部卡会在跑 ComfyUI 那台机器上拉起文件管理器（目录直接进入，文件定位并选中）。两个边界：①**只在从本机（回环）打开页面时执行**，从局域网别的机器点会收到一句「窗口开不到你这边」的明确提示，而不是静默无反应；②接口只认**当前看板上的卡片 id**，可打开的路径集合恒等于 agent 钉过的那些，卡片被清空后那条路径也随之失效。
 
 支撑端点：
 
@@ -473,13 +474,15 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `GET /roundabout/view` | 页面本身（读 `web/view.html`） |
 | `GET /roundabout/view/files?root=output\|input&path=子/目录&offset=0&limit=120&sort=mtime&order=desc` | 列目录，返回 `crumbs`/`dirs`(全量，按名升序在前)/`files(name,size,mtime,kind,url,thumb)` + 分页元信息 `total`/`dir_count`/`offset`/`limit`/`has_more`/`sort`/`order`。`limit` 默认 120、上限 500；`sort=mtime`(默认，新的在前)\|`name`，`order=desc`(默认)\|`asc`；扫描硬上限 20000 条，超出置 `truncated` |
 | `GET /roundabout/view/tasks` | 任务快照：`tasks[]`（`status`(OpenAI 枚举) / `model` / `elapsed` / `prompt_id` / `url`(已绝对化) / `path`(产物在 input/output 之外时给原路径，不可点) / `error`）+ `queue`（ComfyUI `running`/`pending` 的 prompt_id 列表，`reachable` 标记）。产物地址基准：`PUBLIC_BASE_URL` → 请求 origin，保证远程浏览器可打开；结果是磁盘路径时自动翻译成 `/view?filename=..&type=..` |
-| `GET /roundabout/view/board` | 当前看板：`items[]`（`id`/`title`/`kind`(image\|video\|audio\|file\|dir\|text)/`url`/`thumb`/`note`/`model`/`x`/`y`/`w`/`h`/`origin`/`task_id`，目录卡另有 `dir:{root,path}` 且 `url=null`）+ `count` + `history_count`。前端每 2 秒轮询 |
-| `POST /roundabout/view/board/items` | 钉一张卡片。产物来源 `url` \| `path` \| `task_id` **三选一**（优先级依次降低，未知 task_id 返回 404 `task_not_found`）；`x`/`y` 给坐标（不给则按网格自动找空位，坐标允许负数）、`w`/`h` 定尺寸、`note` 写说明；都没有则退化为纯文本卡（`kind=text`），全空返回 400。产物在 input/output 之外时只回显 `path`（页面点不开，点了给提示）；`url`/`path` 指向 input/output 内的**目录**时自动落成 `kind=dir` 并附 `dir:{root,path}`（显式传 `kind=dir` 但并非那种目录返回 400） |
+| `GET /roundabout/view/board` | 当前看板：`items[]`（`id`/`title`/`kind`(image\|video\|audio\|file\|dir\|text)/`url`/`thumb`/`note`/`model`/`x`/`y`/`w`/`h`/`origin`/`task_id`，目录卡另有 `dir:{root,path}` 且 `url=null`；外部路径另有 `ext:{path,is_dir}` 且 `url=null`）+ `count` + `history_count`。前端每 2 秒轮询 |
+| `POST /roundabout/view/board/items` | 钉一张卡片。产物来源 `url` \| `path` \| `task_id` **三选一**（优先级依次降低，未知 task_id 返回 404 `task_not_found`）；`x`/`y` 给坐标（不给则按网格自动找空位，坐标允许负数）、`w`/`h` 定尺寸、`note` 写说明；都没有则退化为纯文本卡（`kind=text`），全空返回 400。`url`/`path` 指向 input/output 内的**目录**时自动落成 `kind=dir` 并附 `dir:{root,path}`（显式传 `kind=dir` 但并非目录返回 400）。`path` 是本机 input/output **之外**的绝对路径且真实存在时附 `ext:{path,is_dir}` 标为外部（`kind` 仍按扩展名推、`url=null`、原路径留在 `path` 便于复制）；相对路径不认（会按进程 CWD 解析，语境不对） |
 | `DELETE /roundabout/view/board/items/{id}` | 删单条（卡片右上角 ×）。不存在返回 404 `board_item_not_found` |
 | `DELETE /roundabout/view/board?label=xxx` | 清空当前看板并**归档**（`label` 给这份归档命名，缺省按时间）。空看板不产生归档；返回 `cleared` 与 `archived` |
 | `GET /roundabout/view/board/history` | 历史归档摘要列表（`id`/`label`/`created`/`count`，新的在前；最多保留 20 份） |
 | `GET /roundabout/view/board/history/{id}` | 某份归档的完整卡片（含坐标，可直接画出来），顺带返回当前看板快照。不存在返回 404 `archive_not_found` |
+| `DELETE /roundabout/view/board/history/{id}` | 删掉某份归档（**不可恢复**，页面先弹确认再发）。返回 `removed`（被删的卡片数）与剩余 `count`；不存在返回 404 `archive_not_found` |
 | `POST /roundabout/view/board/history/{id}/load` | 把某份归档载回当前看板。当前看板非空会**先自动归档**，不静默覆盖（`auto_archived` 回该归档 id） |
+| `POST /roundabout/view/reveal` | 在某张看板卡片指向的路径上拉起系统文件管理器（目录进入 / 文件定位选中）。body `{id}`，**只认当前看板上的卡片 id**（归档里的不算）—— 能打开什么恒等于 agent 钉过什么，卡片清空后该路径随之失效。**仅本机访问时执行**：非回环或带 `X-Forwarded-For`/`X-Real-IP` 一律 403 `reveal_not_local`（远程点也只会开在服务器那台，说不清不如拒绝）；卡片不带 `ext` 返回 400 `not_external`；路径已不存在返回 404 `path_missing` |
 
 > 目录解析走 `folder_paths`，根目录固定为 input/output 两个，`..` 穿越返回 400 `bad_path`。
 > 鉴权开启时浏览器无法带自定义头，页面支持 `?key=<api_key>`；`get_view_url` 会自动把 key 拼进返回的 url。

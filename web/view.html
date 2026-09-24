@@ -148,6 +148,14 @@
   }
   .bc-dir svg { width: 30px; height: 30px; opacity: .55; }
   .bc-dir .bc-dir-go { font-size: 11px; color: var(--accent); }
+  /* 外部路径卡（产物不在 input/output 内）：页面既读不到内容也开不了它，
+     唯一有意义的动作是交给系统的文件管理器 ⇒ 用一枚橙色徽标把这类卡一眼区分出来 */
+  .bc-ext {
+    position: absolute; top: 4px; left: 4px; z-index: 1;
+    padding: 1px 6px; border-radius: 999px; background: rgba(217,119,6,.92);
+    color: #fff; font-size: 10px; letter-spacing: .4px; pointer-events: none;
+  }
+  .board-card.is-ext .bc-thumb { color: var(--pending); }
   .empty { color: var(--muted); padding: 28px 0; text-align: center; font-size: 13px; }
   .pager {
     display: flex; align-items: center; justify-content: center; gap: 10px;
@@ -195,6 +203,33 @@
   }
   .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+  /* 外部路径的确认层：拉起系统窗口有副作用（抢焦点、且只会开在跑 ComfyUI 那台机器上），
+     先问一句再动手；同时也是一次「看清这个路径」的机会 */
+  .ask {
+    position: fixed; inset: 0; z-index: 55; background: rgba(17,20,24,.42);
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .ask[hidden] { display: none; }        /* 同 lightbox：display:flex 会盖掉 [hidden] 的默认值 */
+  .ask-box {
+    background: var(--card); border-radius: 10px; padding: 18px 20px;
+    width: min(560px, 100%); box-shadow: 0 16px 44px rgba(16,20,28,.3);
+  }
+  .ask-title { font-weight: 600; }
+  .ask-path {
+    margin-top: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--bg); font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+    word-break: break-all; max-height: 104px; overflow-y: auto;
+    -webkit-user-select: all; user-select: all;
+  }
+  .ask-note { margin-top: 8px; color: var(--muted); font-size: 12px; }
+  /* 正文/备注可以不给：空的时候不该留下一个空盒子或一段多余间距 */
+  .ask-path:empty, .ask-note:empty { display: none; }
+  .ask-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .ask-ok { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .ask-ok:hover { background: #1d4ed8; border-color: #1d4ed8; }
+  .ask-ok.danger { background: var(--fail); border-color: var(--fail); }
+  .ask-ok.danger:hover { background: #b91c1c; border-color: #b91c1c; }
+
   .task { border-top: 1px solid var(--border); padding: 10px 14px; }
   .task:first-child { border-top: 0; }
   .task .row1 { display: flex; align-items: center; gap: 8px; }
@@ -226,6 +261,8 @@
   section.board { margin-bottom: 14px; }
   section.board > h2 .acts { margin-left: auto; display: flex; gap: 8px; align-items: center; }
   section.board > h2 .acts .btn { padding: 3px 10px; font-size: 12px; }
+  /* 高度由脚本按视口铺满（见 fitBoardHeight）：无限画布只给 420px，下面会剩一大片空白。
+     这里的 420px 是脚本尚未跑起来时的兜底值，也是窗口极矮时的下限参考 */
   .canvas-wrap {
     position: relative; height: 420px; overflow: hidden;
     background: repeating-linear-gradient(45deg, #fafbfc, #fafbfc 12px, #f4f6f8 12px, #f4f6f8 24px);
@@ -281,6 +318,9 @@
   .hist-row .hm { color: var(--muted); font-size: 12px; flex: none; }
   .hist-row .sp { flex: 1; }
   .hist-row .btn { padding: 3px 10px; font-size: 12px; }
+  /* 删除归档不可恢复 ⇒ 按钮用失败色，跟「查看 / 载入」拉开距离，别顺手点到 */
+  .hist-row .btn.danger { color: var(--fail); }
+  .hist-row .btn.danger:hover { border-color: var(--fail); background: #fef2f2; }
   .hist-empty { color: var(--muted); font-size: 13px; padding: 24px; text-align: center; }
   .viewing-bar {
     display: flex; align-items: center; gap: 10px; padding: 7px 14px;
@@ -354,6 +394,17 @@
 
 <div class="lightbox" id="lightbox" hidden data-page-node-id="lbfKB5fOWKFed4i5jRc35W"></div>
 <div class="toast" id="toast"></div>
+<div class="ask" id="askLayer" hidden>
+  <div class="ask-box">
+    <div class="ask-title" id="askTitle"></div>
+    <div class="ask-path" id="askText"></div>
+    <div class="ask-note" id="askNote"></div>
+    <div class="ask-acts">
+      <button class="btn" id="askCancel">取消</button>
+      <button class="btn ask-ok" id="askOk">确定</button>
+    </div>
+  </div>
+</div>
 <button class="fresh" id="freshPill" hidden data-page-node-id="4m16K5hkFbwjlz9rUtYW2T"><i data-page-node-id="lft95uhyF0CJiYqtUIVG1Q"></i><span id="freshText" data-page-node-id="5RARbx2Hal4gKiNwiDNcGE"></span></button>
 
 <script>
@@ -483,6 +534,65 @@ function toast(msg) {
 
 function hideFresh() {
   $('freshPill').hidden = true;
+}
+
+// 通用确认层：有副作用的动作（拉起系统窗口 / 删掉一份归档）都先问一句再动手，
+// 顺带把要做的事摊开给人看（路径、归档名），而不是一个光秃秃的「确定吗」。
+// 注意 onOk 里若还要用弹层上的内容，自己先取好 —— 点完按钮弹层就收了。
+let askOnOk = null;
+function openAsk({ title, text = '', note = '', ok = '确定', danger = false, onOk = null }) {
+  $('askTitle').textContent = title;
+  $('askText').textContent = text;
+  $('askNote').textContent = note;
+  const btn = $('askOk');
+  btn.textContent = ok;
+  btn.classList.toggle('danger', !!danger);
+  askOnOk = onOk;
+  $('askLayer').hidden = false;
+}
+
+function closeAsk() {
+  askOnOk = null;
+  $('askLayer').hidden = true;
+}
+
+$('askCancel').onclick = closeAsk;
+// 点遮罩（而不是盒子里面）也算取消
+$('askLayer').onclick = e => { if (e.target === $('askLayer')) closeAsk(); };
+$('askOk').onclick = () => {
+  const fn = askOnOk;
+  closeAsk();                          // 先收弹层，别让它在等响应时僵在那儿
+  if (fn) fn();
+};
+
+// 外部路径：页面既读不到内容也开不了它，交给后端在系统文件管理器里打开。
+// 请求只带卡片 id，路径由后端从看板上取 —— 前端不拼路径，也就没有「传任意路径」这个口子。
+function askReveal(it) {
+  const isDir = !!(it.ext && it.ext.is_dir);
+  const target = (it.ext && it.ext.path) || it.path || '';
+  openAsk({
+    title: isDir ? '在资源管理器中打开这个目录？' : '在资源管理器中定位这个文件？',
+    text: target,
+    note: '窗口会开在运行 ComfyUI 的那台机器上。',
+    ok: '打开',
+    onOk: async () => {
+      const r = await fetch(`${API}/reveal${authQ()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: it.id }),
+      });
+      const d = await r.json().catch(() => null);
+      if (!d || d.error) {
+        // 「后端在别的机器上」是这个动作唯一的固有限制，单独给一句人话（其余错误透传后端文案）
+        const code = d && d.error && d.error.code;
+        toast(code === 'reveal_not_local'
+          ? '后端在另一台机器上，窗口开不到你这边 —— 请在跑 ComfyUI 的那台机器上打开本页'
+          : ((d && d.error && d.error.message) || `打开失败（HTTP ${r.status}）`));
+        return;
+      }
+      toast(`${d.is_dir ? '已在资源管理器中打开' : '已在资源管理器中定位'}：${d.path}`);
+    },
+  });
 }
 
 // 用户不在第一页或正在看大图时不打断他，只在左下角提示；否则原地刷新
@@ -749,21 +859,27 @@ function renderBoard(items) {
   const world = $('canvasWorld');
   world.innerHTML = '';
   items.forEach(it => {
+    // 外部路径（input/output 之外的东西）：页面既读不到内容也开不了它 ⇒ 只能交给系统文件管理器
+    const ext = it.ext || null;
     const el = document.createElement('div');
-    el.className = 'board-card' + (it.kind === 'text' ? ' is-note' : '');
+    el.className = 'board-card' + (it.kind === 'text' ? ' is-note' : '') + (ext ? ' is-ext' : '');
     el.style.cssText = `left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px`;
-    // 副标题：目录卡显示它指向哪儿（不然看不出点了会去哪），其余显示模型名或 kind
-    const subline = it.dir
-      ? '目录 · ' + it.dir.root + (it.dir.path ? ' / ' + it.dir.path : ' /（根）')
-      : (it.model || it.kind);
+    // 副标题：外部卡与目录卡都要显示它指向哪儿（不然看不出点了会去哪），其余显示模型名或 kind
+    const subline = ext
+      ? '外部' + (ext.is_dir ? '目录 · ' : '文件 · ') + (ext.path || '')
+      : it.dir
+        ? '目录 · ' + it.dir.root + (it.dir.path ? ' / ' + it.dir.path : ' /（根）')
+        : (it.model || it.kind);
     const thumb =
-      it.kind === 'image' ? `<img src="${esc(it.thumb || it.url)}" alt="">`
-        : it.kind === 'video' ? `<span class="media"><video src="${esc(it.url)}" muted playsinline preload="metadata"></video><span class="play-badge">${PLAY_SVG}</span></span>`
-          : it.kind === 'audio' ? AUDIO_SVG
-            : it.kind === 'dir' ? `<div class="bc-dir">${DIR_SVG}<span class="bc-dir-go">进入目录 →</span></div>`
-              : it.kind === 'text' ? `<div class="bc-note">${esc(it.note || it.title)}</div>`
-                : FILE_SVG;
+      ext ? `<div class="bc-dir">${ext.is_dir ? DIR_SVG : FILE_SVG}<span class="bc-dir-go">在资源管理器中打开 ↗</span></div>`
+        : it.kind === 'image' ? `<img src="${esc(it.thumb || it.url)}" alt="">`
+          : it.kind === 'video' ? `<span class="media"><video src="${esc(it.url)}" muted playsinline preload="metadata"></video><span class="play-badge">${PLAY_SVG}</span></span>`
+            : it.kind === 'audio' ? AUDIO_SVG
+              : it.kind === 'dir' ? `<div class="bc-dir">${DIR_SVG}<span class="bc-dir-go">进入目录 →</span></div>`
+                : it.kind === 'text' ? `<div class="bc-note">${esc(it.note || it.title)}</div>`
+                  : FILE_SVG;
     el.innerHTML = `<div class="bc-thumb">${thumb}</div>
+      ${ext ? '<span class="bc-ext">外部</span>' : ''}
       <div class="bc-meta">
         <div class="bc-title" title="${esc(it.title)}">${esc(it.title)}</div>
         <div class="bc-sub">${esc(subline)}${it.note && it.kind !== 'text' ? ' · ' + esc(it.note) : ''}</div>
@@ -771,9 +887,15 @@ function renderBoard(items) {
       <button class="bc-del" data-del="${esc(it.id)}" title="移除这张">×</button>`;
     el.onclick = e => {
       if (e.target.closest('.bc-del') || dragMoved) return;    // 拖过画布就不算点击
+      // 外部路径：先确认再交给后端（只有从本机打开页面时才会真的弹出窗口，见后端 /reveal）
+      if (ext) {
+        if (viewingArchive) { toast('这是历史归档，点「载入」把它变成当前看板后才能打开'); return; }
+        askReveal(it);
+        return;
+      }
       if (it.dir) { openDir(it.dir); return; }                 // 目录卡：跳到文件列表并进这个目录
       if (it.url) { openLightbox({ kind: it.kind, name: it.title, url: it.url }); return; }
-      // 没有可预览的产物（目录外的路径 / 纯文本卡）也要给反馈，否则点上去像坏掉
+      // 没有可预览的产物（纯文本卡等）也要给反馈，否则点上去像坏掉
       toast(it.path ? `产物在 input/output 之外，无法在这里预览：${it.path}`
                     : (it.note || it.title || '这张卡片没有可预览的产物'));
     };
@@ -795,6 +917,26 @@ function fitBoard(items) {
   view.x = (rect.width - w * view.s) / 2 - minX * view.s;
   view.y = (rect.height - h * view.s) / 2 - minY * view.s;
   applyView();
+}
+
+// 看板是一块**无限画布**，固定 420px 高度在宽屏上会剩一大片空白 ⇒ 按视口把它铺满。
+// 用 offsetTop 链算画布顶部在文档里的位置：sticky 顶栏一旦滚动，getBoundingClientRect().top
+// 会变成 0，而 offsetTop 始终是布局位置，不受滚动与 sticky 影响。
+function docTop(el) {
+  let y = 0;
+  for (let n = el; n; n = n.offsetParent) y += n.offsetTop;
+  return y;
+}
+
+const BOARD_MIN_H = 320;       // 窗口很矮时别把画布压成一条缝
+const BOARD_BOTTOM_PAD = 32;   // 与 main 的 padding-bottom 对齐
+
+function fitBoardHeight() {
+  const wrap = $('canvasWrap');
+  if (!wrap || $('boardPanel').hidden) return;
+  const hint = document.querySelector('.canvas-hint');
+  const avail = window.innerHeight - docTop(wrap) - (hint ? hint.offsetHeight : 0) - BOARD_BOTTOM_PAD;
+  wrap.style.height = Math.max(BOARD_MIN_H, Math.round(avail)) + 'px';
 }
 
 // 取景依赖画布宽高：面板隐藏时量到 0（会退回默认视角）⇒ 攒着，等它真的可见再取
@@ -890,6 +1032,7 @@ async function loadHistory() {
       <span class="sp"></span>
       <button class="btn" data-view="${esc(h.id)}">查看</button>
       <button class="btn" data-load="${esc(h.id)}">载入</button>
+      <button class="btn danger" data-drop="${esc(h.id)}" data-label="${esc(h.label)}" data-count="${h.count}">删除</button>
     </div>`).join('');
 }
 
@@ -902,7 +1045,31 @@ $('boardHistoryClose').onclick = () => { $('boardHistory').hidden = true; };
 $('boardHistoryList').addEventListener('click', async e => {
   const v = e.target.closest('[data-view]');
   const l = e.target.closest('[data-load]');
-  if (!v && !l) return;
+  const x = e.target.closest('[data-drop]');
+  if (!v && !l && !x) return;
+
+  if (x) {                                  // 删一份归档：删掉就没了，先确认再发
+    const dropId = x.dataset.drop;
+    openAsk({
+      title: '删除这份归档？',
+      text: x.dataset.label,
+      note: `里面的 ${x.dataset.count} 张卡片会一起删掉，无法恢复。`,
+      ok: '删除', danger: true,
+      onOk: async () => {
+        const r = await fetch(`${API}/board/history/${dropId}${authQ()}`, { method: 'DELETE' });
+        const d = await r.json().catch(() => null);
+        if (!d || d.error) {
+          toast((d && d.error && d.error.message) || `删除失败（HTTP ${r.status}）`);
+          return;
+        }
+        // 正在看的就是被删的这份 ⇒ 退回当前看板，别停在了一个已经不存在的东西上
+        if (viewingArchive === dropId) $('boardBackBtn').onclick();
+        loadHistory();
+      },
+    });
+    return;
+  }
+
   const id = (v || l).dataset.view || (v || l).dataset.load;
   if (v) {
     const r = await fetch(`${API}/board/history/${id}${authQ()}`);
@@ -1028,6 +1195,7 @@ function setTab() {
   $('filesPanel').hidden = onBoard;
   if (!onBoard) return;
   $('freshPill').hidden = true;     // 新产物提示属于资源列表，看板上不显示
+  fitBoardHeight();                 // 先铺满高度，再取景（取景要读画布的宽高）
   fitIfPending();                   // 画布刚可见，把攒着的那次取景做掉
 }
 $('refresh').onclick = () => {
@@ -1040,7 +1208,11 @@ $('refresh').onclick = () => {
 let layoutTimer = null;
 function onLayoutChange() {
   clearTimeout(layoutTimer);
-  layoutTimer = setTimeout(() => { if (resyncPageSize()) loadFiles(); }, 240);
+  layoutTimer = setTimeout(() => {
+    // 看板高度也跟着视口走；这里只调高度，不重新取景 —— 那会把用户拖好的视图打回原点
+    if (tab === 'board') fitBoardHeight();
+    if (resyncPageSize()) loadFiles();
+  }, 240);
 }
 window.addEventListener('resize', onLayoutChange);
 window.addEventListener('orientationchange', onLayoutChange);
