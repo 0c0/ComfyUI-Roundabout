@@ -192,6 +192,48 @@ async def main() -> int:
     check("载入返回 200", st == 200, f"status={st} {body[:200]}")
     check("看板恢复 5 张", len((json.loads(body).get("items") or [])) == 5, body[:200])
 
+    print("== 目录卡 ==")
+    # 目录没有扩展名：不特判就会被当成 file，而且会被翻成一个对目录无效的 /view 地址
+    # ⇒ 卡片点上去毫无反应（真机上就是这么暴露的）
+    st, body = await loop.run_in_executor(
+        None, req, "POST", "/roundabout/view/board/items", {"title": "产出根", "path": str(out_root)},
+    )
+    itd = (json.loads(body) or {}).get("item") or {}
+    check("目录落成 kind=dir", itd.get("kind") == "dir", str(itd)[:200])
+    check("带 dir 定位 root=output / path=''",
+          (itd.get("dir") or {}).get("root") == "output" and (itd.get("dir") or {}).get("path") == "",
+          str(itd.get("dir")))
+    check("目录卡不给 url（那个地址对目录无效）", itd.get("url") is None, str(itd.get("url")))
+    check("目录卡不塞 path 字段（那是「产物在两个 root 之外」的标记）", "path" not in itd, str(itd)[:200])
+
+    sub = Path(tempfile.mkdtemp(dir=str(out_root), prefix="_rb_dir_probe_"))
+    try:
+        st, body = await loop.run_in_executor(
+            None, req, "POST", "/roundabout/view/board/items", {"title": "子目录", "path": str(sub)},
+        )
+        itd2 = (json.loads(body) or {}).get("item") or {}
+        rel = (itd2.get("dir") or {}).get("path") or ""
+        check("子目录带相对路径（前端据此跳转）", rel == sub.name, f"{rel!r} vs {sub.name!r}")
+    finally:
+        sub.rmdir()
+
+    st, body = await loop.run_in_executor(
+        None, req, "POST", "/roundabout/view/board/items",
+        {"title": "假目录", "kind": "dir", "url": "/view?filename=a.png&type=output"},
+    )
+    check("显式 kind=dir 但并非目录 -> 400", st == 400, f"status={st} {body[:200]}")
+
+    outside = Path(tempfile.mkdtemp(prefix="_rb_outside_"))
+    try:
+        st, body = await loop.run_in_executor(
+            None, req, "POST", "/roundabout/view/board/items", {"title": "外部目录", "path": str(outside)},
+        )
+        itd3 = (json.loads(body) or {}).get("item") or {}
+        check("两个 root 之外的目录不当目录卡", itd3.get("kind") == "file", str(itd3.get("kind")))
+        check("外部目录保留原路径（前端据此提示不可预览）", itd3.get("path") == str(outside), str(itd3)[:200])
+    finally:
+        outside.rmdir()
+
     print("== 落盘 ==")
     check("数据文件已写出", tmp.is_file(), str(tmp))
     if tmp.is_file():

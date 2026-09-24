@@ -40,7 +40,7 @@ from .admin import gateway_handler
 from .config import settings
 from .errors import APIError
 from .tasks import task_store
-from .viewer import _absolutize_product, _authorize, _kind
+from .viewer import _ROOTS, _absolutize_product, _authorize, _kind
 
 log = logging.getLogger("roundabout.board")
 
@@ -51,7 +51,8 @@ TITLE_MAX = 120
 NOTE_MAX = 400
 LABEL_MAX = 80
 # text = 无产物的说明卡（agent 可以钉「这轮做到哪了」这类进度说明，不必非得有文件）
-KINDS = ("image", "video", "audio", "file", "text")
+# dir  = 指向 input/output 内的目录：没有可预览的产物，点它跳去文件列表并进入该目录
+KINDS = ("image", "video", "audio", "file", "dir", "text")
 
 # ---- 画布几何：不传坐标时按这套网格找空位 ----
 CARD_W = 200
@@ -172,6 +173,33 @@ def _thumb_for(url: str | None, kind: str) -> str | None:
     return f"{url}&preview=webp;70" if "/view?" in url else url
 
 
+def _dir_target(source: str) -> dict[str, str] | None:
+    """source 指向 input/output 内的**目录**时返回 `{"root":.., "path":..}`（相对于该 root），否则 None。
+
+    不判的话会出两个问题：目录没有扩展名 ⇒ 被 `_guess_kind` 当成 `file`；而 `_local_view_url`
+    又把它翻成一个对目录无效的 `/view?filename=子目录` 地址 ⇒ 卡片点上去毫无反应。
+    先在这里认出来，前端才能「点卡片进入该目录」。
+    """
+    if not source or "://" in source or "?" in source:
+        return None                     # 外链与 `/view?...` 都是文件粒度入口，不可能是目录
+    try:
+        target = Path(source).resolve()
+    except OSError:
+        return None
+    if not target.is_dir():
+        return None
+    for root, resolve_root in _ROOTS.items():
+        base = resolve_root()
+        if not base:
+            continue
+        try:
+            rel = target.relative_to(Path(base).resolve()).as_posix()
+        except ValueError:
+            continue
+        return {"root": root, "path": "" if rel == "." else rel}
+    return None
+
+
 def _overlaps(x: float, y: float, w: float, h: float, item: dict[str, Any]) -> bool:
     """矩形相交判定（留 1px 容差，避免贴边摆放被判重叠）。"""
     return not (
@@ -215,6 +243,9 @@ def pin(
     三者都空时退化为纯文本卡（kind=text），让 agent 也能钉进度说明；
     连 note 都没有 → 400（空卡片没有意义）。
 
+    `source` 指向 input/output 内的**目录**时自动落成 kind=dir，并附 `dir: {root, path}`
+    供前端「点卡片进入该目录」；显式 `kind=dir` 但路径不是那种目录 → 400（别钉出点了没反应的卡）。
+
     位置：`x`/`y` 给了就摆在那个坐标（画布原点在左上，允许负数），没给就自动找空位。
     """
     source = url or path
@@ -227,8 +258,17 @@ def pin(
             source = product
             origin = "task_id"
 
-    resolved = _absolutize_product(_base_for(request), source) if source else None
-    item_kind = _guess_kind(resolved or source, kind)
+    dir_target = _dir_target(source)
+    if kind == "dir" and not dir_target:
+        raise APIError(
+            "'kind=dir' needs a 'url'/'path' pointing at a folder inside input/output.",
+            param="kind",
+        )
+    # 目录没有可打开的 /view 地址（那个地址对目录无效），只留 dir 定位给前端跳转
+    resolved = None if dir_target else (
+        _absolutize_product(_base_for(request), source) if source else None
+    )
+    item_kind = "dir" if dir_target else _guess_kind(resolved or source, kind)
     title_clean = _clip(title, TITLE_MAX)
     if not title_clean:
         # 没标题就退回文件名 / 任务号，避免页面上一排「未命名」
@@ -267,8 +307,11 @@ def pin(
         "w": card_w,
         "h": card_h,
     }
+    # 目录卡：带上可跳转的目标（root + 相对路径），前端点了就切到文件列表并进这个目录
+    if dir_target:
+        item["dir"] = dir_target
     # 产物落在 input/output 之外（自定义输出目录）：地址不可用，只把原路径给用户看
-    if source and not resolved:
+    if source and not resolved and not dir_target:
         item["path"] = source
 
     _items.append(item)

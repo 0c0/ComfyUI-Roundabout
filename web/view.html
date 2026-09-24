@@ -39,6 +39,12 @@
     cursor: pointer; font: inherit; color: var(--muted);
   }
   .tabs button.on { background: var(--card); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  /* tab 上的计数徽标：在别的 tab 上也能看出看板里有没有东西 */
+  .tabs button .tab-badge {
+    display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent); font-size: 11px; font-weight: 600;
+  }
+  .tabs button.on .tab-badge { background: var(--accent); color: #fff; }
   .crumbs { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
   .crumbs a { color: var(--accent); text-decoration: none; cursor: pointer; padding: 2px 4px; border-radius: 4px; }
   .crumbs a:hover { background: var(--accent-soft); }
@@ -113,6 +119,16 @@
   /* 音频/普通文件：与目录格同款的图标卡片（1:1 灰底 + 居中 SVG） */
   .thumb.icon { display: flex; align-items: center; justify-content: center; color: #6b7280; }
   .thumb.icon svg { width: 34px; height: 34px; opacity: .55; }
+  /* 视频：缩略图上叠一个播放角标，让「这格能播」一眼可见（网格与看板共用同一套） */
+  .media { position: relative; display: block; }
+  .play-badge {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(17,20,24,.55); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    pointer-events: none;                 /* 事件穿透到下面的 video，点击逻辑无需改动 */
+  }
+  .play-badge svg { width: 15px; height: 15px; margin-left: 2px; fill: currentColor; stroke: none; }
   .lb-audio { background: #fff; padding: 22px 26px; border-radius: 8px; }
   .lb-audio audio { width: min(60vw, 460px); }
   .cell .meta { padding: 6px 8px; font-size: 12px; }
@@ -124,8 +140,14 @@
     display: flex; align-items: center; justify-content: center;
     color: var(--text); background: #eceef1;
   }
-  .dir svg { width: 34px; height: 34px; opacity: .55; }
   .dir svg { width: 30px; height: 30px; opacity: .55; }
+  /* 看板上的目录卡：没有可预览的产物，所以必须把「能点进去」写明白 */
+  .bc-dir {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; width: 100%; height: 100%; color: var(--muted);
+  }
+  .bc-dir svg { width: 30px; height: 30px; opacity: .55; }
+  .bc-dir .bc-dir-go { font-size: 11px; color: var(--accent); }
   .empty { color: var(--muted); padding: 28px 0; text-align: center; font-size: 13px; }
   .pager {
     display: flex; align-items: center; justify-content: center; gap: 10px;
@@ -162,6 +184,16 @@
     width: 7px; height: 7px; border-radius: 50%; background: var(--done);
     animation: pulse 1.2s ease-in-out infinite;
   }
+
+  /* 轻提示：卡片点了却没有可预览的产物时，至少给一句反馈，别让点击像坏掉 */
+  .toast {
+    position: fixed; left: 50%; bottom: 30px; z-index: 60; max-width: min(76vw, 560px);
+    padding: 9px 14px; border-radius: 8px; background: rgba(17,20,24,.9); color: #fff;
+    font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(6px);
+    transition: opacity .16s ease, transform .16s ease;
+  }
+  .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
 
   .task { border-top: 1px solid var(--border); padding: 10px 14px; }
   .task:first-child { border-top: 0; }
@@ -213,6 +245,7 @@
     align-items: center; justify-content: center; overflow: hidden; color: var(--muted);
   }
   .board-card .bc-thumb img, .board-card .bc-thumb video { width: 100%; height: 100%; object-fit: cover; }
+  .board-card .bc-thumb .media { width: 100%; height: 100%; }
   .board-card .bc-thumb svg { width: 30px; height: 30px; opacity: .55; }
   .board-card .bc-meta { padding: 5px 8px; font-size: 12px; border-top: 1px solid var(--border); background: var(--card); }
   .board-card .bc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -265,6 +298,7 @@
   <div class="tabs" data-page-node-id="PbCF8Sv61RhF5s5fysIvdr">
     <button id="tabOutput" class="on" data-page-node-id="SnYHx4Lj4byRRx7ua9tqbA">Output</button>
     <button id="tabInput" data-page-node-id="7QVHF7GO28Swuj5c4mt2lY">Input</button>
+    <button id="tabBoard">看板<span class="tab-badge" id="tabBoardN" hidden></span></button>
   </div>
   <div class="spacer" data-page-node-id="828GkXsAqTAETY41ZmdSIW"></div>
   <label class="toggle" data-page-node-id="ht7ZC5fS4btA4VrEYNEDah"><input type="checkbox" id="auto" checked data-page-node-id="YemOz4oXWNCZwjyfEBOmC4"> 自动刷新</label>
@@ -298,7 +332,7 @@
     </div>
     <div class="canvas-hint">拖拽平移 · 滚轮缩放 · 点卡片看大图 · 卡片右上角 × 移除单张</div>
   </section>
-  <section class="panel" data-page-node-id="K2EaJ58EtVu3IC5amy6oHo">
+  <section class="panel" id="filesPanel" data-page-node-id="K2EaJ58EtVu3IC5amy6oHo">
     <h2 data-page-node-id="cubbnU3dbJIC7H9v8oGt0M"><span class="crumbs" id="crumbs" data-page-node-id="uRnOCKezveV3kCAnOd0iMe"></span><span class="count" id="fileCount" data-page-node-id="P2j9njuQ68844OtFxGQszE"></span></h2>
     <div class="panel-body" data-page-node-id="r7hu7FRJqDqGXCHEBj3LiK">
       <div class="grid" id="grid" data-page-node-id="eH7yFmhQhPfzjp8aY95ILg"></div>
@@ -319,6 +353,7 @@
 </main>
 
 <div class="lightbox" id="lightbox" hidden data-page-node-id="lbfKB5fOWKFed4i5jRc35W"></div>
+<div class="toast" id="toast"></div>
 <button class="fresh" id="freshPill" hidden data-page-node-id="4m16K5hkFbwjlz9rUtYW2T"><i data-page-node-id="lft95uhyF0CJiYqtUIVG1Q"></i><span id="freshText" data-page-node-id="5RARbx2Hal4gKiNwiDNcGE"></span></button>
 
 <script>
@@ -357,6 +392,9 @@ const $ = id => document.getElementById(id);
 const svgEl = inner => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">${inner}</svg>`;
 const AUDIO_SVG = svgEl('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>');
 const FILE_SVG = svgEl('<path d="M14 3v5h5"/><path d="M6 3h8l5 5v13H6z"/>');
+const DIR_SVG = svgEl('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>');
+// 播放角标要实心三角，svgEl 默认 fill="none"，这里单独写一个
+const PLAY_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72L19 12z"/></svg>';
 
 function fmtSize(n) {
   if (n < 1024) return n + ' B';
@@ -432,13 +470,24 @@ const dirSig = d => {
   return `${d.total}|${newest ? newest.name + ':' + newest.mtime : ''}`;
 };
 
+// 轻提示：卡片点了却没有可预览的产物时至少给一句话（见 renderBoard 的点击分支），
+// 否则「点了没反应」和「坏掉了」在用户眼里是一回事
+let toastTimer = null;
+function toast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('on'), 2600);
+}
+
 function hideFresh() {
   $('freshPill').hidden = true;
 }
 
 // 用户不在第一页或正在看大图时不打断他，只在左下角提示；否则原地刷新
 async function probeFiles() {
-  if (document.hidden) return;
+  if (document.hidden || tab === 'board') return;   // 在看板上就不必探测资源目录的新增
   const qs = `root=${root}&path=${encodeURIComponent(path)}&offset=0&limit=1`
     + `&sort=mtime&order=desc${auth()}`;
   const r = await fetch(`${API}/files?${qs}`);
@@ -524,7 +573,7 @@ async function loadFiles(depth = 0) {
     const inner = f.kind === 'image'
       ? `<img class="thumb" data-src="${f.thumb}" alt="">`   // src 由分批懒加载引擎注入
       : f.kind === 'video'
-        ? `<video class="thumb" muted preload="metadata" src="${f.url}"></video>`
+        ? `<span class="media"><video class="thumb" muted playsinline preload="metadata" src="${f.url}"></video><span class="play-badge">${PLAY_SVG}</span></span>`
         : f.kind === 'audio'
           ? `<div class="thumb icon">${AUDIO_SVG}</div>`
           : `<div class="thumb icon">${FILE_SVG}</div>`;
@@ -685,6 +734,7 @@ const authQ = () => KEY ? '?key=' + encodeURIComponent(KEY) : '';
 const view = { x: 40, y: 20, s: 1 };        // 画布平移/缩放
 let boardItems = [];
 let boardSig = '';
+let boardFitted = false;                    // 是否已取过景；面板隐藏时量不到宽高，取景要推迟
 let viewingArchive = null;                  // 非 null = 正在看某份归档，暂停被轮询覆盖
 
 const applyView = () => {
@@ -702,21 +752,30 @@ function renderBoard(items) {
     const el = document.createElement('div');
     el.className = 'board-card' + (it.kind === 'text' ? ' is-note' : '');
     el.style.cssText = `left:${it.x}px;top:${it.y}px;width:${it.w}px;height:${it.h}px`;
+    // 副标题：目录卡显示它指向哪儿（不然看不出点了会去哪），其余显示模型名或 kind
+    const subline = it.dir
+      ? '目录 · ' + it.dir.root + (it.dir.path ? ' / ' + it.dir.path : ' /（根）')
+      : (it.model || it.kind);
     const thumb =
       it.kind === 'image' ? `<img src="${esc(it.thumb || it.url)}" alt="">`
-        : it.kind === 'video' ? `<video src="${esc(it.url)}" muted preload="metadata"></video>`
+        : it.kind === 'video' ? `<span class="media"><video src="${esc(it.url)}" muted playsinline preload="metadata"></video><span class="play-badge">${PLAY_SVG}</span></span>`
           : it.kind === 'audio' ? AUDIO_SVG
-            : it.kind === 'text' ? `<div class="bc-note">${esc(it.note || it.title)}</div>`
-              : FILE_SVG;
+            : it.kind === 'dir' ? `<div class="bc-dir">${DIR_SVG}<span class="bc-dir-go">进入目录 →</span></div>`
+              : it.kind === 'text' ? `<div class="bc-note">${esc(it.note || it.title)}</div>`
+                : FILE_SVG;
     el.innerHTML = `<div class="bc-thumb">${thumb}</div>
       <div class="bc-meta">
         <div class="bc-title" title="${esc(it.title)}">${esc(it.title)}</div>
-        <div class="bc-sub">${esc(it.model || it.kind)}${it.note && it.kind !== 'text' ? ' · ' + esc(it.note) : ''}</div>
+        <div class="bc-sub">${esc(subline)}${it.note && it.kind !== 'text' ? ' · ' + esc(it.note) : ''}</div>
       </div>
       <button class="bc-del" data-del="${esc(it.id)}" title="移除这张">×</button>`;
     el.onclick = e => {
       if (e.target.closest('.bc-del') || dragMoved) return;    // 拖过画布就不算点击
-      if (it.url) openLightbox({ kind: it.kind, name: it.title, url: it.url });
+      if (it.dir) { openDir(it.dir); return; }                 // 目录卡：跳到文件列表并进这个目录
+      if (it.url) { openLightbox({ kind: it.kind, name: it.title, url: it.url }); return; }
+      // 没有可预览的产物（目录外的路径 / 纯文本卡）也要给反馈，否则点上去像坏掉
+      toast(it.path ? `产物在 input/output 之外，无法在这里预览：${it.path}`
+                    : (it.note || it.title || '这张卡片没有可预览的产物'));
     };
     world.appendChild(el);
   });
@@ -738,16 +797,24 @@ function fitBoard(items) {
   applyView();
 }
 
+// 取景依赖画布宽高：面板隐藏时量到 0（会退回默认视角）⇒ 攒着，等它真的可见再取
+function fitIfPending() {
+  if (boardFitted || $('boardPanel').hidden || !boardItems.length) return;
+  boardFitted = true;
+  fitBoard(boardItems);
+}
+
 async function loadBoard() {
   if (viewingArchive) return;                 // 看历史时不覆盖
   const r = await fetch(`${API}/board${authQ()}`);
   const d = await r.json().catch(() => null);
   if (!d || d.error) return;
   const items = d.items || [];
-  // 空看板也留着面板（只要有历史归档）：否则「历史」按钮随面板一起隐藏，就再也回看不了了
-  $('boardPanel').hidden = items.length === 0 && !d.history_count;
   $('boardCount').textContent = `${items.length} 张`;
   $('boardHistoryN').textContent = d.history_count ? ` (${d.history_count})` : '';
+  // tab 上的徽标：人在别的 tab 时也能看出画布上有没有东西
+  $('tabBoardN').textContent = items.length || '';
+  $('tabBoardN').hidden = !items.length;
   // 空态提示每次都要同步：空看板的签名恒为空串，与初始 boardSig 相同 ⇒ 会在下面提前 return
   $('boardEmpty').hidden = items.length > 0;
   const sig = boardSignature(items);
@@ -756,7 +823,8 @@ async function loadBoard() {
   boardSig = sig;
   boardItems = items;
   renderBoard(items);
-  if (first) fitBoard(items);                 // 只在内容从无到有时自动取景，之后尊重用户视角
+  if (first) boardFitted = false;             // 内容从无到有 ⇒ 等画布可见时再取景
+  fitIfPending();
 }
 
 // ---- 平移 / 缩放 ----
@@ -796,7 +864,7 @@ $('canvasWorld').addEventListener('click', e => {
     .then(() => { boardSig = ''; loadBoard(); });
 });
 
-$('boardFitBtn').onclick = () => fitBoard(boardItems);
+$('boardFitBtn').onclick = () => { boardFitted = true; fitBoard(boardItems); };
 $('boardClearBtn').onclick = async () => {
   if (!boardItems.length) return;
   await fetch(`${API}/board${authQ()}`, { method: 'DELETE' });
@@ -844,11 +912,12 @@ $('boardHistoryList').addEventListener('click', async e => {
     boardItems = (d.archive && d.archive.items) || [];
     boardSig = boardSignature(boardItems);
     renderBoard(boardItems);
-    fitBoard(boardItems);
     $('boardViewing').hidden = false;
     $('boardViewingText').textContent = `正在查看历史归档「${(d.archive || {}).label || ''}」`;
     $('boardHistory').hidden = true;
-    $('boardPanel').hidden = false;
+    boardFitted = false;              // 归档是另一套坐标，重新取景（切到看板 tab 时生效）
+    tab = 'board';
+    setTab();
   } else {
     await fetch(`${API}/board/history/${id}/load${authQ()}`, { method: 'POST' });
     viewingArchive = null;
@@ -931,13 +1000,40 @@ async function loadTasks() {
   }).join('') + (rest > 0 ? `<div class="note">更早的 ${rest} 条已折叠</div>` : '');
 }
 
-$('tabOutput').onclick = () => { root = 'output'; path = ''; offset = 0; setTab(); loadFiles(); };
-$('tabInput').onclick  = () => { root = 'input';  path = ''; offset = 0; setTab(); loadFiles(); };
-function setTab() {
-  $('tabOutput').classList.toggle('on', root === 'output');
-  $('tabInput').classList.toggle('on', root === 'input');
+// ---- 视图切换：Output / Input / 看板（看板与资源列表互斥显示）----
+let tab = 'output';            // 'output' | 'input' | 'board'
+
+$('tabOutput').onclick = () => { root = 'output'; path = ''; offset = 0; tab = 'output'; setTab(); loadFiles(); };
+$('tabInput').onclick  = () => { root = 'input';  path = ''; offset = 0; tab = 'input';  setTab(); loadFiles(); };
+$('tabBoard').onclick  = () => { tab = 'board'; setTab(); loadBoard(); };
+
+// 目录卡点了就切到文件列表并进入该目录（后端 pin 时已判定它落在哪个 root 下）
+function openDir(d) {
+  if (!d || !d.root) return;
+  root = d.root === 'input' ? 'input' : 'output';
+  path = d.path || '';
+  offset = 0;
+  tab = root;
+  setTab();
+  loadFiles();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-$('refresh').onclick = () => { loadFiles(); loadTasks(); boardSig = ''; loadBoard(); };
+
+function setTab() {
+  const onBoard = tab === 'board';
+  $('tabOutput').classList.toggle('on', tab === 'output');
+  $('tabInput').classList.toggle('on', tab === 'input');
+  $('tabBoard').classList.toggle('on', onBoard);
+  $('boardPanel').hidden = !onBoard;
+  $('filesPanel').hidden = onBoard;
+  if (!onBoard) return;
+  $('freshPill').hidden = true;     // 新产物提示属于资源列表，看板上不显示
+  fitIfPending();                   // 画布刚可见，把攒着的那次取景做掉
+}
+$('refresh').onclick = () => {
+  loadTasks();
+  if (tab === 'board') { boardSig = ''; loadBoard(); } else { loadFiles(); }
+};
 
 // 视口尺寸（或任务面板展开导致网格变窄）变化后重新量每页条数。
 // 延迟到布局动画（padding-right .18s）结束再量，否则量到的是过渡中的旧宽度。
@@ -957,6 +1053,7 @@ $('taskHeader').onclick = () => {
   onLayoutChange();
 };
 
+setTab();
 loadFiles();
 loadTasks();
 loadBoard();
