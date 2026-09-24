@@ -61,6 +61,8 @@ MAX_HISTORY = 20        # 历史归档份数，超出丢最旧的
 TITLE_MAX = 120
 NOTE_MAX = 400
 LABEL_MAX = 80
+PREVIEW_MAX = 3         # 归档摘要里带上前几张 title —— agent 靠 label 认不出内容时的兜底指纹
+MODELS_MAX = 4          # 摘要里带上的模型名个数（同一轮多半就一两个模型，多了是噪音）
 # text = 无产物的说明卡（agent 可以钉「这轮做到哪了」这类进度说明，不必非得有文件）
 # dir  = 指向 input/output 内的目录：没有可预览的产物，点它跳去文件列表并进入该目录
 #
@@ -264,7 +266,7 @@ def _auto_slot(w: float, h: float) -> tuple[float, float]:
 
 
 # ------------------------------------------------------------------ 看板操作
-def pin(
+def _build_item(
     *,
     title: str = "",
     url: str = "",
@@ -279,7 +281,7 @@ def pin(
     h: Any = None,
     request: web.Request | None = None,
 ) -> dict[str, Any]:
-    """钉一张卡片到画布，返回落库后的条目。
+    """构造一条卡片条目（只造，不 append、不落盘）—— `pin` 与 `pin_many` 共用这套判定。
 
     产物来源三选一，优先级 **url > path > task_id**（显式优先，任务 id 兜底）：
       - `url`：http(s) 地址 / ComfyUI 的 `/view?...` / input|output 内的磁盘路径
@@ -294,7 +296,8 @@ def pin(
     `source` 是本机 input/output **之外**的真实路径时附 `ext: {path, is_dir}`，标记为外部：
     页面里读不到它，前端改为「点卡片 → 确认 → 交给系统文件管理器打开」。
 
-    位置：`x`/`y` 给了就摆在那个坐标（画布原点在左上，允许负数），没给就自动找空位。
+    位置：`x`/`y` 给了就摆在那个坐标（画布原点在左上，允许负数），没给就按当前 `_items` 找空位；
+    批量钉时是逐张 append 后再造下一张，所以同一批也会自动错开。
     """
     source = url or path
     origin = "url" if url else ("path" if path else ("task_id" if task_id else "none"))
@@ -373,15 +376,99 @@ def pin(
     if source and not resolved and not dir_target:
         item["path"] = source
 
+    return item
+
+
+def pin(
+    *,
+    title: str = "",
+    url: str = "",
+    path: str = "",
+    task_id: str = "",
+    note: str = "",
+    kind: str = "",
+    model: str = "",
+    x: Any = None,
+    y: Any = None,
+    w: Any = None,
+    h: Any = None,
+    request: web.Request | None = None,
+) -> dict[str, Any]:
+    """钉一张卡片到画布，返回落库后的条目。
+
+    判定规则（来源优先级 / 目录卡 / 外部卡 / 坐标）见 `_build_item`；这里只做
+    append + 落盘 + 日志。要一次钉多张用 `pin_many`（省落盘、且顺序可控）。
+    """
+    item = _build_item(
+        title=title, url=url, path=path, task_id=task_id, note=note, kind=kind,
+        model=model, x=x, y=y, w=w, h=h, request=request,
+    )
     _items.append(item)
     dropped = 0
     if len(_items) > MAX_ITEMS:
         dropped = len(_items) - MAX_ITEMS
         del _items[:dropped]
     _save()
-    log.info("board pinned %s (%s) -> %s%s", item["id"], item_kind, title_clean,
+    log.info("board pinned %s (%s) -> %s%s", item["id"], item["kind"], item["title"],
              f", dropped {dropped} oldest" if dropped else "")
     return item
+
+
+def brief(item: dict[str, Any]) -> dict[str, Any]:
+    """卡片的精简表示（批量回执用）。
+
+    单张 pin 回整条 item 是有用的（agent 要 id 与坐标）；一次回 20 张时
+    note / thumb / task_id / origin 就成了噪音，只留定位用的那几个字段。
+    """
+    return {k: item.get(k) for k in ("id", "title", "kind", "url", "model", "x", "y")}
+
+
+_PIN_STR_FIELDS = ("title", "url", "path", "task_id", "note", "kind", "model")
+_PIN_NUM_FIELDS = ("x", "y", "w", "h")
+
+
+def _spec_kwargs(spec: dict[str, Any]) -> dict[str, Any]:
+    """批量里的单个卡片对象 → `_build_item` 的关键字参数（未列出的键直接忽略）。"""
+    kwargs: dict[str, Any] = {f: spec.get(f) or "" for f in _PIN_STR_FIELDS}
+    for f in _PIN_NUM_FIELDS:
+        kwargs[f] = spec.get(f)
+    return kwargs
+
+
+def pin_many(specs: list[dict[str, Any]], request: web.Request | None = None) -> dict[str, Any]:
+    """一次钉一批卡片，返回 `{items, count, dropped}`。
+
+    与逐张调 `pin()` 的差别只有两条，两条都是为了「按数组顺序排布」能成立：
+      - **只落盘一次** —— 逐张调会把整个 board.json 重写 N 遍（满容量时约百 KB 级/次）；
+      - **整批原子** —— 中途任一张不合法就整批回滚（`_save()` 在末尾才调，磁盘上不会
+        出现「前 3 张钉上了、第 4 张 400」这种半截批次）。
+
+    顺序即数组顺序：第 1 张先 append，第 2 张找空位时自然避开它 —— 所以同批也能
+    自己排出「分镜 1..N 横排」，不必手工给坐标，也不会像并发逐张调那样排布乱序。
+    """
+    if not isinstance(specs, list) or not specs:
+        raise APIError("'items' must be a non-empty array of card objects.", param="items")
+
+    start = len(_items)
+    built: list[dict[str, Any]] = []
+    try:
+        for spec in specs:
+            if not isinstance(spec, dict):
+                raise APIError("Every entry of 'items' must be an object.", param="items")
+            built.append(_build_item(**_spec_kwargs(spec), request=request))
+            _items.append(built[-1])
+    except Exception:
+        del _items[start:]          # 本批已 append 的全部撤回，内存回到调用前
+        raise
+
+    dropped = 0
+    if len(_items) > MAX_ITEMS:
+        dropped = len(_items) - MAX_ITEMS
+        del _items[:dropped]
+    _save()
+    log.info("board pinned %d item(s) in one batch%s", len(built),
+             f", dropped {dropped} oldest" if dropped else "")
+    return {"items": built, "count": len(_items), "dropped": dropped}
 
 
 def snapshot() -> list[dict[str, Any]]:
@@ -398,13 +485,96 @@ def remove(item_id: str) -> bool:
     return False
 
 
+# ------------------------------------------------------------------ 归档摘要
+def _kinds_of(items: list[dict[str, Any]]) -> list[str]:
+    """卡片类别的去重顺序（按首次出现）。"""
+    out: list[str] = []
+    for i in items:
+        k = str(i.get("kind") or "")
+        if k and k not in out:
+            out.append(k)
+    return out
+
+
+def _kinds_text(kinds: list[str]) -> str:
+    """类别列表 → 人类可读的短串：最多列两种，多的折成 `+N`。"""
+    if not kinds:
+        return ""
+    if len(kinds) <= 2:
+        return "/".join(kinds)
+    return "/".join(kinds[:2]) + f"+{len(kinds) - 2}"
+
+
+def _auto_label(count: int, kinds: list[str]) -> str:
+    """没给 label 时的自动归档名，形如 `7 张 · image/text · 10:24`。
+
+    回看列表里连着几份「未命名 · 10:24:56」是认不出哪份是哪轮的；张数 + 类别是
+    一眼就能看出的内容指纹（显式传的 label 优先，这里只是兜底）。
+    """
+    parts = [f"{count} 张"]
+    if kinds:
+        parts.append(_kinds_text(kinds))
+    parts.append(time.strftime("%H:%M"))
+    return " · ".join(parts)
+
+
+def summarize(entry: dict[str, Any]) -> dict[str, Any]:
+    """归档摘要 —— 回答「这是哪一轮」。
+
+    只有 id + label + 时间 + 张数时，agent 认不出内容（label 还可能是人随手写的时间戳），
+    只能把每份详情逐个拉出来探测（最多 MAX_HISTORY 次）。所以这里补三样指纹：
+    `kinds`（都有哪些类别的卡）、`preview`（前几张 title）、`models`（用过哪些模型）。
+    """
+    items = [i for i in (entry.get("items") or []) if isinstance(i, dict)]
+    titles = [str(i.get("title") or "").strip() for i in items]
+    models: list[str] = []
+    for i in items:
+        m = str(i.get("model") or "").strip()
+        if m and m not in models:
+            models.append(m)
+    return {
+        "id": entry.get("id"),
+        "label": entry.get("label"),
+        "created": entry.get("created"),
+        "count": entry.get("count") if entry.get("count") is not None else len(items),
+        "kinds": _kinds_of(items),
+        "preview": [t for t in titles if t][:PREVIEW_MAX],
+        "models": models[:MODELS_MAX],
+    }
+
+
+def summaries(limit: int | None = None) -> list[dict[str, Any]]:
+    """归档摘要列表，**新的在前**（页面与 agent 都是这个顺序）。"""
+    rows = [summarize(h) for h in reversed(_history)]
+    return rows[:limit] if limit else rows
+
+
+def latest_archive_id() -> str:
+    """最近一份归档的 id；一份都没有时回空串（调用方据此给出「还没归档过」的提示）。"""
+    return _history[-1]["id"] if _history else ""
+
+
+def history_count() -> int:
+    """归档份数。"""
+    return len(_history)
+
+
+def find_archive(archive_id: str) -> dict[str, Any] | None:
+    """按 id 找一份归档；没有就 None（HTTP 层转 404，MCP 层转 ok=false）。"""
+    return next((h for h in _history if h["id"] == archive_id), None)
+
+
 def archive(label: str = "") -> dict[str, Any] | None:
-    """把当前看板**归档进历史**并清空。空看板不产生归档。"""
+    """把当前看板**归档进历史**并清空。空看板不产生归档。
+
+    不给 label 时按内容自动起名（如 `7 张 · image/text · 10:24`）—— 原先固定是
+    `未命名 · 10:24:56`，回看列表里连着几份「未命名」就完全认不出哪份是哪轮。
+    """
     if not _items:
         return None
     entry = {
         "id": uuid.uuid4().hex[:12],
-        "label": _clip(label, LABEL_MAX) or f"未命名 · {time.strftime('%H:%M:%S')}",
+        "label": _clip(label, LABEL_MAX) or _auto_label(len(_items), _kinds_of(_items)),
         "created": time.time(),
         "count": len(_items),
         "items": [dict(i) for i in _items],
@@ -420,7 +590,7 @@ def archive(label: str = "") -> dict[str, Any] | None:
 
 def load_archived(archive_id: str, archive_current: bool = True) -> dict[str, Any]:
     """把某份归档载入当前看板。当前看板非空时先自动归档，避免内容被静默覆盖。"""
-    entry = next((h for h in _history if h["id"] == archive_id), None)
+    entry = find_archive(archive_id)
     if not entry:
         raise APIError(f"No archived board with id '{archive_id}'.", status_code=404, code="archive_not_found")
     auto = archive() if (archive_current and _items) else None
@@ -465,15 +635,41 @@ async def board(request: web.Request) -> web.Response:
     })
 
 
+# 单卡 body 里的字段名。批量模式下它们与 `items` 同传就直接拒绝 —— 同传会让人以为
+# 「顶层那张也钉了」，实际只有 items 生效，属于会静默骗人的组合。
+_SINGLE_KEYS = ("title", "url", "path", "task_id", "note", "kind", "model", "x", "y", "w", "h")
+
+
 @gateway_handler
 async def pin_item(request: web.Request) -> web.Response:
-    """钉一张卡片。body: {title, url|path|task_id, note?, kind?, model?, x?, y?, w?, h?}。"""
+    """钉卡片。
+
+    单张：`{title, url|path|task_id, note?, kind?, model?, x?, y?, w?, h?}`；
+    批量：`{items: [ {同上}, ... ]}` —— 一次落盘、按数组顺序排布。
+    """
     _authorize(request)
     try:
         payload = await request.json()
     except Exception:  # noqa: BLE001 - 非 JSON / 空 body 都归到「body 不是对象」
         payload = None
     body = _json_body(payload)
+
+    if "items" in body:
+        given = [k for k in _SINGLE_KEYS if body.get(k) not in (None, "")]
+        if given:
+            raise APIError(
+                "Batch mode takes only 'items'; drop the single-card fields: "
+                + ", ".join(given) + ".", param="items",
+            )
+        result = pin_many(body.get("items"), request=request)
+        return web.json_response({
+            "ok": True,
+            "items": [brief(i) for i in result["items"]],
+            "added": len(result["items"]),
+            "count": result["count"],
+            "dropped": result["dropped"],
+        })
+
     item = pin(
         title=body.get("title") or "",
         url=body.get("url") or "",
@@ -521,15 +717,9 @@ async def clear_board(request: web.Request) -> web.Response:
 
 @gateway_handler
 async def history(request: web.Request) -> web.Response:
-    """历史归档列表（只回摘要，不含卡片内容；详情走 history/{id}）。"""
+    """历史归档列表（摘要：id / label / 时间 / 张数 + 类别·标题·模型三样指纹；详情走 history/{id}）。"""
     _authorize(request)
-    return web.json_response({
-        "history": [
-            {"id": h["id"], "label": h["label"], "created": h["created"], "count": h["count"]}
-            for h in reversed(_history)
-        ],
-        "count": len(_history),
-    })
+    return web.json_response({"history": summaries(), "count": len(_history)})
 
 
 @gateway_handler
@@ -537,7 +727,7 @@ async def history_detail(request: web.Request) -> web.Response:
     """某份归档的完整内容（含卡片与坐标，可直接画出来）。"""
     _authorize(request)
     archive_id = request.match_info.get("id") or ""
-    entry = next((h for h in _history if h["id"] == archive_id), None)
+    entry = find_archive(archive_id)
     if not entry:
         raise APIError(f"No archived board with id '{archive_id}'.", status_code=404, code="archive_not_found")
     return web.json_response({"archive": entry, "board": board_snapshot_payload()})

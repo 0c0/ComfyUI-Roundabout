@@ -37,6 +37,9 @@
      复制优先 `navigator.clipboard`、在非安全上下文回退 `execCommand`（用局域网 IP 打开时没有
      clipboard API），两条都不通则把 id 摊在提示里让人手抄；复制分支不得夹带写请求。
      判据 29–33。
+ 13. **归档名自带内容指纹**（本轮）：后端不给 label 时自动起名「7 张 · image/text · 10:24」，
+     于是页面上凡是本来要再说一遍张数的地方都得让位 —— 历史行右侧只留完整时间、删归档的
+     确认层只说后果（judgment 34–35）。这是「后端补了信息、前端没同步」这一类重复的典型。
 
 这些用源码顺序断言即可覆盖，不必引入 jsdom：判据是「谁在谁前面」与「哪一支在不在」，
 与实现细节无关。
@@ -236,6 +239,15 @@ def invariants(html: str) -> dict[str, bool]:
         "复制分支不发写请求":
             "copyArchiveId" in copy_branch
             and not any(k in copy_branch for k in ("method", "POST", "DELETE")),
+        # ---- 本轮（归档名自动带上内容指纹，页面别再重复同一份信息）----
+        # 34. 后端在没给 label 时会自动起名「7 张 · image/text · 10:24」⇒ 历史行右侧
+        #     原先那句「N 张 · 时间」就与它重了（一行里出现两次张数）。右侧只留完整时间。
+        "历史行右侧不重复张数":
+            'class="hm">${fmtTime(h.created)}</span>' in script
+            and "${h.count} 张 · ${fmtTime(h.created)}" not in script,
+        # 35. 同理，删归档的确认层：正文就是 label（已含张数），note 只说不可撤销的后果
+        "删归档确认层不重复张数":
+            "这一步无法撤销" in script and "dataset.count" not in script,
     }
 
 
@@ -346,6 +358,20 @@ def main() -> int:
     ca_mut = ca.replace("手动记录这份 ID：${id}", "手动记录")
     check("自校验：复制失败时不再摊出 ID，判据变红",
           ca_mut != ca and red_on(html.replace(ca, ca_mut, 1), "复制失败时把 ID 摊出来"),
+          "变异后仍然通过 ⇒ 该判据抓不到回归")
+
+    # ---- 自校验（本轮新增）：自动归档名接管张数后，页面不再重复显示 ----
+    hm = 'class="hm">${fmtTime(h.created)}</span>'
+    hm_mut = 'class="hm">${h.count} 张 · ${fmtTime(h.created)}</span>'
+    check("自校验：历史行改回重复张数，判据变红",
+          hm in html and red_on(html.replace(hm, hm_mut, 1), "历史行右侧不重复张数"),
+          "变异后仍然通过 ⇒ 该判据抓不到回归")
+
+    ask_note = "这一步无法撤销 —— 里面的卡片会一起删掉。"
+    ask_mut = "里面的 ${x.dataset.count} 张卡片会一起删掉，无法恢复。"
+    check("自校验：确认层回到点张数，判据变红",
+          ask_note in html
+          and red_on(html.replace(ask_note, ask_mut, 1), "删归档确认层不重复张数"),
           "变异后仍然通过 ⇒ 该判据抓不到回归")
 
     print(f"\n===== {passed} passed / {failed} failed =====")

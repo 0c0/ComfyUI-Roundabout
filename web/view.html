@@ -1087,11 +1087,11 @@ async function loadHistory() {
   }
   list.innerHTML = rows.map(h => `<div class="hist-row">
       <span class="hl" title="${esc(h.label)}">${esc(h.label)}</span>
-      <span class="hm">${h.count} 张 · ${fmtTime(h.created)}</span>
+      <span class="hm">${fmtTime(h.created)}</span>
       <span class="sp"></span>
       <button class="btn" data-view="${esc(h.id)}">查看</button>
       <button class="btn" data-copy="${esc(h.id)}" title="归档 ID ${esc(h.id)} —— 复制后粘给 agent，让它接着这份继续">复制 ID</button>
-      <button class="btn danger" data-drop="${esc(h.id)}" data-label="${esc(h.label)}" data-count="${h.count}">删除</button>
+      <button class="btn danger" data-drop="${esc(h.id)}" data-label="${esc(h.label)}">删除</button>
     </div>`).join('');
 }
 
@@ -1115,7 +1115,7 @@ $('boardHistoryList').addEventListener('click', async e => {
     openAsk({
       title: '删除这份归档？',
       text: x.dataset.label,
-      note: `里面的 ${x.dataset.count} 张卡片会一起删掉，无法恢复。`,
+      note: '这一步无法撤销 —— 里面的卡片会一起删掉。',
       ok: '删除', danger: true,
       onOk: async () => {
         const r = await fetch(`${API}/board/history/${dropId}${authQ()}`, { method: 'DELETE' });

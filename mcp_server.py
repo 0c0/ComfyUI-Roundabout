@@ -517,6 +517,15 @@ async def health() -> dict[str, Any]:
     }
 
 
+def _without_thumbs(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """剥掉 `thumb`（页面用的缩略图地址）：对 agent 是长串噪音，只占回执体积。
+
+    读看板的三个工具都走这一条口子 —— 只在一个工具里剥、另两个把原始 item 直接回出去，
+    agent 就没法预期什么时候会吃到这串 webp 尾巴（实测占单卡回执约 1/6）。
+    """
+    return [{k: v for k, v in i.items() if k != "thumb"} for i in items]
+
+
 # ---- 工具 12：get_view_url -------------------------------------------------
 @mcp.tool(
     name="get_view_url",
@@ -549,6 +558,9 @@ async def get_view_url() -> dict[str, Any]:
         "`x`/`y` 给了就摆在那个坐标（画布可平移缩放、坐标允许负数），不给就自动排到空位 —— "
         "要表达顺序、对照或分组（例如分镜 1-5 横排、A/B 两列、按角色分区）就自己给坐标，"
         "卡片尺寸用 `w`/`h`。没有产物也能钉纯文本卡（`note` + kind=text），用来写进度说明或小结。"
+        "**要一次钉多张就传 `items` 数组**（每项形如上面那套字段）：一次往返、一次落盘，且严格按"
+        "数组顺序排布 —— 逐张调不只是慢，并发时位置还会乱。批量时顶层的单卡字段（title/url/x…）"
+        "一个都别传，同传会被明确拒绝，而不是替你猜哪边生效。"
         "`path` 指向 input/output 内的目录时会自动落成**目录卡**（没有可预览的产物），"
         "用户在页面上点它就跳到该目录的文件列表。"
         "`path` 落在 input/output **之外**的目录或文件会落成**外部卡片**"
@@ -571,8 +583,40 @@ async def pin_view_item(
     y: float | None = None,
     w: float | None = None,
     h: float | None = None,
+    items: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """钉一张卡片到任务看板。详见工具描述；坐标缺省时后端自动找空位。"""
+    """钉卡片到任务看板：单张填上面的字段，多张传 `items` 数组。
+
+    坐标缺省时后端按当前看板自动找空位；批量时逐张落位，顺序即数组顺序。
+    """
+    if items:
+        given = [k for k, v in (
+            ("title", title), ("url", url), ("path", path), ("task_id", task_id),
+            ("note", note), ("kind", kind), ("model", model),
+            ("x", x), ("y", y), ("w", w), ("h", h),
+        ) if v not in (None, "")]
+        if given:
+            return {"ok": False, "error": (
+                "Batch mode takes only 'items'; drop the single-card fields: "
+                + ", ".join(given) + "."
+            )}
+        result = board.pin_many(items)
+        payload: dict[str, Any] = {
+            "ok": True,
+            "added": len(result["items"]),
+            "count": result["count"],
+            "dropped": result["dropped"],
+            "items": [board.brief(i) for i in result["items"]],
+            "view_url": view_url(),
+        }
+        outside = [str(i.get("title") or "") for i in result["items"] if i.get("ext")]
+        if outside:
+            payload["warning"] = (
+                f"其中 {len(outside)} 张的产物不在 ComfyUI 的 input/output 目录内，页面上看不到"
+                f"内容、卡片会标「外部」：{'、'.join(outside[:5])}"
+            )
+        return payload
+
     item = board.pin(
         title=title, url=url, path=path, task_id=task_id, note=note,
         kind=kind, model=model, x=x, y=y, w=w, h=h,
@@ -599,7 +643,8 @@ async def pin_view_item(
         "清空任务看板。内容会**存进历史归档**，随时可在页面「历史」里回看，或用 "
         "get_view_board_history 列出 —— 所以换任务时尽管清，不会丢。"
         "什么时候清：这一轮成果已经交付完、或要切到另一个任务时，别把上一轮的卡片留在旁边造成混淆。"
-        "`label` 给这份归档起个名字（如「第 1 轮 · 分镜草图」），回看时好认。"
+        "`label` 给这份归档起个名字（如「第 1 轮 · 分镜草图」），回看时好认；不传也无所谓 ——"
+        "会按内容自动起名（如「7 张 · image/text」），不会是一排认不出的「未命名」。"
     ),
 )
 async def clear_view_board(label: str = "") -> dict[str, Any]:
@@ -626,18 +671,26 @@ async def clear_view_board(label: str = "") -> dict[str, Any]:
         "看的是**当前看板**。要续接某一轮时，让用户从页面历史里点「复制 ID」把归档 id 给你 —— "
         "他一眼认得出是哪一轮，比你列一遍摘要再猜快得多；拿到 id 直接 load_view_board。"
         "每张卡的 `url` 是可直接打开的完整地址；`thumb` 是页面用的缩略图，对你是长串噪音、这里省掉。"
+        "回执里的 `history` 是最近几份归档摘要（带 `kinds` / `preview` / `models` 指纹与张数）——"
+        "「上一轮钉了什么」顺手就看到了，不必再单独调一次历史工具；要更多份才用 get_view_board_history。"
     ),
 )
-async def get_view_board() -> dict[str, Any]:
-    """当前看板的卡片清单（agent 侧读取入口；不含页面用的缩略图地址）。"""
-    items = [{k: v for k, v in i.items() if k != "thumb"} for i in board.snapshot()]
-    return {
+async def get_view_board(history_limit: int = 3) -> dict[str, Any]:
+    """当前看板的卡片清单（agent 侧读取入口；不含页面用的缩略图地址）。
+
+    `history_limit` 决定内联几份归档摘要（默认 3，0 = 只要当前板）。
+    """
+    items = _without_thumbs(board.snapshot())
+    payload: dict[str, Any] = {
         "ok": True,
         "count": len(items),
-        "history_count": len(board._history),
+        "history_count": board.history_count(),
         "items": items,
         "view_url": view_url(),
     }
+    if history_limit and history_limit > 0:
+        payload["history"] = board.summaries(limit=min(int(history_limit), board.MAX_HISTORY))
+    return payload
 
 
 @mcp.tool(
@@ -645,23 +698,27 @@ async def get_view_board() -> dict[str, Any]:
     description=(
         "列出任务看板的历史归档（每次 clear_view_board 都会存一份），用来回顾上一轮钉过什么、"
         "或给用户做总结时还原当时都出了哪些东西。传 `archive_id` 看某一份的完整卡片"
-        "（含标题、地址、note 与画布坐标）；不传就只列摘要（id / label / 时间 / 张数）。"
-        "**已经拿到 id 就别调本工具**（用户粘贴的、或上一次调用的回执都算）—— 摘要只有名字与"
-        "张数，认不出内容，多拉一遍也补不上这个信息；要继续某一份直接 load_view_board。"
+        "（含标题、地址、note 与画布坐标）；不传就列摘要 —— 摘要带 `kinds` / `preview` / `models`"
+        "三样指纹，正常情况下扫一眼就认得出该载哪一份，不必逐份拉详情探测。"
+        "**已经拿到 id 就别调本工具**（用户粘贴的、或上一次调用的回执都算）—— 认一轮归档靠的是"
+        "指纹，不是把全部卡片再拉一遍；要继续某一份直接 load_view_board。"
     ),
 )
 async def get_view_board_history(archive_id: str = "", limit: int = 20) -> dict[str, Any]:
-    """历史归档：不传 id 列摘要，传了就回该份的完整卡片。"""
+    """历史归档：不传 id 列摘要（含 kinds / preview / models 指纹），传了就回该份的完整卡片。"""
     if archive_id:
-        entry = next((h for h in board._history if h["id"] == archive_id), None)
+        entry = board.find_archive(archive_id)
         if not entry:
             return {"ok": False, "error": f"No archived board with id '{archive_id}'."}
-        return {"ok": True, "archive": entry}
-    rows = [
-        {"id": h["id"], "label": h["label"], "created": h["created"], "count": h["count"]}
-        for h in reversed(board._history)
-    ][:max(1, limit)]
-    return {"ok": True, "history": rows, "count": len(board._history)}
+        return {"ok": True, "archive": {
+            **board.summarize(entry),
+            "items": _without_thumbs(entry.get("items") or []),
+        }}
+    return {
+        "ok": True,
+        "history": board.summaries(limit=max(1, limit)),
+        "count": board.history_count(),
+    }
 
 
 @mcp.tool(
@@ -673,12 +730,16 @@ async def get_view_board_history(archive_id: str = "", limit: int = 20) -> dict[
         "get_view_board_history 挑一份。当前看板非空会**先自动归档**（回 `auto_archived` 的 id），"
         "不会静默丢内容；载回后卡片的 id 与坐标与归档一致。用户那边只有「复制 ID」把这一份交给"
         "你（页面不提供「载回」按钮），所以载回是你的事。"
+        "`archive_id` 也可以留空 —— 那就是「载回最近一份」，省掉先查一遍的往返。"
     ),
 )
-async def load_view_board(archive_id: str) -> dict[str, Any]:
-    """把某份归档载回当前看板（替换当前内容；当前非空则先自动归档）。"""
-    result = board.load_archived(archive_id)
-    return {"ok": True, **result, "items": board.snapshot(), "view_url": view_url()}
+async def load_view_board(archive_id: str = "") -> dict[str, Any]:
+    """把某份归档载回当前看板（替换当前内容；当前非空则先自动归档）。`archive_id` 留空 = 最近一份。"""
+    target = archive_id or board.latest_archive_id()
+    if not target:
+        return {"ok": False, "error": "还没有任何归档可载回 —— 归档在清空看板时产生。"}
+    result = board.load_archived(target)
+    return {"ok": True, **result, "items": _without_thumbs(board.snapshot()), "view_url": view_url()}
 
 
 # ---- 工具 13：get_skills -------------------------------------------------

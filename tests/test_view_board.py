@@ -357,6 +357,130 @@ async def main() -> int:
     check("重复删 -> 404", st == 404, f"status={st} {body[:200]}")
     check("删除已落盘", drop_id not in tmp.read_text(encoding="utf-8"), "落盘文件里还留着它")
 
+    print("== 批量钉：一次往返、一次落盘 ==")
+    # 落盘是这条链路的吞吐瓶颈：逐张 pin 会把整个 board.json 重写 N 遍（本板满容量时百 KB 级）。
+    # 把 _save 换成计数器 —— 「一次落盘」这种承诺只有在能数出次数时才算判据。
+    saves: list[int] = []
+    real_save = board_mod._save
+    board_mod._save = lambda: saves.append(1)
+    try:
+        n0 = len(board_mod._items)
+        st, body = await loop.run_in_executor(
+            None, req, "POST", "/roundabout/view/board/items",
+            {"items": [
+                {"title": "分镜 1", "url": "/view?filename=s1.png&type=output"},
+                {"title": "分镜 2", "url": "/view?filename=s2.png&type=output", "note": "转场"},
+                {"title": "分镜 3", "note": "纯文本卡"},
+            ]},
+        )
+        d = json.loads(body)
+        check("批量 POST -> 200", st == 200, f"status={st} {body[:200]}")
+        check("added 报 3", d.get("added") == 3, str(d)[:200])
+        check("看板一次多 3 张", len(board_mod._items) == n0 + 3, str(len(board_mod._items)))
+        check("整批只落盘一次", len(saves) == 1, f"{len(saves)} 次")
+        briefs = d.get("items") or []
+        check("回执是精简卡（不带 note / task_id / thumb）",
+              bool(briefs) and all(set(b) <= {"id", "title", "kind", "url", "model", "x", "y"} for b in briefs),
+              str(briefs)[:200])
+        check("回执顺序 = 数组顺序",
+              [b.get("title") for b in briefs] == ["分镜 1", "分镜 2", "分镜 3"], str(briefs)[:200])
+        # 落位也按数组顺序：第 1 张先占位、后面的避开它 ⇒ 三个坐标互不相同。
+        # 若实现改成「先全部构造再统一 append」，三张会抢到同一个空位、这里变红。
+        coords = [(b.get("x"), b.get("y")) for b in briefs]
+        check("同批按数组顺序落位（坐标互不相同）", len(set(coords)) == 3, str(coords))
+    finally:
+        board_mod._save = real_save
+
+    print("== 批量：整批原子 ==")
+    n_before = len(board_mod._items)
+    st, body = await loop.run_in_executor(
+        None, req, "POST", "/roundabout/view/board/items",
+        {"items": [{"title": "好卡", "note": "ok"}, {"title": "坏卡"}]},   # 第 2 张既无产物也无 note
+    )
+    check("批里有不合法项 -> 400", st == 400, f"status={st} {body[:200]}")
+    check("整批回滚（看板条目数不变）", len(board_mod._items) == n_before,
+          f"{len(board_mod._items)} vs {n_before}")
+    st, body = await loop.run_in_executor(
+        None, req, "POST", "/roundabout/view/board/items",
+        {"items": [{"title": "x", "note": "y"}], "url": "/view?filename=q.png&type=output"},
+    )
+    check("items 与单卡字段同传 -> 400（不替调用方猜哪边生效）", st == 400, f"status={st} {body[:200]}")
+    st, body = await loop.run_in_executor(
+        None, req, "POST", "/roundabout/view/board/items", {"items": []},
+    )
+    check("items 为空数组 -> 400", st == 400, f"status={st} {body[:200]}")
+
+    print("== MCP 侧：批量、latest、指纹、剥 thumb ==")
+    import mcp_server as mcp_mod  # noqa: PLC0415 - 走到这里才需要，且共用同一份 gateway.board 内存态
+
+    res = await mcp_mod.pin_view_item(items=[{"title": "m1", "note": "a"}, {"title": "m2", "note": "b"}])
+    check("MCP 批量钉 -> ok / added", res.get("ok") is True and res.get("added") == 2, str(res)[:200])
+    check("MCP 批量回执精简（不带 note）",
+          all("note" not in b for b in res.get("items") or []), str(res.get("items"))[:200])
+    res = await mcp_mod.pin_view_item(items=[{"title": "m3", "note": "c"}], title="撞车")
+    check("MCP 批量与单卡字段同传 -> ok=false（不静默）",
+          res.get("ok") is False and "drop the single-card fields" in (res.get("error") or ""), str(res)[:200])
+
+    res = await mcp_mod.get_view_board()
+    check("get_view_board 卡片无 thumb",
+          bool(res.get("items")) and all("thumb" not in i for i in res["items"]), str(res)[:160])
+    check("get_view_board 内联 history（默认 3 份，带指纹）",
+          isinstance(res.get("history"), list) and len(res["history"]) >= 1
+          and all(k in res["history"][0] for k in ("kinds", "preview", "models")),
+          str(res.get("history"))[:200])
+    check("内联 history 与 history_count 一致（不多不少）",
+          len(res["history"]) == min(3, res["history_count"]),
+          f'{len(res.get("history") or [])} vs {res.get("history_count")}')
+    res = await mcp_mod.get_view_board(history_limit=0)
+    check("history_limit=0 -> 不回 history", "history" not in res, str(list(res))[:200])
+
+    st, body = await loop.run_in_executor(
+        None, req, "DELETE", "/roundabout/view/board?label=%E6%89%B9%E9%87%8F%E5%9B%9E%E9%A1%BE", None)
+    aid = ((json.loads(body) or {}).get("archived") or {}).get("id")
+
+    res = await mcp_mod.get_view_board_history(aid)
+    check("history 详情的卡片无 thumb",
+          bool((res.get("archive") or {}).get("items"))
+          and all("thumb" not in i for i in res["archive"]["items"]), str(res)[:160])
+    check("history 详情同时带指纹（kinds/preview）",
+          all(k in (res.get("archive") or {}) for k in ("kinds", "preview", "models")), str(res.get("archive"))[:160])
+
+    res = await mcp_mod.load_view_board()
+    check("load_view_board 不传 id -> 载回最近一份", res.get("ok") is True and res.get("loaded") == aid,
+          str(res)[:200])
+    check("载回的卡片无 thumb", all("thumb" not in i for i in res.get("items") or []), str(res)[:160])
+
+    n_hist = board_mod.history_count()
+    for h in list(board_mod._history):
+        board_mod.remove_archive(h["id"])
+    res = await mcp_mod.load_view_board()
+    check("没有任何归档时 -> ok=false 且说清原因",
+          res.get("ok") is False and "归档" in (res.get("error") or ""), str(res)[:200])
+    board_mod._history.clear()
+    check("（收尾）历史清空，后续段不受影响", board_mod.history_count() == 0, f"原有 {n_hist} 份")
+
+    print("== 自动归档名与摘要指纹 ==")
+    st, body = await loop.run_in_executor(None, req, "DELETE", "/roundabout/view/board", None)
+    arch = (json.loads(body) or {}).get("archived") or {}
+    label = arch.get("label") or ""
+    check("不给 label 也不再叫「未命名」", label and "未命名" not in label, label)
+    check("自动名带张数 + 类别", label.startswith(f"{arch.get('count')} 张 · ") and "image" in label, label)
+    check("自动名带时间兜底", ":" in label, label)
+
+    st, body = await loop.run_in_executor(None, req, "GET", "/roundabout/view/board/history", None)
+    top = (json.loads(body).get("history") or [{}])[0]
+    check("REST 摘要也带指纹", all(k in top for k in ("kinds", "preview", "models")), str(top)[:200])
+    check("kinds 已去重", isinstance(top.get("kinds"), list) and len(top["kinds"]) == len(set(top["kinds"])),
+          str(top.get("kinds")))
+    check("preview 是真实标题（不是空串）",
+          bool(top.get("preview")) and all(t.strip() for t in top["preview"]), str(top.get("preview"))[:160])
+    check("摘要仍不含完整卡片", "items" not in top, str(list(top))[:200])
+
+    board_mod.pin(title="x", note="y")
+    explicit = board_mod.archive("第 2 轮 · 草稿")
+    check("显式 label 优先于自动名", (explicit or {}).get("label") == "第 2 轮 · 草稿",
+          str((explicit or {}).get("label")))
+
     print("== 容量上限 ==")
     for i in range(board_mod.MAX_ITEMS + 3):
         board_mod.pin(title=f"x{i}", note="flood")

@@ -299,6 +299,13 @@ async function main() {
   check('按钮给出「已复制」反馈', copyBtn.textContent.includes('已复制'), copyBtn.textContent);
   check('提示说清是交给 agent 接着做', $('toast').textContent.includes('agent'), $('toast').textContent);
 
+  // 归档名现在由后端自动带上「张数 · 类别 · 时间」⇒ 行内右侧只留时间，别把张数说两遍
+  const hmText = $('boardHistoryList').querySelector('.hist-row .hm').textContent;
+  check('历史行右侧不再重复张数', !hmText.includes('张'), hmText);
+  // 归档名一律原样显示：显式命名的（如这份「第一轮 · 草图」）与后端自动命名的都不加工
+  const hlText = $('boardHistoryList').querySelector('.hist-row .hl').textContent;
+  check('归档名原样显示，不加前后缀', hlText === '第一轮 · 草图', hlText);
+
   // 非安全上下文（用局域网 IP 打开页面）没有 navigator.clipboard ⇒ 必须退到 execCommand，
   // 否则这批用户点了永远是失败 —— 而这功能恰恰是他们要用的
   delete window.navigator.clipboard;
