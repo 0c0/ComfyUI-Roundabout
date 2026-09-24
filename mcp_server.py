@@ -637,6 +637,23 @@ async def get_view_board_history(archive_id: str = "", limit: int = 20) -> dict[
     return {"ok": True, "history": rows, "count": len(board._history)}
 
 
+@mcp.tool(
+    name="load_view_board",
+    description=(
+        "把某份历史归档载回当前看板（**替换**语义）：上一轮钉过的卡片回到画布上，接着往下钉。"
+        "什么时候用：新会话要续接上一轮任务、或用户问「上次那板还在吗」时 —— 先用 "
+        "get_view_board_history 拿到 `archive_id`，再来载入。当前看板非空会**先自动归档**它"
+        "（回 `auto_archived` 的 id），不会静默丢内容；载回后卡片的 id 与坐标与归档一致。"
+        "页面上用户只能**只读回看**归档，所以「载回」是留给你的入口 —— 别指望用户自己点，"
+        "他那边没有这个按钮。"
+    ),
+)
+async def load_view_board(archive_id: str) -> dict[str, Any]:
+    """把某份归档载回当前看板（替换当前内容；当前非空则先自动归档）。"""
+    result = board.load_archived(archive_id)
+    return {"ok": True, **result, "items": board.snapshot(), "view_url": view_url()}
+
+
 # ---- 工具 13：get_skills -------------------------------------------------
 @mcp.tool(
     name="get_skills",

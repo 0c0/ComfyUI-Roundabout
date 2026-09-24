@@ -197,7 +197,7 @@ declared = set(PAYLOAD["endpoints"]["mcp"])
 check("端点清单与 @mcp.tool 注册集完全一致",
       declared == registered,
       f"清单缺 {sorted(registered - declared)} / 清单多 {sorted(declared - registered)}")
-check("MCP 工具数为 18", len(registered) == 18, sorted(registered))
+check("MCP 工具数为 19", len(registered) == 19, sorted(registered))
 
 rest_src = (ROOT / "gateway" / "routes.py").read_text(encoding="utf-8")
 for path in PAYLOAD["endpoints"]["rest"]:

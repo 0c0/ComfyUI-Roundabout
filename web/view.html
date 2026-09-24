@@ -318,7 +318,7 @@
   .hist-row .hm { color: var(--muted); font-size: 12px; flex: none; }
   .hist-row .sp { flex: 1; }
   .hist-row .btn { padding: 3px 10px; font-size: 12px; }
-  /* 删除归档不可恢复 ⇒ 按钮用失败色，跟「查看 / 载入」拉开距离，别顺手点到 */
+  /* 删除归档不可恢复 ⇒ 按钮用失败色，跟「查看」拉开距离，别顺手点到 */
   .hist-row .btn.danger { color: var(--fail); }
   .hist-row .btn.danger:hover { border-color: var(--fail); background: #fef2f2; }
   .hist-empty { color: var(--muted); font-size: 13px; padding: 24px; text-align: center; }
@@ -327,7 +327,17 @@
     background: var(--accent-soft); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--accent);
   }
   .viewing-bar[hidden] { display: none; }
-  .viewing-bar .btn { margin-left: auto; padding: 3px 10px; font-size: 12px; }
+  .viewing-bar .btn { padding: 3px 10px; font-size: 12px; }
+  .viewing-bar .vb-acts { margin-left: auto; display: flex; gap: 8px; }
+  /* 回看归档是只读的：把「写」的入口整条撤掉（清空按钮、卡片右上角 ×）——
+     否则会在你看着归档时，默默地动了屏幕上看不见的当前看板 */
+  #boardPanel.reading #boardClearBtn,
+  #boardPanel.reading .bc-del { display: none; }
+  /* 历史不再报数字（那是噪音）：只留一个小点，提示「有东西可回看」 */
+  #boardHistoryN::before {
+    content: ''; display: inline-block; width: 5px; height: 5px; margin-left: 6px;
+    border-radius: 50%; background: var(--accent); vertical-align: middle;
+  }
 </style>
 
 </head>
@@ -357,8 +367,11 @@
       </span>
     </h2>
     <div class="viewing-bar" id="boardViewing" hidden>
-      <span id="boardViewingText">正在查看历史归档</span>
-      <button class="btn" id="boardBackBtn">返回当前看板</button>
+      <span id="boardViewingText">正在回看历史归档</span>
+      <span class="vb-acts">
+        <button class="btn" id="boardReplaceBtn">用这份替换当前看板</button>
+        <button class="btn" id="boardBackBtn">返回当前看板</button>
+      </span>
     </div>
     <div class="canvas-wrap" id="canvasWrap">
       <div class="canvas-world" id="canvasWorld"></div>
@@ -370,7 +383,7 @@
         <div class="hist-list" id="boardHistoryList"></div>
       </div>
     </div>
-    <div class="canvas-hint">拖拽平移 · 滚轮缩放 · 点卡片看大图 · 卡片右上角 × 移除单张</div>
+    <div class="canvas-hint" id="canvasHint">拖拽平移 · 滚轮缩放 · 点卡片看大图 · 卡片右上角 × 移除单张</div>
   </section>
   <section class="panel" id="filesPanel" data-page-node-id="K2EaJ58EtVu3IC5amy6oHo">
     <h2 data-page-node-id="cubbnU3dbJIC7H9v8oGt0M"><span class="crumbs" id="crumbs" data-page-node-id="uRnOCKezveV3kCAnOd0iMe"></span><span class="count" id="fileCount" data-page-node-id="P2j9njuQ68844OtFxGQszE"></span></h2>
@@ -845,7 +858,10 @@ const view = { x: 40, y: 20, s: 1 };        // 画布平移/缩放
 let boardItems = [];
 let boardSig = '';
 let boardFitted = false;                    // 是否已取过景；面板隐藏时量不到宽高，取景要推迟
-let viewingArchive = null;                  // 非 null = 正在看某份归档，暂停被轮询覆盖
+let viewingArchive = null;                  // 非 null = 正在回看某份归档，暂停被轮询覆盖
+let viewingArchiveLabel = '';               // 回看中那份归档的名字（确认层与横幅要用）
+const BOARD_HINT = '拖拽平移 · 滚轮缩放 · 点卡片看大图 · 卡片右上角 × 移除单张';
+const READING_HINT = '历史归档 · 只读 · 拖拽平移 · 滚轮缩放 · 点卡片看大图';
 
 const applyView = () => {
   $('canvasWorld').style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.s})`;
@@ -889,7 +905,7 @@ function renderBoard(items) {
       if (e.target.closest('.bc-del') || dragMoved) return;    // 拖过画布就不算点击
       // 外部路径：先确认再交给后端（只有从本机打开页面时才会真的弹出窗口，见后端 /reveal）
       if (ext) {
-        if (viewingArchive) { toast('这是历史归档，点「载入」把它变成当前看板后才能打开'); return; }
+        if (viewingArchive) { toast('这是历史归档，只读 —— 想打开它请先在回看里「用这份替换当前看板」'); return; }
         askReveal(it);
         return;
       }
@@ -953,7 +969,7 @@ async function loadBoard() {
   if (!d || d.error) return;
   const items = d.items || [];
   $('boardCount').textContent = `${items.length} 张`;
-  $('boardHistoryN').textContent = d.history_count ? ` (${d.history_count})` : '';
+  $('boardHistoryN').hidden = !d.history_count;   // 只给一个小点：有东西可回看，不拿数字刷存在感
   // tab 上的徽标：人在别的 tab 时也能看出画布上有没有东西
   $('tabBoardN').textContent = items.length || '';
   $('tabBoardN').hidden = !items.length;
@@ -1002,12 +1018,16 @@ $('canvasWorld').addEventListener('click', e => {
   const b = e.target.closest('[data-del]');
   if (!b) return;
   e.stopPropagation();
+  // 回看归档是只读的（按钮已被 CSS 撤掉），这里再兜一道：别让「看着归档、动的是当前看板」——
+  // 归档卡片的 id 是载入时原样保留的，发出去很可能删掉的是当前看板里的同名卡
+  if (viewingArchive) { toast('这是历史归档，只读 —— 要改请先「返回当前看板」'); return; }
   fetch(`${API}/board/items/${b.dataset.del}${authQ()}`, { method: 'DELETE' })
     .then(() => { boardSig = ''; loadBoard(); });
 });
 
 $('boardFitBtn').onclick = () => { boardFitted = true; fitBoard(boardItems); };
 $('boardClearBtn').onclick = async () => {
+  if (viewingArchive) { toast('正在回看历史归档 —— 清空的是当前看板，请先「返回当前看板」'); return; }
   if (!boardItems.length) return;
   await fetch(`${API}/board${authQ()}`, { method: 'DELETE' });
   boardSig = '';
@@ -1015,7 +1035,7 @@ $('boardClearBtn').onclick = async () => {
   loadHistory();
 };
 
-// ---- 历史归档：看 / 载入 ----
+// ---- 历史归档：只读回看 / 用这份替换当前看板 ----
 async function loadHistory() {
   const r = await fetch(`${API}/board/history${authQ()}`);
   const d = await r.json().catch(() => null);
@@ -1031,7 +1051,6 @@ async function loadHistory() {
       <span class="hm">${h.count} 张 · ${fmtTime(h.created)}</span>
       <span class="sp"></span>
       <button class="btn" data-view="${esc(h.id)}">查看</button>
-      <button class="btn" data-load="${esc(h.id)}">载入</button>
       <button class="btn danger" data-drop="${esc(h.id)}" data-label="${esc(h.label)}" data-count="${h.count}">删除</button>
     </div>`).join('');
 }
@@ -1044,9 +1063,8 @@ $('boardHistoryClose').onclick = () => { $('boardHistory').hidden = true; };
 
 $('boardHistoryList').addEventListener('click', async e => {
   const v = e.target.closest('[data-view]');
-  const l = e.target.closest('[data-load]');
   const x = e.target.closest('[data-drop]');
-  if (!v && !l && !x) return;
+  if (!v && !x) return;
 
   if (x) {                                  // 删一份归档：删掉就没了，先确认再发
     const dropId = x.dataset.drop;
@@ -1070,36 +1088,59 @@ $('boardHistoryList').addEventListener('click', async e => {
     return;
   }
 
-  const id = (v || l).dataset.view || (v || l).dataset.load;
-  if (v) {
-    const r = await fetch(`${API}/board/history/${id}${authQ()}`);
-    const d = await r.json().catch(() => null);
-    if (!d || d.error) return;
-    viewingArchive = id;
-    boardItems = (d.archive && d.archive.items) || [];
-    boardSig = boardSignature(boardItems);
-    renderBoard(boardItems);
-    $('boardViewing').hidden = false;
-    $('boardViewingText').textContent = `正在查看历史归档「${(d.archive || {}).label || ''}」`;
-    $('boardHistory').hidden = true;
-    boardFitted = false;              // 归档是另一套坐标，重新取景（切到看板 tab 时生效）
-    tab = 'board';
-    setTab();
-  } else {
-    await fetch(`${API}/board/history/${id}/load${authQ()}`, { method: 'POST' });
-    viewingArchive = null;
-    $('boardViewing').hidden = true;
-    boardSig = '';
-    loadBoard();
-    loadHistory();
-  }
+  // 「查看」= 只读回看：把这份归档画到画布上，服务端一字不动，并暂停轮询（否则会被当前看板冲掉）
+  const r = await fetch(`${API}/board/history/${v.dataset.view}${authQ()}`);
+  const d = await r.json().catch(() => null);
+  if (!d || d.error) return;
+  viewingArchive = v.dataset.view;
+  viewingArchiveLabel = (d.archive || {}).label || '';
+  boardItems = (d.archive && d.archive.items) || [];
+  boardSig = boardSignature(boardItems);
+  renderBoard(boardItems);
+  $('boardViewing').hidden = false;
+  $('boardViewingText').textContent = `正在回看历史归档「${viewingArchiveLabel}」· 只读`;
+  $('boardHistory').hidden = true;
+  enterReading();
+  boardFitted = false;              // 归档是另一套坐标，重新取景（切到看板 tab 时生效）
+  tab = 'board';
+  setTab();
 });
 
-$('boardBackBtn').onclick = () => {
+// 进入 / 退出只读回看：只读的判据是「写入口是否可达」，所以这里同时换掉提示文案
+function enterReading() {
+  $('boardPanel').classList.add('reading');
+  $('canvasHint').textContent = READING_HINT;
+}
+
+function exitArchive() {
   viewingArchive = null;
+  viewingArchiveLabel = '';
+  $('boardPanel').classList.remove('reading');
+  $('canvasHint').textContent = BOARD_HINT;
   $('boardViewing').hidden = true;
   boardSig = '';
   loadBoard();
+}
+
+$('boardBackBtn').onclick = exitArchive;
+
+// 「用这份替换当前看板」：整个看板唯一有破坏性的动作 ⇒ 先在回看里看清，再走确认层。
+// 当前看板非空时后端会**先自动归档**它，所以这不是一次性销毁 —— 那点也要在弹层里讲清楚。
+$('boardReplaceBtn').onclick = () => {
+  const id = viewingArchive;
+  if (!id) return;
+  const label = viewingArchiveLabel, n = boardItems.length;
+  openAsk({
+    title: '用这份归档替换当前看板？',
+    text: `「${label}」· ${n} 张`,
+    note: '画布会换成这份归档的内容；当前看板里已有的卡片会先自动归档，不会丢。',
+    ok: '替换', danger: true,
+    onOk: async () => {
+      await fetch(`${API}/board/history/${id}/load${authQ()}`, { method: 'POST' });
+      exitArchive();                  // 替换完它就是当前看板了，退出只读
+      loadHistory();
+    },
+  });
 };
 
 

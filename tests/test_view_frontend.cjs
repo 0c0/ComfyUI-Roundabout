@@ -79,6 +79,7 @@ let revealCalls = [];        // 每次 POST /reveal 的请求体
 let revealStatus = 200;      // 改成 403 模拟「后端在另一台机器上」
 let histDeletes = [];        // 每次 DELETE 归档的 id
 let histListLoads = 0;
+let boardLoads = [];         // 每次 POST /board/history/{id}/load 的归档 id
 
 function fakeFetch(url, init) {
   const u = new URL(url, 'http://127.0.0.1:8188');
@@ -90,6 +91,17 @@ function fakeFetch(url, init) {
   if (u.pathname.includes('/board/history/') && method === 'DELETE') {
     histDeletes.push(u.pathname.split('/').pop());
     return jsonResponse({ ok: true, id: 'arch_1', removed: 5, count: 0 });
+  }
+  if (u.pathname.includes('/board/history/') && u.pathname.endsWith('/load') && method === 'POST') {
+    boardLoads.push(u.pathname.split('/').slice(-2)[0]);
+    return jsonResponse({ ok: true, loaded: 'arch_1', count: boardItems.length,
+                          auto_archived: null, items: boardItems });
+  }
+  if (u.pathname.includes('/board/history/') && method === 'GET') {
+    // 归档详情：只读回看拿的就是这一份快照
+    return jsonResponse({ ok: true, items: boardItems,
+                          archive: { id: 'arch_1', label: '第一轮 · 草图', created: 1,
+                                     count: boardItems.length, items: boardItems } });
   }
   if (u.pathname.endsWith('/board')) {
     return jsonResponse({ server_time: Date.now() / 1000, items: boardItems,
@@ -270,6 +282,52 @@ async function main() {
   check('确定后发出 DELETE', histDeletes.length === 1 && histDeletes[0] === 'arch_1', JSON.stringify(histDeletes));
   check('删完刷新了历史列表', histListLoads > listLoadsBefore, `${listLoadsBefore} -> ${histListLoads}`);
   $('boardHistoryClose').click();
+
+  // ---- 回看归档：只读（写入口整条撤掉）----
+  console.log('== 回看归档：只读，写入口消失 ==');
+  $('boardHistoryBtn').click();
+  await settle();
+  check('历史行已无「载入」按钮', !$('boardHistoryList').querySelector('[data-load]'));
+  const viewBtn = $('boardHistoryList').querySelector('[data-view]');
+  check('历史行有「查看」按钮', !!viewBtn);
+  const deletesBeforeView = histDeletes.length;
+  viewBtn.click();
+  await settle();
+  check('回看横幅出现且写明只读',
+        $('boardViewing').hidden === false && $('boardViewingText').textContent.includes('只读'),
+        $('boardViewingText').textContent);
+  check('看板被打上只读标记', $('boardPanel').classList.contains('reading'));
+  check('提示行换成只读文案', $('canvasHint').textContent.includes('只读'), $('canvasHint').textContent);
+  check('回看只发读请求（没有写）', histDeletes.length === deletesBeforeView && boardLoads.length === 0,
+        `deletes=${histDeletes.length} loads=${boardLoads.length}`);
+  check('清空按钮在只读下被撤掉',
+        window.getComputedStyle($('boardClearBtn')).display === 'none',
+        window.getComputedStyle($('boardClearBtn')).display);
+  const delBtns = [...window.document.querySelectorAll('.board-card .bc-del')];
+  check('卡片 × 在只读下被撤掉',
+        delBtns.length > 0 && delBtns.every(b => window.getComputedStyle(b).display === 'none'),
+        `${delBtns.length} 个 ×`);
+
+  console.log('== 回看里替换当前看板：先确认，再 POST ==');
+  $('boardReplaceBtn').click();
+  await settle();
+  check('弹出确认层', $('askLayer').hidden === false && $('askTitle').textContent.includes('替换'),
+        $('askTitle').textContent);
+  check('确认层摊开是哪份归档', $('askText').textContent.includes('第一轮'), $('askText').textContent);
+  check('确认层说明当前内容会先自动归档', $('askNote').textContent.includes('归档'), $('askNote').textContent);
+  check('确认按钮是危险色', $('askOk').classList.contains('danger'));
+  check('还没点确定 → 没有 POST', boardLoads.length === 0, JSON.stringify(boardLoads));
+
+  $('askOk').click();
+  await settle();
+  check('确定后发出载回请求', boardLoads.length === 1 && boardLoads[0] === 'arch_1', JSON.stringify(boardLoads));
+  check('替换后退出只读',
+        !$('boardPanel').classList.contains('reading') && $('boardViewing').hidden === true,
+        `reading=${$('boardPanel').classList.contains('reading')} bar=${$('boardViewing').hidden}`);
+  check('退出后写入口回来（清空按钮可见）',
+        window.getComputedStyle($('boardClearBtn')).display !== 'none',
+        window.getComputedStyle($('boardClearBtn')).display);
+  check('提示行恢复常规文案', !$('canvasHint').textContent.includes('只读'), $('canvasHint').textContent);
 
   // jsdom 没有排版，前面所有用例走的都是兜底值；这里手动喂一套几何，
   // 验证「每页条数 = 一屏能放下的行数 × 列数」这条公式本身。

@@ -168,7 +168,7 @@ async def main() -> int:
             tools = (_parse_sse(body) or {}).get("result", {}).get("tools", [])
             names = sorted(t["name"] for t in tools)
             # 工具数变更时同步这里（文档里的计数也一起改）；下面两个是入口型工具，必须在线
-            check("tools/list 返回 18 个工具", len(names) == 18, f"{len(names)} 个: {names}")
+            check("tools/list 返回 19 个工具", len(names) == 19, f"{len(names)} 个: {names}")
             check("tools/list 含 get_skills", "get_skills" in names, str(names))
             check("tools/list 含 check_weights", "check_weights" in names, str(names))
             check("tools/list 含 get_tool_info", "get_tool_info" in names, str(names))

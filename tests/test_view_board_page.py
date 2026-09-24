@@ -25,6 +25,14 @@
      且**请求体只带卡片 id**（路径由后端从看板上取）—— 这条是安全判据：前端不拼路径，
      就没有「传任意路径」这个口子。
   9. 删归档不可恢复 ⇒ 必须先过确认层（危险色）再发 DELETE，删完刷新列表。
+ 10. **回看归档是只读的**（本轮）：只读不能只体现在「数据来源不写回」，必须让「写」的入口
+     **不可达**。判据三条：CSS 里把清空按钮与卡片 `×` 一起 `display:none`（少一个就是漏一个
+     入口）、两个 handler 各有一道 `viewingArchive` 兜底（DOM 若被绕过也不动手）、
+     `×` 与清空的作用对象是**当前看板**而屏幕上放的是归档 ⇒ 不兜就等于「看着归档、动的是
+     看不见的那块板」。
+ 11. **「载入」只留在回看里，且是唯一的破坏性动作**（本轮）：列表行不再有载入按钮；
+     替换入口在横幅内，点击必经确认层，且「先确认 → 再 POST → 再退出只读」顺序不能乱；
+     返回与替换共用同一条退出路径（`exitArchive`），避免其中一条忘了摘掉只读状态。
 
 这些用源码顺序断言即可覆盖，不必引入 jsdom：判据是「谁在谁前面」与「哪一支在不在」，
 与实现细节无关。
@@ -80,8 +88,16 @@ def order(body: str, first: str, second: str) -> bool:
     return body.index(first) < body.index(second)
 
 
-def invariants(script: str) -> dict[str, bool]:
-    """把全部不变量算成一张表 —— 自校验时对变异源码重跑同一张表即可。"""
+def invariants(html: str) -> dict[str, bool]:
+    """把全部不变量算成一张表 —— 自校验时对变异源码重跑同一张表即可。
+
+    注意取的是整份 html：有的判据在 <style> 里（只读时撤掉写入口），有的在 <script> 里。
+    """
+    script = block_of(html, "<script>", "</script>")
+    style = block_of(html, "<style>", "</style>")
+    vb_i = html.index('<div class="viewing-bar"')
+    viewing_bar = html[vb_i:html.index("</div>", vb_i)]
+
     load_board = fn_body(script, "async function loadBoard()")
     render_board = fn_body(script, "function renderBoard(")
     set_tab = fn_body(script, "function setTab()")
@@ -90,9 +106,15 @@ def invariants(script: str) -> dict[str, bool]:
     doc_top = fn_body(script, "function docTop(")
     on_change = fn_body(script, "function onLayoutChange()")
     hist_click = fn_body(script, "$('boardHistoryList').addEventListener('click', async e =>")
+    enter_reading = fn_body(script, "function enterReading()")
+    exit_archive = fn_body(script, "function exitArchive()")
+    replace_ask = fn_body(script, "$('boardReplaceBtn').onclick = () =>")
+    del_click = fn_body(script[script.index("$('canvasWorld').addEventListener('click', e =>"):], "=>")
     # 清空按钮的 handler 是赋值形式，body 从箭头函数的大括号起算
     clear_i = script.index("$('boardClearBtn').onclick")
     clear_body = fn_body(script[clear_i:], "onclick = async ()")
+    # 只读时该被撤掉的那段 CSS
+    reading_css = style[style.index("#boardPanel.reading") : style.index("#boardHistoryN")]
     return {
         # 1. 空态同步必须早于「签名相同就返回」
         "空态同步早于签名早退": order(load_board,
@@ -143,7 +165,7 @@ def invariants(script: str) -> dict[str, bool]:
         "外部卡带「外部」标记": "bc-ext" in render_board and "is-ext" in render_board,
         "外部卡点击走确认层": "askReveal(it)" in render_board,
         "归档里的外部卡只给提示不动手": "if (viewingArchive) { toast(" in render_board,
-        # 17. 确认层是通用的（打开外部路径 / 删归档共用），按钮真接了 handler
+        # 17. 确认层是通用的（打开外部路径 / 删归档 / 替换看板共用），按钮真接了 handler
         "确认层由 openAsk 统一驱动":
             "function openAsk(" in script and "$('askOk').onclick" in script,
         # 18. ★ 打开动作的请求体只带卡片 id：路径由后端从看板上取，前端不拼路径 ⇒
@@ -159,6 +181,35 @@ def invariants(script: str) -> dict[str, bool]:
         "历史行有删除入口": "data-drop=" in script,
         "删归档前先确认且用危险色": "openAsk(" in hist_click and "danger: true" in hist_click,
         "删归档用 DELETE 并刷新列表": order(hist_click, "method: 'DELETE'", "loadHistory()"),
+        # ---- 本轮（只读回看 + 载入收进回看）----
+        # 21. 载入不再是列表行上的按钮：它只该出现在回看归档时
+        "历史行不再有载入按钮": "data-load" not in html,
+        # 22. 查看 = 只读回看：先切进回看状态，再进只读；回看请求是 GET（没有 method）
+        "查看走只读回看并进入只读模式":
+            order(hist_click, "viewingArchive = v.dataset.view;", "enterReading();"),
+        "回看分支不发写请求": "method: 'POST'" not in hist_click,
+        # 23. 只读状态打在面板上（CSS 才有挂靠点）
+        "进入只读时给面板加 reading 类": "classList.add('reading')" in enter_reading,
+        # 24. ★ 只读必须让「写」的入口不可达：清空与卡片 × 两个都要撤，少一个就是漏一个
+        "只读时清空按钮撤掉": "#boardPanel.reading #boardClearBtn" in reading_css,
+        "只读时卡片 × 撤掉": "#boardPanel.reading .bc-del" in reading_css,
+        "撤掉的方式是 display:none": "display: none" in reading_css,
+        # 25. 兜底：DOM 若被绕过也不动手（× 与清空的作用对象都是**当前看板**，
+        #     而屏幕上放的是归档 ⇒ 不兜就等于「看着归档、动的是看不见的那块板」）
+        "× 在回看时兜底拒绝": "if (viewingArchive) { toast(" in del_click,
+        "清空在回看时兜底拒绝": order(clear_body, "if (viewingArchive) { toast(", "fetch(`"),
+        # 26. 退出路径只有一条：返回与替换共用 exitArchive，摘掉只读状态
+        "退出只读时摘掉 reading 类": "classList.remove('reading')" in exit_archive,
+        "返回按钮与替换共用退出路径": "$('boardBackBtn').onclick = exitArchive;" in script,
+        # 27. 替换入口在回看横幅里（回看时才看得见），且是唯一的破坏性动作
+        "替换入口在归档横幅里": "boardReplaceBtn" in viewing_bar,
+        "替换先过确认层再发请求":
+            order(replace_ask, "openAsk(", "method: 'POST'") and "danger: true" in replace_ask,
+        "替换成功后才退出只读": order(replace_ask, "/load", "exitArchive()"),
+        # 28. 历史计数不再报数字（那是噪音），只留一个小点
+        "历史计数不再打数字":
+            "$('boardHistoryN').textContent" not in script
+            and "$('boardHistoryN').hidden" in load_board,
     }
 
 
@@ -176,7 +227,7 @@ def main() -> int:
     html = raw.decode("utf-8")
     script = block_of(html, "<script>", "</script>")
 
-    inv = invariants(script)
+    inv = invariants(html)
     for name, ok in inv.items():
         check(name, ok)
 
@@ -189,40 +240,67 @@ def main() -> int:
         "  if (sig === boardSig) return;\n",
         "  if (sig === boardSig) return;\n  $('boardEmpty').hidden = items.length > 0;\n", 1)
     check("自校验：把空态赋值挪到早退之后，判据变红",
-          lb_moved != lb and red_on(script.replace(lb, lb_moved, 1), "空态同步早于签名早退"),
+          lb_moved != lb and red_on(html.replace(lb, lb_moved, 1), "空态同步早于签名早退"),
           "变异后仍然通过 ⇒ 该判据抓不到回归")
 
-    mutated2 = script.replace(
+    mutated2 = html.replace(
         "  const first = boardSig === '';\n  boardSig = sig;\n",
         "  boardSig = sig;\n  const first = boardSig === '';\n", 1)
     check("自校验：把 first 挪到更新 boardSig 之后，判据变红",
-          mutated2 != script and red_on(mutated2, "首屏取景标记在更新 boardSig 之前求值"),
+          mutated2 != html and red_on(mutated2, "首屏取景标记在更新 boardSig 之前求值"),
           "变异后仍然通过 ⇒ 该判据抓不到回归")
 
-    # 自校验（本次新增的两条）：面板互斥少一边、目录卡点击少一跳
     tab_body = fn_body(script, "function setTab()")
     tab_mut = tab_body.replace("  $('filesPanel').hidden = onBoard;\n", "", 1)
     check("自校验：资源面板不再随 tab 隐藏，判据变红",
-          tab_mut != tab_body and red_on(script.replace(tab_body, tab_mut, 1), "看板与资源面板互斥显示"),
+          tab_mut != tab_body and red_on(html.replace(tab_body, tab_mut, 1), "看板与资源面板互斥显示"),
           "变异后仍然通过 ⇒ 该判据抓不到回归")
 
     rb = fn_body(script, "function renderBoard(")
     rb_mut = rb.replace("if (it.dir) { openDir(it.dir); return; }", "", 1)
     check("自校验：目录卡点击不再跳转，判据变红",
-          rb_mut != rb and red_on(script.replace(rb, rb_mut, 1), "点击目录卡走 openDir"),
+          rb_mut != rb and red_on(html.replace(rb, rb_mut, 1), "点击目录卡走 openDir"),
           "变异后仍然通过 ⇒ 该判据抓不到回归")
 
-    # 自校验（本轮新增的两条）：外部卡不再走确认层、不再铺满高度
     rb2 = fn_body(script, "function renderBoard(")
     rb2_mut = rb2.replace("        askReveal(it);\n", "", 1)
     check("自校验：外部卡点击不再走确认层，判据变红",
-          rb2_mut != rb2 and red_on(script.replace(rb2, rb2_mut, 1), "外部卡点击走确认层"),
+          rb2_mut != rb2 and red_on(html.replace(rb2, rb2_mut, 1), "外部卡点击走确认层"),
           "变异后仍然通过 ⇒ 该判据抓不到回归")
 
     tab2 = fn_body(script, "function setTab()")
     tab2_mut = tab2.replace("\n  fitBoardHeight();", "", 1)
     check("自校验：不再铺满高度，判据变红",
-          tab2_mut != tab2 and red_on(script.replace(tab2, tab2_mut, 1), "铺满高度早于取景"),
+          tab2_mut != tab2 and red_on(html.replace(tab2, tab2_mut, 1), "铺满高度早于取景"),
+          "变异后仍然通过 ⇒ 该判据抓不到回归")
+
+    # ---- 自校验（本轮新增）：只读的两个写入口、× 兜底、替换的确认层与退出 ----
+    css_old = ("  #boardPanel.reading #boardClearBtn,\n"
+               "  #boardPanel.reading .bc-del { display: none; }\n")
+    css_new = "  #boardPanel.reading #boardClearBtn { display: none; }\n"
+    check("自校验：只读时漏掉卡片 × 那半条，判据变红",
+          css_old in html
+          and red_on(html.replace(css_old, css_new, 1), "只读时卡片 × 撤掉"),
+          "变异后仍然通过 ⇒ 该判据抓不到回归")
+
+    del_body = fn_body(script[script.index("$('canvasWorld').addEventListener('click', e =>"):], "=>")
+    del_mut = del_body.replace("  if (viewingArchive) { toast(", "  if (false) { toast(", 1)
+    check("自校验：× 去掉回看兜底，判据变红",
+          del_mut != del_body and red_on(html.replace(del_body, del_mut, 1), "× 在回看时兜底拒绝"),
+          "变异后仍然通过 ⇒ 该判据抓不到回归")
+
+    rep_body = fn_body(script, "$('boardReplaceBtn').onclick = () =>")
+    rep_mut = rep_body.replace("    ok: '替换', danger: true,\n", "    ok: '替换',\n", 1)
+    check("自校验：替换不再用危险色，判据变红",
+          rep_mut != rep_body
+          and red_on(html.replace(rep_body, rep_mut, 1), "替换先过确认层再发请求"),
+          "变异后仍然通过 ⇒ 该判据抓不到回归")
+
+    exit_body = fn_body(script, "function exitArchive()")
+    exit_mut = exit_body.replace("  $('boardPanel').classList.remove('reading');\n", "", 1)
+    check("自校验：退出只读时不摘 reading 类，判据变红",
+          exit_mut != exit_body
+          and red_on(html.replace(exit_body, exit_mut, 1), "退出只读时摘掉 reading 类"),
           "变异后仍然通过 ⇒ 该判据抓不到回归")
 
     print(f"\n===== {passed} passed / {failed} failed =====")

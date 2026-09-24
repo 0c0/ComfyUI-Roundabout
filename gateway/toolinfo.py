@@ -251,6 +251,7 @@ def _endpoints() -> dict[str, list[str]]:
             "get_workflow", "reload", "health", "get_view_url", "get_skills",
             "check_weights", "get_tool_info",
             "pin_view_item", "clear_view_board", "get_view_board_history",
+            "load_view_board",
         ],
     }
 
