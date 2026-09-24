@@ -20,7 +20,7 @@
                           │        ▼                                     │
                           │   内部 uvicorn (127.0.0.1, streamable-http)   │
                           │        端口由系统分配或按映射表指定          │
-                          │        = MCP Server (20 tools)               │
+                          │        = MCP Server (16 tools)               │
                           └───────────────┬──────────────────────────────┘
                                           │ 复用
                           ┌───────────────▼──────────────────────────────┐
@@ -414,13 +414,13 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 ---
 
-## 7. MCP 网关（20 个工具）
+## 7. MCP 网关（16 个工具）
 
 **默认启用**（`MCP_ENABLED` 默认 `true`）：装好 `mcp` / `uvicorn`、重启 ComfyUI 即可用，不需要任何配置。
 
 传输：`streamable-http`，端点 `/mcp`（共享端口挂在 ComfyUI 端口，或 `MCP_HOST:<MCP_PORT>` 独立，端口由 `MCP_PORT` / `MCP_PORT_MAP` 决定）。与 REST 完全互通。
 
-工具分四类：**生成**（`generate_image` / `edit_image` / `remove_background` / `generate_video`）、**查询与控制**（`get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`）、**运维**（`reload` / `get_view_url` / `get_skills`）、**看板**（`pin_view_item` / `clear_view_board` / `get_view_board` / `get_view_board_history` / `load_view_board`）。
+工具分四类：**生成**（`generate_image` / `edit_image` / `remove_background` / `generate_video`）、**查询与控制**（`get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`）、**运维**（`reload` / `get_view_url` / `get_skills`）、**看板**（`view_board`，单入口按 `action` 分发：pin / remove / clear / get / history / load）。
 
 > 工具的 `description` **只保留一句话定位**；参数细节（逐模型生效性、区间、枚举、默认值、参考槽
 > 数量、尺寸档位）一律查 `get_tool_info`。该工具与 REST 的 `/roundabout/admin/tool-info` 同源，
@@ -444,12 +444,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `get_view_url` | 返回可视化页面地址（`{url}`，浏览器直接打开）：浏览 input/output 资源 + 实时任务进度。用户问「生成的东西在哪看」「给我查看页面」时调用，把 `url` 原样给用户 |
 | `check_weights` | **权重体检**（只读、不占 GPU）：列出内置工作流当前缺失的权重文件与每条的下载命令，避免等到 `generate*` 报 400 才发现权重没下 |
 | `get_skills` | 返回配套 agent-skills 的清单与安装地址（`roundabout` / `h3-playbook` / `qwen-image-prompt-writing` / `h3-prompt-writing`），每条带 `source`（本网关维护 / 模型官方维护）与 `skill_version`（该 skill 当前应有的内容版本；official 条目恒 `null`）。本地已装 skill 的 frontmatter `skill_version` 低于此值 ⇒ 副本过期，按 `install_url` 重装 |
-| `pin_view_item` | 把产出钉到可视化页面的**任务看板**（顶部无限画布）：产物来源 `url` / `path` / `task_id` 三选一（优先级依次降低），`x`/`y` 给坐标（不给则自动排到空位），`w`/`h` 定尺寸，`note` 可写说明；`path` 指向 input/output 内的目录时自动落成**目录卡**（有可跳转的 `dir`），落在 input/output **之外**的真实目录/文件则标记为**外部卡**（`ext:{path,is_dir}`，页面上看不到内容，点它在系统文件管理器里打开）。返回 `view_url`；**要不要把页面地址给用户由 agent 自行判断** |
-| | ↳ **批量**：传 `items: [{...}, ...]` 一次钉一批（一次落盘、严格按数组顺序排布；**批量时不得同传单卡字段**，同传返回 400 而不是替你猜哪边生效） |
-| `clear_view_board` | 清空看板并**归档进历史**（`label` 给这份归档命名；**不给则按内容自动命名**，如「7 张 · image/text · 10:24」，不再是认不出的「未命名」）。这一轮交付完、或要切换任务时调用；归档可在页面「历史」里回看，也可用 `get_view_board_history` 取回 |
-| `get_view_board` | 读**当前看板**上有哪些卡片（`id` / 标题 / 类别 / 地址 / 说明 / 模型 / 画布坐标），外加历史归档份数，并**内联最近 3 份归档摘要**（`history_limit` 可调、0 = 不要 —— 「板上有什么」与「上一轮钉了什么」几乎总是一起问）。要接着往上钉之前先看一眼，免得钉重、或与已有卡片叠在一起；用户问「板上有什么」时也用它。看某一轮归档里的卡片用 `get_view_board_history` |
-| `get_view_board_history` | 列出看板的历史归档（每次清空存一份，最近 20 份），摘要带**内容指纹** `kinds` / `preview`（前 3 张标题）/ `models` —— 扫一眼就认得出该载哪一份，不必逐份拉详情探测；传 `archive_id` 返回该份完整卡片（含地址、note 与坐标），用于回顾上一轮产出、给用户做总结 |
-| `load_view_board` | 把某份归档**载回**当前看板（**替换**语义）：上一轮钉过的卡片回到画布上，接着往下钉。`archive_id` 优先取**用户从页面「历史」复制的 ID**（12 位十六进制）—— 拿到就直接载入，不必先列摘要去猜；**留空 = 载回最近一份**。当前看板非空会**先自动归档**它（`auto_archived` 回该归档 id），不静默丢。页面上用户只能只读回看、复制 ID，**载回是 agent 侧入口** |
+| `view_board` | 看板**唯一操作入口**，按 `action` 分发（顶部无限画布）：<br>**`pin`** — 钉卡：产物来源 `url` / `path` / `task_id` 三选一（优先级依次降低），`x`/`y` 给坐标（不给则自动排到空位，**自动排布永不遮挡**；显式坐标压到已有卡时回执带 `covered`），`w`/`h` 定尺寸（**px 单位**，40–2000，超界压回且回 `size_adjusted:true`），`note` 可写说明；`path` 在 input/output 内的目录 → **目录卡**，input/output **之外**的真实路径 → **外部卡**（`ext:{path,is_dir}`）。**批量传 `items: [{...}, ...]`**（一次落盘、按数组顺序排布；批量时同传单卡字段返回 400）。返回 `view_url`；**要不要把页面地址给用户由 agent 自行判断**<br>**`remove`** — 删**一张**卡（`id` 必填；删单张不必清整板重钉），id 不存在回 `{ok:false, code:"board_item_not_found"}`<br>**`clear`** — 清空看板并**归档进历史**（`label` 命名；不给则按内容自动命名，如「7 张 · image/text · 10:24」）<br>**`get`** — 读**当前看板**卡片清单 + **内联最近 3 份归档摘要**（`history_limit` 可调、0 = 不要），钉东西前先看一眼免得钉重<br>**`history`** — 列历史归档（摘要带指纹 `kinds` / `preview` / `models`）；传 `archive_id` 返回该份完整卡片<br>**`load`** — 把归档**载回**当前看板（**替换**语义，当前非空先自动归档、回 `auto_archived`）；`archive_id` **优先用用户从页面「历史」复制的 12 位十六进制**，留空 = 载回最近一份；id 不存在回 `archive_not_found`（两者都不是工具异常） |
 
 > **错误形态（MCP）**：「目标不存在」一族（`task_not_found` / `prompt_not_in_queue` /
 > `archive_not_found`，含钉卡时给未知 `task_id`）**不抛工具异常**，统一回
@@ -477,7 +472,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 > 队列区与任务表是两层信息：任务表记录「谁提交了什么、成了什么」，队列反映「此刻 ComfyUI 在算什么」。
 > 后端不可达时队列区标记不可达，任务表照常显示。
 
-- **任务看板**：`看板` 标签页里一块可平移 / 缩放的**无限画布**（高度按视口铺满），由 agent 把产出**钉**上去（可按语义排布：分镜顺序、A/B 对照、按角色分组），用户在页面上一眼看全，不必 agent 逐个把文件拉出来。视频卡缩略图上叠播放角标、点开走同一个灯箱；**目录卡**（agent 钉 input/output 内的目录）点一下就切到资源列表并**进入该目录**；**外部卡**（产物落在 input/output 之外）左上角标「外部」，点它 → 确认 → 交给系统文件管理器打开（仅本机访问时有效，见下）；没有可预览产物的卡片（纯文本卡等）点了会给一条提示，不会毫无反应；右上角 × 移除单张。agent 换任务时调 `clear_view_board` 清空 —— **清空即归档**，随时可在页面「历史」里回看，或**直接删掉某份归档**（删前会确认，不可恢复）。**回看归档是只读的**（`×` 与「清空并归档」在这个模式下连同消失）；要把某份变回当前看板，在回看时点「用这份替换当前看板」（先过确认层，当前内容自动归档），或由 agent 调 `load_view_board`；agent 想看当前板上有哪些卡片用 `get_view_board`。**历史里每一份都有「复制 ID」**：把这串 ID 粘给 agent，就等于指定「接着这一轮继续」—— 他直接载入，不必先列一遍历史摘要去猜哪份是你要的（用户看得见名字、张数与时间，他给的总比自己猜准）。复制优先走 `navigator.clipboard`，用局域网 IP 打开的非安全上下文自动回退 `execCommand`；两条都不通时把 ID 摊在提示里让人手抄，不做成「点了没反应」。看板落在节点 `.cache/board.json`，重启 ComfyUI 后仍在。agent 一次钉多张走 `pin_view_item` 的 `items` 数组：一次往返、一次落盘，且严格按数组顺序排布（逐张调不但慢，并发时位置还会乱）。不给名字的归档由后端**按内容自动命名**（张数 + 类别 + 时间），列表摘要另带 `kinds`/`preview`/`models` 指纹 —— 人和 agent 都一眼认得出该续哪一份。
+- **任务看板**：`看板` 标签页里一块可平移 / 缩放的**无限画布**（高度按视口铺满），由 agent 把产出**钉**上去（可按语义排布：分镜顺序、A/B 对照、按角色分组），用户在页面上一眼看全，不必 agent 逐个把文件拉出来。视频卡缩略图上叠播放角标、点开走同一个灯箱；**目录卡**（agent 钉 input/output 内的目录）点一下就切到资源列表并**进入该目录**；**外部卡**（产物落在 input/output 之外）左上角标「外部」，点它 → 确认 → 交给系统文件管理器打开（仅本机访问时有效，见下）；没有可预览产物的卡片（纯文本卡等）点了会给一条提示，不会毫无反应；右上角 × 移除单张。agent 换任务时调 `view_board(action="clear")` 清空 —— **清空即归档**，随时可在页面「历史」里回看，或**直接删掉某份归档**（删前会确认，不可恢复）。**回看归档是只读的**（`×` 与「清空并归档」在这个模式下连同消失）；要把某份变回当前看板，在回看时点「用这份替换当前看板」（先过确认层，当前内容自动归档），或由 agent 调 `view_board(action="load")`；agent 想看当前板上有哪些卡片用 `view_board(action="get")`。**历史里每一份都有「复制 ID」**：把这串 ID 粘给 agent，就等于指定「接着这一轮继续」—— 他直接载入，不必先列一遍历史摘要去猜哪份是你要的（用户看得见名字、张数与时间，他给的总比自己猜准）。复制优先走 `navigator.clipboard`，用局域网 IP 打开的非安全上下文自动回退 `execCommand`；两条都不通时把 ID 摊在提示里让人手抄，不做成「点了没反应」。看板落在节点 `.cache/board.json`，重启 ComfyUI 后仍在。agent 一次钉多张走 `view_board(action="pin")` 的 `items` 数组：一次往返、一次落盘，且严格按数组顺序排布（逐张调不但慢，并发时位置还会乱）。不给名字的归档由后端**按内容自动命名**（张数 + 类别 + 时间），列表摘要另带 `kinds`/`preview`/`models` 指纹 —— 人和 agent 都一眼认得出该续哪一份。
 - **外部路径与文件管理器**：产物落在 ComfyUI 的 input/output 之外时，页面既拿不到 `/view` 地址也读不到缩略图，唯一有意义的动作就是交给操作系统 —— 点外部卡会在跑 ComfyUI 那台机器上拉起文件管理器（目录直接进入，文件定位并选中）。两个边界：①**只在从本机（回环）打开页面时执行**，从局域网别的机器点会收到一句「窗口开不到你这边」的明确提示，而不是静默无反应；②接口只认**当前看板上的卡片 id**，可打开的路径集合恒等于 agent 钉过的那些，卡片被清空后那条路径也随之失效。
 
 支撑端点：
@@ -494,7 +489,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `GET /roundabout/view/board/history` | 历史归档摘要列表（`id`/`label`/`created`/`count` + 内容指纹 `kinds`/`preview`/`models`，新的在前；最多保留 20 份） |
 | `GET /roundabout/view/board/history/{id}` | 某份归档的完整卡片（含坐标，可直接画出来），顺带返回当前看板快照。不存在返回 404 `archive_not_found` |
 | `DELETE /roundabout/view/board/history/{id}` | 删掉某份归档（**不可恢复**，页面先弹确认再发）。返回 `removed`（被删的卡片数）与剩余 `count`；不存在返回 404 `archive_not_found` |
-| `POST /roundabout/view/board/history/{id}/load` | 把某份归档载回当前看板（页面入口在**回看归档时**的「用这份替换当前看板」，先过确认层；agent 走 `load_view_board`）。当前看板非空会**先自动归档**，不静默覆盖（`auto_archived` 回该归档 id） |
+| `POST /roundabout/view/board/history/{id}/load` | 把某份归档载回当前看板（页面入口在**回看归档时**的「用这份替换当前看板」，先过确认层；agent 走 `view_board(action="load")`）。当前看板非空会**先自动归档**，不静默覆盖（`auto_archived` 回该归档 id） |
 | `POST /roundabout/view/reveal` | 在某张看板卡片指向的路径上拉起系统文件管理器（目录进入 / 文件定位选中）。body `{id}`，**只认当前看板上的卡片 id**（归档里的不算）—— 能打开什么恒等于 agent 钉过什么，卡片清空后该路径随之失效。**默认仅本机访问时执行**：非回环或带 `X-Forwarded-For`/`X-Real-IP` 一律 403 `reveal_not_local`（远程点也只会开在服务器那台，说不清不如拒绝）；页面经隧道/反代部署、但服务器就是用户自己的机器时，设环境变量 `REVEAL_ALLOW_REMOTE=1` 放开；卡片不带 `ext` 返回 400 `not_external`；路径已不存在返回 404 `path_missing` |
 
 > 目录解析走 `folder_paths`，根目录固定为 input/output 两个，`..` 穿越返回 400 `bad_path`。

@@ -210,7 +210,9 @@ mcp = MCPServer(name="comfyui-roundabout", version=VERSION, instructions=SERVER_
 # get_view_board_history 回结构、load_view_board 回文本，就是踩过的坑）。
 # 判据用 code 白名单而非 HTTP 状态码：ModelNotFound 同样是 404，但那是「model 字段填错」
 # 的参数校验，应当照常抛。参数非法与上游/内部错误一并照抛 —— 那些是 bug，不该伪装成业务失败。
-_MISSING_CODES = frozenset({"task_not_found", "archive_not_found", "prompt_not_in_queue"})
+_MISSING_CODES = frozenset({
+    "task_not_found", "archive_not_found", "prompt_not_in_queue", "board_item_not_found",
+})
 
 
 def _missing(error: str, code: str) -> dict[str, Any]:
@@ -588,33 +590,7 @@ async def get_view_url() -> dict[str, Any]:
     return payload
 
 
-@mcp.tool(
-    name="pin_view_item",
-    description=(
-        "把一张产出卡片钉到可视化页面的**任务看板**（顶部那块无限画布），用户在页面上一眼看全，"
-        "不必你逐个把文件拉给他看。产物来源三选一：`url` / `path` / `task_id`（优先级依次降低）。"
-        "`x`/`y` 给了就摆在那个坐标（画布可平移缩放、坐标允许负数），不给就自动排到空位 —— "
-        "自动排布**永不遮挡**已有卡；给 x/y 则原样摆上去，压到已有卡时回执带 `covered`/`warning`"
-        "（后钉的卡显示在上层，列表里就是被盖住的卡）。要表达顺序、对照或分组（例如分镜 1-5 横排、"
-        "A/B 两列、按角色分区）优先用批量 items 数组按序自动排布，确需精确坐标再自己给，"
-        "卡片尺寸用 `w`/`h` —— **单位是 px（像素），不是倍率或换算单位**：默认 200×168，"
-        "有效范围 40–2000，超出会被静默压回边界（传 1 得到的是 40px 迷你卡，不是「1 倍」），"
-        "一般保持默认即可，要放大看细节不如让用户点开原图。"
-        "没有产物也能钉纯文本卡（`note` + kind=text），用来写进度说明或小结。"
-        "**要一次钉多张就传 `items` 数组**（每项形如上面那套字段）：一次往返、一次落盘，且严格按"
-        "数组顺序排布 —— 逐张调不只是慢，并发时位置还会乱。批量时顶层的单卡字段（title/url/x…）"
-        "一个都别传，同传会被明确拒绝，而不是替你猜哪边生效。"
-        "`path` 指向 input/output 内的目录时会自动落成**目录卡**（没有可预览的产物），"
-        "用户在页面上点它就跳到该目录的文件列表。"
-        "`path` 落在 input/output **之外**的目录或文件会落成**外部卡片**"
-        "（页面读不到它，卡片上标「外部」），用户点它在系统文件管理器里打开 / 定位——"
-        "只在用户从跑 ComfyUI 那台机器打开页面时有效，从别的机器打开会被明确拒绝。"
-        "一轮钉完、或准备切换任务时，用 clear_view_board 清空（内容会存进历史，随时可回看）。"
-        "**钉完自己判断要不要帮用户打开页面**：用户在等结果 / 一次钉了很多 / 他没在看页面时，"
-        "调 get_view_url 把地址给他（或替他打开）；他正盯着页面看、或只是补一张图，就不必打扰。"
-    ),
-)
-async def pin_view_item(
+async def _board_pin(
     title: str = "",
     url: str = "",
     path: str = "",
@@ -721,17 +697,7 @@ async def pin_view_item(
     return payload
 
 
-@mcp.tool(
-    name="clear_view_board",
-    description=(
-        "清空任务看板。内容会**存进历史归档**，随时可在页面「历史」里回看，或用 "
-        "get_view_board_history 列出 —— 所以换任务时尽管清，不会丢。"
-        "什么时候清：这一轮成果已经交付完、或要切到另一个任务时，别把上一轮的卡片留在旁边造成混淆。"
-        "`label` 给这份归档起个名字（如「第 1 轮 · 分镜草图」），回看时好认；不传也无所谓 ——"
-        "会按内容自动起名（如「7 张 · image/text」），不会是一排认不出的「未命名」。"
-    ),
-)
-async def clear_view_board(label: str = "") -> dict[str, Any]:
+async def _board_clear(label: str = "") -> dict[str, Any]:
     """清空看板并归档。返回归档摘要（id / label / 条数）。"""
     entry = board.archive(label)
     return {
@@ -744,22 +710,7 @@ async def clear_view_board(label: str = "") -> dict[str, Any]:
     }
 
 
-@mcp.tool(
-    name="get_view_board",
-    description=(
-        "读当前**任务看板**上已有哪些卡片（`id` / 标题 / 类别 / 产物地址 / 说明 / 模型 / 画布坐标），"
-        "外加历史归档份数。"
-        "什么时候用：① 要接着往看板上钉东西之前，先看已有什么、坐标占到哪了 —— 免得钉重、或和已有的卡叠在一起；"
-        "② 用户问「现在板上有什么」、或要你做阶段性小结时；"
-        "③ 要确认某张卡是不是**外部卡**（页面看不到内容，用户点它只会在系统文件管理器里打开）。"
-        "看的是**当前看板**。要续接某一轮时，让用户从页面历史里点「复制 ID」把归档 id 给你 —— "
-        "他一眼认得出是哪一轮，比你列一遍摘要再猜快得多；拿到 id 直接 load_view_board。"
-        "每张卡的 `url` 是可直接打开的完整地址；`thumb` 是页面用的缩略图，对你是长串噪音、这里省掉。"
-        "回执里的 `history` 是最近几份归档摘要（带 `kinds` / `preview` / `models` 指纹与张数）——"
-        "「上一轮钉了什么」顺手就看到了，不必再单独调一次历史工具；要更多份才用 get_view_board_history。"
-    ),
-)
-async def get_view_board(history_limit: int = 3) -> dict[str, Any]:
+async def _board_get(history_limit: int = 3) -> dict[str, Any]:
     """当前看板的卡片清单（agent 侧读取入口；不含页面用的缩略图地址）。
 
     `history_limit` 决定内联几份归档摘要（默认 3，0 = 只要当前板）。
@@ -777,19 +728,7 @@ async def get_view_board(history_limit: int = 3) -> dict[str, Any]:
     return payload
 
 
-@mcp.tool(
-    name="get_view_board_history",
-    description=(
-        "列出任务看板的历史归档（每次 clear_view_board 都会存一份），用来回顾上一轮钉过什么、"
-        "或给用户做总结时还原当时都出了哪些东西。传 `archive_id` 看某一份的完整卡片"
-        "（含标题、地址、note 与画布坐标）；不传就列摘要 —— 摘要带 `kinds` / `preview` / `models`"
-        "三样指纹，正常情况下扫一眼就认得出该载哪一份，不必逐份拉详情探测。"
-        "**已经拿到 id 就别调本工具**（用户粘贴的、或上一次调用的回执都算）—— 认一轮归档靠的是"
-        "指纹，不是把全部卡片再拉一遍；要继续某一份直接 load_view_board。"
-        "archive_id 不存在时回 `{ok:false, code:\"archive_not_found\"}`（不是工具异常）。"
-    ),
-)
-async def get_view_board_history(archive_id: str = "", limit: int = 20) -> dict[str, Any]:
+async def _board_history(archive_id: str = "", limit: int = 20) -> dict[str, Any]:
     """历史归档：不传 id 列摘要（含 kinds / preview / models 指纹），传了就回该份的完整卡片。"""
     if archive_id:
         entry = board.find_archive(archive_id)
@@ -806,20 +745,7 @@ async def get_view_board_history(archive_id: str = "", limit: int = 20) -> dict[
     }
 
 
-@mcp.tool(
-    name="load_view_board",
-    description=(
-        "把某份历史归档载回当前看板（**替换**语义）。`archive_id` **优先从用户那里来** ——"
-        "页面「历史」每份都有「复制 ID」，粘给你的 12 位十六进制就是它：直接载入，**不要**再去"
-        "扫历史列表（用户看得见名字、张数与时间，他给的比你自己猜准）；没人给 ID 时才用"
-        "get_view_board_history 挑一份。当前看板非空会**先自动归档**（回 `auto_archived` 的 id），"
-        "不会静默丢内容；载回后卡片的 id 与坐标与归档一致。用户那边只有「复制 ID」把这一份交给"
-        "你（页面不提供「载回」按钮），所以载回是你的事。"
-        "`archive_id` 也可以留空 —— 那就是「载回最近一份」，省掉先查一遍的往返。"
-        "给的 id 不存在时回 `{ok:false, code:\"archive_not_found\"}`，看板内容原样不动。"
-    ),
-)
-async def load_view_board(archive_id: str = "") -> dict[str, Any]:
+async def _board_load(archive_id: str = "") -> dict[str, Any]:
     """把某份归档载回当前看板（替换当前内容；当前非空则先自动归档）。`archive_id` 留空 = 最近一份。"""
     target = archive_id or board.latest_archive_id()
     if not target:
@@ -829,6 +755,82 @@ async def load_view_board(archive_id: str = "") -> dict[str, Any]:
     except APIError as exc:
         return _missing_or_raise(exc)
     return {"ok": True, **result, "items": _without_thumbs(board.snapshot()), "view_url": view_url()}
+
+
+# ---- 看板唯一入口：view_board(action=...) --------------------------------
+@mcp.tool(
+    name="view_board",
+    description=(
+        "任务看板的**唯一操作入口**（顶部无限画布，用户在页面上一眼看全产出）。"
+        "按 `action` 分发：\n"
+        "- `pin`：钉卡。产物来源 `url` / `path` / `task_id` 三选一（优先级依次降低），"
+        "都没有就传 `note` 钉纯文本卡。**一次钉多张传 `items` 数组**（此时顶层单卡字段一个都别传，"
+        "同传会被拒绝）：一次往返、一次落盘、严格按数组顺序自动排布 —— 自动排布**永不遮挡**已有卡。"
+        "表达顺序/对照/分组（分镜 1-5 横排、A/B 两列）优先靠数组顺序；确需精确位置才给 `x`/`y`，"
+        "压到已有卡时回执带 `covered`/`warning`（后钉的显示在上层，盖住了列表里的卡）。"
+        "`w`/`h` **单位是 px 不是倍率**：默认 200×168、有效范围 40–2000，"
+        "超出被压回边界时回执带 `size_adjusted:true`（传 1 得到 40px 迷你卡，不是「1 倍」），一般保持默认。"
+        "`path` 在 input/output 内的目录 → 目录卡；在 input/output **外** → 外部卡（页面看不到内容，"
+        "用户点它在系统文件管理器里打开）。钉完按需调 get_view_url 把页面给用户。"
+        "- `remove`：删**一张**卡（`id` 必填，来自 get/pin 回执）。删单张不用清整板重钉。\n"
+        "- `clear`：清空看板并存进历史归档（`label` 给归档起名，如「第 1 轮 · 分镜草图」；"
+        "不传会按内容自动起名）。换任务、交付完一轮时清，不会丢。\n"
+        "- `get`：读当前看板（卡片清单 + `history_limit` 份归档摘要，默认 3）。"
+        "钉东西前先 get 看已有什么；`thumb` 字段是页面噪音、这里不回。\n"
+        "- `history`：列历史归档摘要（`kinds`/`preview`/`models` 指纹）；传 `archive_id` 看某份完整卡片。"
+        "**已拿到 id 就别调**，直接 load。\n"
+        "- `load`：把归档载回当前看板（**替换**语义；当前非空先自动归档，回 `auto_archived`）。"
+        "`archive_id` **优先用用户从页面「历史」复制的 12 位十六进制**（粘来就直接载，别再扫历史）；"
+        "留空 = 载回最近一份。id 不存在回 `{ok:false, code:\"archive_not_found\"}`（remove 删不到卡同理 "
+        "code:\"board_item_not_found\"），不是工具异常。"
+    ),
+)
+async def view_board(
+    action: str,
+    id: str = "",
+    label: str = "",
+    archive_id: str = "",
+    limit: int = 20,
+    history_limit: int = 3,
+    items: list[dict[str, Any]] | None = None,
+    title: str = "",
+    url: str = "",
+    path: str = "",
+    task_id: str = "",
+    note: str = "",
+    kind: str = "",
+    model: str = "",
+    x: float | None = None,
+    y: float | None = None,
+    w: float | None = None,
+    h: float | None = None,
+) -> dict[str, Any]:
+    """看板操作分发：pin / remove / clear / get / history / load。"""
+    act = (action or "").strip().lower()
+    if act == "pin":
+        return await _board_pin(
+            title=title, url=url, path=path, task_id=task_id, note=note,
+            kind=kind, model=model, x=x, y=y, w=w, h=h, items=items,
+        )
+    if act == "remove":
+        if not id:
+            return {"ok": False, "error": "remove needs the card 'id'.",
+                    "code": "board_item_not_found", "status": 404}
+        if not board.remove(id):
+            return _missing(f"No board item with id '{id}'.", "board_item_not_found")
+        return {"ok": True, "id": id, "count": len(board.snapshot())}
+    if act == "clear":
+        return await _board_clear(label)
+    if act == "get":
+        return await _board_get(history_limit)
+    if act == "history":
+        return await _board_history(archive_id, limit)
+    if act == "load":
+        return await _board_load(archive_id)
+    raise APIError(
+        f"Unknown action '{action}'. Use one of: pin, remove, clear, get, history, load.",
+        param="action",
+    )
 
 
 # ---- 工具 13：get_skills -------------------------------------------------

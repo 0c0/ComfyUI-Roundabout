@@ -118,7 +118,7 @@ git clone https://github.com/0c0/qwen-image2.1-prompt-writing-skill.git <agent �
 **两套接入层，共享同一个引擎**
 
 - **OpenAI 兼容 REST**：`/v1/images/generations`（文生图 / 图生图）、`/v1/images/edits`（multipart 标准编辑）、`/v1/images/remove-background`（去背景）、`/v1/videos/generations`（视频，支持异步）。返回格式可选 `b64_json` / `url` / `file` / `path`，可直接替换 OpenAI 官方地址使用。
-- **MCP 服务（20 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `generate_video`，查询类 `get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills`，看板类 `pin_view_item` / `clear_view_board` / `get_view_board` / `get_view_board_history` / `load_view_board`。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 钉到看板」全流程。
+- **MCP 服务（16 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `generate_video`，查询类 `get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills`，看板类 `view_board`（单入口按 action 分发：pin / remove / clear / get / history / load）。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 钉到看板」全流程。
 - **共享端口**：MCP 端点 `/mcp` 直接挂在 ComfyUI 同一端口（`http://<comfyui>:8188/mcp`），不用额外开端口、不用另起进程；REST 与 MCP 共用同一份注册表、生成链路与任务表。
 
 **声明式模型注册**

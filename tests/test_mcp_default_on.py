@@ -168,18 +168,18 @@ async def main() -> int:
             tools = (_parse_sse(body) or {}).get("result", {}).get("tools", [])
             names = sorted(t["name"] for t in tools)
             # 工具数变更时同步这里（文档里的计数也一起改）；下面两个是入口型工具，必须在线
-            check("tools/list 返回 20 个工具", len(names) == 20, f"{len(names)} 个: {names}")
+            check("tools/list 返回 16 个工具", len(names) == 16, f"{len(names)} 个: {names}")
             check("tools/list 含 get_skills", "get_skills" in names, str(names))
             check("tools/list 含 check_weights", "check_weights" in names, str(names))
             check("tools/list 含 get_tool_info", "get_tool_info" in names, str(names))
-            check("tools/list 含 get_view_board", "get_view_board" in names, str(names))
+            check("tools/list 含 view_board", "view_board" in names, str(names))
 
-            # 真实调一发 get_view_board：tools/list 只证明工具在线，回执结构得真跑一次才知道。
+            # 真实调一发 view_board(action=get)：tools/list 只证明工具在线，回执结构得真跑一次才知道。
             # 只读、不 pin（本测试跑在临时实例上，但 board.json 是节点共享的，别往里写东西）。
             st, _, body = await _post(
                 s, url,
                 {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
-                 "params": {"name": "get_view_board", "arguments": {}}},
+                 "params": {"name": "view_board", "arguments": {"action": "get"}}},
                 sid,
             )
             _res = (_parse_sse(body) or {}).get("result", {})
