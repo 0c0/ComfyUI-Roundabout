@@ -677,7 +677,7 @@ models:
   # rho / w_min / w_max 仍是模板固定值（节点 910），精调走 workflow_overrides（如 910.inputs.rho=0.3）。
   minimax-h3-lift:
     workflow: video_minimax_h3_lift.json
-    description: MiniMax H3 Lift —— base 骨架 + 确定性放大：30 步原生采样→学习式 latent lift（默认 2520x1440），构图零重掷，纹理最强；支持首尾帧
+    description: MiniMax H3 Lift —— base 骨架 + 确定性放大：`size` = 768p 第一采画布（默认 1344x768，保持原生别改大），30 步采样 → latent lift × `scale`（默认 1.875 → 输出 2520x1440）；构图零重掷，纹理最强；支持首尾帧
     mode: video
     capabilities:
     - text-to-video

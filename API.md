@@ -342,7 +342,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | **`utility-birefnet-remove-background`** | image | **image-to-image**（promptless） | 去背景独立工具，无 prompt，透明 PNG；专属端点 `/v1/images/remove-background` |
 | `minimax-h3` | video | text-to-video / first-last-frame | H3 首尾帧生视频（base 30 步）：`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@30（网关无 `quality` 分档 —— 它只能表达 size + steps，与直接传参等价） |
 | `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，30 步（支持图/视频/音频参考） |
-| `minimax-h3-lift` | video | text-to-video / first-last-frame | base 骨架 + 确定性放大：30 步原生采样 → 学习式 latent lift（默认 2520x1440）；`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）；分块参数按本机显存自动分档 |
+| `minimax-h3-lift` | video | text-to-video / first-last-frame | base 骨架 + 确定性放大：`size` = 768p 第一采画布（默认 1344x768），latent lift × `scale`（默认 1.875 → 输出 2520x1440）；`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）；分块参数按本机显存自动分档 |
 | `minimax-h3-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 edit 骨架（Ref2VA 权重，30 步）；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
 | `fasth3` | video | text-to-video / first-last-frame | FastVideo FastH3 8 步蒸馏档；`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪，走关键帧槽，见 [WORKFLOWS.md](WORKFLOWS.md)）。定位**草稿 / 快周转**，非 49/50 步的等价替代 |
 | `fasth3-edit` | video | text-to-video / reference-to-video | FastH3 参考生视频；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪。⚠️ **占位档**：官方未蒸馏 Ref2VA，与 `fasth3` 共用同一份 fl2v 权重 |
