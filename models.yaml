@@ -355,7 +355,7 @@ models:
   # 会把模板占位图 `__REF_1__.png` 当参考喂进去。`image` 改由 pipeline 落成第 1 张参考图。
   qwen-image-2.1:
     workflow: image_qwen_image_2_1.json
-    description: Qwen-Image 2.1 —— 文生图 / 多图参考编辑同支（40 步，Qwen3-VL 文本编码）；不带参考图即纯文生（size 直传，原生 2K、默认 1024x1024），带 1–6 张参考图则跟随第 1 张参考图的尺寸
+    description: Qwen-Image 2.1 —— 文生图 / 多图参考编辑同支（25 步，Qwen3-VL 文本编码）；不带参考图即纯文生（size 直传，原生 2K、默认 1024x1024），带 1–6 张参考图则跟随第 1 张参考图的尺寸
     mode: image
     capabilities:
     - text-to-image
@@ -381,7 +381,7 @@ models:
       - images.image_6
     defaults:
       negative_prompt: ''
-      steps: 40
+      steps: 25
       cfg: 1
       sampler_name: euler
       scheduler: simple

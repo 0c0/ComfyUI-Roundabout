@@ -293,7 +293,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 文生图 | `z-image` | 30 步高质量 |
 | 文生图 | `boogu-image-turbo` / `boogu-image-base-4step` | 4 步极速预览 |
 | 文生图 | `boogu-image-base` | 30 步高质量 |
-| 文生图 / 多图编辑 | `qwen-image-2.1` | 40 步，**文生与多图参考编辑同一支**：不带参考图即纯文生（原生 2K 档位，默认 1024x1024，尺寸直传 `size`）；带 1–6 张参考图（`reference_images`）即多图编辑，输出尺寸跟随第 1 张参考图 |
+| 文生图 / 多图编辑 | `qwen-image-2.1` | 25 步，**文生与多图参考编辑同一支**：不带参考图即纯文生（原生 2K 档位，默认 1024x1024，尺寸直传 `size`）；带 1–6 张参考图（`reference_images`）即多图编辑，输出尺寸跟随第 1 张参考图 |
 | 图像编辑 | `flux2-klein-image-edit-turbo` | 语义改写首选：换背景 / 换材质 / 增删物体（`edit_image` 默认）；**多图参考**最多 4 张 |
 | 图像编辑 | `boogu-image-edit` / `boogu-image-edit-turbo` | 擅长改写 / 添加**图内文字**，30 步 / 6 步 |
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
