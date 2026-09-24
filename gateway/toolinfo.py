@@ -146,11 +146,19 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
             return True, None
         return False, "model declares no batch_size binding"
     if name == "image":
-        if spec.is_video:  # 视频档：参考帧走 image_keys 路径，恒可用
-            return True, None
+        if spec.is_video:
+            # 视频档不收 `image`（400 指路）：fl2va 走首尾帧、ref2va 走 reference_images
+            return False, "video models take first_frame/last_frame (fl2va) or reference_images (edit), not `image`"
         if spec.binds(name):
             return True, None
         return False, "model declares no image binding"
+    if name in ("first_frame", "last_frame"):
+        fp = (spec.references or {}).get("frame_params") or []
+        if name in fp:
+            return True, None
+        if (spec.references or {}).get("images"):
+            return False, "reference-editing model: output size follows `size`, refs go via `reference_images` (no first/last frame semantics)"
+        return False, "model declares no first/last frame slots (fl2va only)"
     if name == "mask":
         if spec.binds(name):
             return True, None
@@ -167,8 +175,12 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
             return True, None
         return False, "lift only (minimax-h3-lift / -lift-edit)"
     if name in ("reference_images", "reference_videos", "reference_audios"):
+        ref = spec.references or {}
+        if name == "reference_images" and (ref.get("frame_params") or []):
+            # fl2va：image 槽由 first_frame/last_frame 供图，reference_images 互斥（400）
+            return False, "fl2va model takes frames via `first_frame`/`last_frame`, not `reference_images`"
         cat = name.split("_")[1]
-        n = len((spec.references or {}).get(cat) or [])
+        n = len((ref.get(cat) or []))
         if n:
             return True, None
         return False, f"model declares no {cat} reference slots"
@@ -184,7 +196,12 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
 # ---------------------------------------------------------------- 模型块
 def _slot_counts(spec) -> dict[str, int]:
     ref = spec.references or {}
-    return {cat: len(ref.get(cat) or []) for cat in ("images", "videos", "audios")}
+    out = {cat: len(ref.get(cat) or []) for cat in ("images", "videos", "audios")}
+    if ref.get("frame_params"):
+        # fl2va：image 槽实为首尾帧槽（reference_images 互斥），按参数语义重新归类
+        out["frames"] = out["images"]
+        out["images"] = 0
+    return out
 
 
 def _model_entry(spec) -> dict[str, Any]:

@@ -433,6 +433,13 @@ def _normalize_references(raw: dict[str, Any]) -> dict[str, Any]:
             else:
                 norm.append({"nodes": [], "clear": []})
         out["slots"] = norm
+    # frame_params：fl2va 首尾帧的参数层声明 —— 声明后 images 槽逐槽改由请求的
+    # first_frame / last_frame 字段供图（与 reference_images 互斥），如
+    # ["first_frame", "last_frame"]。帧会实际成为输出的第一/最后一帧，网关按画布
+    # cover 裁剪；ref2va（edit）不声明，参考图保持等比缩放、内容完整。
+    fp = raw.get("frame_params")
+    if fp:
+        out["frame_params"] = [str(x) for x in fp]
     return out
 
 
@@ -482,6 +489,25 @@ def _validate_references(spec: ModelSpec) -> None:
             _need("videos", REF_VIDEO_AUDIO_KEY_FMT.format(i), nid, i)
     for i, nid in enumerate(ref.get("audios", [])):
         _need("audios", ref_key(ref, "audios", i) if agg_ins is not None else None, nid, i)
+
+    # frame_params：逐槽改由请求字段供图。与 images 一一对应，且字段必须真实存在于
+    # 视频请求 schema —— 写错字段名会变成永远取不到值的死槽。
+    fp = ref.get("frame_params") or []
+    if fp:
+        from .schemas import VideoGenerationRequest  # 局部导入：包内相对引用，避免运行期包名差异
+        n_img = len(ref.get("images", []))
+        if len(fp) != n_img:
+            raise RuntimeError(
+                f"model `{spec.name}`: references.frame_params 有 {len(fp)} 项，"
+                f"与 references.images 的 {n_img} 项对不上"
+            )
+        known = set(VideoGenerationRequest.model_fields)
+        for i, p in enumerate(fp):
+            if p not in known:
+                raise RuntimeError(
+                    f"model `{spec.name}`: references.frame_params[{i}]={p!r} "
+                    f"不是 VideoGenerationRequest 的字段"
+                )
 
     # slots：逐槽的独占下游节点与删除后要清空的 optional 键
     slots = ref.get("slots") or []

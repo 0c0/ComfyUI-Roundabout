@@ -277,7 +277,7 @@
         0
       ],
       "ref_images.ref_image_0": [
-        "105:223",
+        "105:200",
         0
       ],
       "ref_images.ref_image_1": [
@@ -501,17 +501,6 @@
     "class_type": "MiniMaxChunkFeedForward",
     "_meta": {
       "title": "FFN 分块"
-    }
-  },
-  "105:223": {
-    "class_type": "RoundaboutCoverResize",
-    "inputs": {
-      "image": [
-        "105:200",
-        0
-      ],
-      "width": 1344,
-      "height": 768
     }
   }
 }

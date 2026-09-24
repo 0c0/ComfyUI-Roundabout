@@ -440,6 +440,7 @@ models:
     timeout: 1800
     references:
       aggregator: '136'
+      frame_params: [first_frame, last_frame]
       images:
       - '137'
       - '139'
@@ -465,8 +466,8 @@ models:
       sampler_name: 123.inputs.sampler_name
       scheduler: 124.inputs.scheduler
       denoise: 124.inputs.denoise
-      width: [136.inputs.width, 147.inputs.width]
-      height: [136.inputs.height, 147.inputs.height]
+      width: [136.inputs.width, 147.inputs.width, 161.inputs.width]
+      height: [136.inputs.height, 147.inputs.height, 161.inputs.height]
       duration: 132.inputs.value
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
@@ -520,8 +521,8 @@ models:
       sampler_name: 123.inputs.sampler_name
       scheduler: 124.inputs.scheduler
       denoise: 124.inputs.denoise
-      width: [136.inputs.width, 160.inputs.width]
-      height: [136.inputs.height, 160.inputs.height]
+      width: [136.inputs.width]
+      height: [136.inputs.height]
       duration: 132.inputs.value
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
@@ -560,6 +561,7 @@ models:
     timeout: 1800
     references:
       aggregator: '105:104'
+      frame_params: [first_frame, last_frame]
       images:
       - '105:200'
       - '105:201'
@@ -584,8 +586,8 @@ models:
       sampler_name: 105:17.inputs.sampler_name
       scheduler: 105:9.inputs.scheduler
       denoise: 105:9.inputs.denoise
-      width: [105:104.inputs.width, '105:222.inputs.width']
-      height: [105:104.inputs.height, '105:222.inputs.height']
+      width: ['105:104.inputs.width', '105:222.inputs.width', '105:224.inputs.width']
+      height: ['105:104.inputs.height', '105:222.inputs.height', '105:224.inputs.height']
       duration: 105:111.inputs.value
       fps: 105:91.inputs.fps
       chunks: 105:221.inputs.chunks
@@ -647,8 +649,8 @@ models:
       sampler_name: 105:17.inputs.sampler_name
       scheduler: 105:9.inputs.scheduler
       denoise: 105:9.inputs.denoise
-      width: [105:145.inputs.width, '105:223.inputs.width']
-      height: [105:145.inputs.height, '105:223.inputs.height']
+      width: ['105:145.inputs.width']
+      height: ['105:145.inputs.height']
       duration: 105:111.inputs.value
       fps: 105:91.inputs.fps
       chunks: 105:221.inputs.chunks
@@ -683,6 +685,7 @@ models:
     output_node: '92'
     references:
       aggregator: '136'
+      frame_params: [first_frame, last_frame]
       images:
       - '137'
       - '139'
@@ -710,8 +713,8 @@ models:
       sampler_name: 123.inputs.sampler_name
       scheduler: 124.inputs.scheduler
       denoise: 124.inputs.denoise
-      width: [136.inputs.width, 147.inputs.width]
-      height: [136.inputs.height, 147.inputs.height]
+      width: [136.inputs.width, 147.inputs.width, 161.inputs.width]
+      height: [136.inputs.height, 147.inputs.height, 161.inputs.height]
       duration: 132.inputs.value
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
@@ -773,8 +776,8 @@ models:
       sampler_name: 123.inputs.sampler_name
       scheduler: 124.inputs.scheduler
       denoise: 124.inputs.denoise
-      width: [136.inputs.width, 160.inputs.width]
-      height: [136.inputs.height, 160.inputs.height]
+      width: [136.inputs.width]
+      height: [136.inputs.height]
       duration: 132.inputs.value
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks

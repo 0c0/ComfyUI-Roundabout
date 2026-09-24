@@ -229,7 +229,7 @@
         0
       ],
       "last_frame": [
-        "139",
+        "161",
         0
       ]
     },
@@ -318,6 +318,17 @@
     "inputs": {
       "image": [
         "137",
+        0
+      ],
+      "width": 1344,
+      "height": 768
+    }
+  },
+  "161": {
+    "class_type": "RoundaboutCoverResize",
+    "inputs": {
+      "image": [
+        "139",
         0
       ],
       "width": 1344,

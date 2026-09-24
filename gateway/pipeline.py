@@ -519,9 +519,12 @@ async def generate_video(
 
     # ---- 0. 请求到达日志（关键信息，不含 base64 等大体积字段） ----
     img2img = bool(image_inputs) or bool(req.image)
+    n_frames = sum(1 for p in ("first_frame", "last_frame") if getattr(req, p, None))
+    n_refs = len(req.reference_images or [])
     log.info(
-        "req=%s | VIDEO gen | model=%s n=%d size=%s fmt=%s img2img=%s duration=%s fps=%s num_frames=%s prompt=%s",
+        "req=%s | VIDEO gen | model=%s n=%d size=%s fmt=%s img2img=%s frames=%d refs=%d duration=%s fps=%s num_frames=%s prompt=%s",
         request_id, spec.name, n, req.size or "-", response_format, img2img,
+        n_frames, n_refs,
         req.duration or "-", req.fps or "-", req.num_frames or "-", _trunc(req.prompt),
     )
 
@@ -531,16 +534,50 @@ async def generate_video(
         raw_list = req.image if isinstance(req.image, list) else [req.image]
         images = [await load_image_input(str(x)) for x in raw_list if x]
     if images and not spec.supports_img2img:
-        # 有些视频模型不收 `image`，而是通过 `reference_images` 的槽位接图
-        # （如 minimax-h3-self-lift：第 1 张=首帧、第 2 张=尾帧）。此时 capabilities
-        # 里可能写着 image-to-video，直接说「不支持」会自相矛盾，所以点明该走哪个字段。
-        hint = ""
-        if (spec.references or {}).get("images"):
-            hint = f" Pass image(s) via `reference_images` instead (up to {len(spec.references['images'])})."
+        # 有些视频模型不收 `image`，而是通过专属字段接图：fl2va 走 first_frame /
+        # last_frame（首尾帧），ref2va（edit）走 reference_images（参考图）。此时
+        # capabilities 里可能写着 image-to-video，直接说「不支持」会自相矛盾，点明该走哪个字段。
+        ref_cfg = spec.references or {}
+        if ref_cfg.get("frame_params"):
+            hint = " Pass it via `first_frame` (and optionally `last_frame`)."
+        elif ref_cfg.get("images"):
+            hint = f" Pass image(s) via `reference_images` instead (up to {len(ref_cfg['images'])})."
+        else:
+            hint = ""
         raise APIError(
             f"Video model `{spec.name}` does not take the `image` field "
             f"(capabilities: {', '.join(sorted(spec.capabilities))}).{hint}",
             param="image",
+        )
+
+    # ---- 1.5 首尾帧 / 参考图参数分流（fl2va 与 ref2va 互斥）----
+    # fl2va（frame_params）：帧成为输出的第一/最后一帧，走 cover 裁剪；
+    # ref2va（edit 三支）：输出尺寸由 size 决定（空 latent），参考图只是 conditioning，
+    # 不存在首尾帧语义。传错字段一律 400 + 指路，不静默丢弃。
+    ref_cfg = spec.references or {}
+    frame_params = ref_cfg.get("frame_params") or []
+    img_slots = ref_cfg.get("images") or []
+    for p in ("first_frame", "last_frame"):
+        if getattr(req, p, None) and p not in frame_params:
+            if img_slots:
+                hint = (f" `{spec.name}` is a reference-editing model: pass images via "
+                        f"`reference_images` (its output size follows `size`, refs are conditioning only).")
+            else:
+                hint = " Models with first/last frame slots: minimax-h3, minimax-h3-lift, fasth3."
+            raise APIError(f"Model `{spec.name}` does not take `{p}`.{hint}", param=p)
+    if req.reference_images and frame_params:
+        raise APIError(
+            f"Model `{spec.name}` takes frames via `first_frame`/`last_frame`, "
+            f"not `reference_images` (frames become actual output frames; "
+            f"reference-editing models are the ones taking `reference_images`).",
+            param="reference_images",
+        )
+    if req.reference_images and img_slots and len(req.reference_images) > len(img_slots):
+        # 此前视频路径漏了数量校验：超槽数的参考图会被静默忽略（wire 循环 break）。
+        raise APIError(
+            f"`reference_images` accepts at most {len(img_slots)} image(s) for `{spec.name}` "
+            f"(got {len(req.reference_images)}).",
+            param="reference_images",
         )
 
     # ---- 2. 上传输入图 ----
@@ -689,6 +726,27 @@ def _ref_images(spec: ModelSpec, req: ImageGenerationRequest | VideoGenerationRe
     return imgs
 
 
+def _slot_values(spec: ModelSpec, req: ImageGenerationRequest | VideoGenerationRequest) -> list[str | None]:
+    """按槽序返回每个 image 槽的图源（None = 该槽未提供）。
+
+    两类拓扑：
+      - **frame_params**（fl2va 首尾帧）：槽 i 取请求字段 `frame_params[i]`
+        （first_frame / last_frame），与 reference_images 互斥 —— 帧会实际成为
+        输出的第一/最后一帧，语义是「帧」不是「参考」；
+      - **常规参考槽**（ref2va / 图像多图编辑）：槽 i 取 reference_images[i]，
+        `image` 的单图回落仍只在图像档生效（见 `_ref_images`）。
+
+    接线与剪枝必须用同一份判断，故共用本函数。
+    """
+    ref = spec.references or {}
+    fp = ref.get("frame_params") or []
+    if fp:
+        return [getattr(req, p, None) for p in fp]
+    imgs = _ref_images(spec, req)
+    n = len(ref.get("images") or [])
+    return [imgs[i] if i < len(imgs) else None for i in range(n)]
+
+
 def _prune_unused_references(
     wf: dict[str, Any],
     spec: ModelSpec,
@@ -759,12 +817,13 @@ def _prune_unused_references(
         if isinstance(node, dict) and isinstance(node.get("inputs"), dict):
             node["inputs"].pop(key, None)
 
-    imgs = _ref_images(spec, req)
+    vals = _slot_values(spec, req)
     slots = ref.get("slots") or []
     for i, nid in enumerate(ref.get("images", [])):
         if str(nid) in protected:
             continue  # 该槽由 binding 直接供图（单图入口），保留整条链路
-        if i >= len(imgs):
+        val = vals[i] if i < len(vals) else None
+        if not val:
             _drop(ref_key(ref, "images", i), str(nid))
             if i < len(slots):
                 slot = slots[i] or {}
@@ -817,12 +876,17 @@ async def _wire_references(
 
     widget = {"image": "image", "video": "file", "audio": "audio"}
 
-    # ---- 参考图：LoadImage.inputs.image ----
-    imgs = _ref_images(spec, req)
+    # ---- 参考图 / 首尾帧：LoadImage.inputs.image ----
+    # frame_params 模型（fl2va）逐槽取请求字段，报错参数名也归属到对应字段；
+    # 其余模型取 reference_images 列表。
+    vals = _slot_values(spec, req)
+    fp = (spec.references or {}).get("frame_params") or []
     for i, nid in enumerate(ref.get("images", [])):
-        if i >= len(imgs):
-            break
-        node_value, desc = await _stage_ref(str(imgs[i]), "image", "reference_images", client, trace, i)
+        val = vals[i] if i < len(vals) else None
+        if not val:
+            break  # 后续槽全空（列表语义下未提供的尾部槽由剪枝删除）
+        param_name = fp[i] if i < len(fp) else "reference_images"
+        node_value, desc = await _stage_ref(str(val), "image", param_name, client, trace, i)
         node = wf.get(str(nid))
         if isinstance(node, dict):
             node.setdefault("inputs", {})[widget["image"]] = node_value

@@ -155,12 +155,21 @@ class VideoGenerationRequest(BaseModel):
     # 图生视频输入：base64 / dataURL / http(s) URL
     image: str | list[str] | None = Field(None, description="图生视频输入图")
 
+    # fl2va 首尾帧（minimax-h3 / -lift / fasth3）：帧会实际成为输出的第一/最后一帧，
+    # 网关按画布 size 做 cover 等比铺满 + 居中裁剪（纵横比不一致时裁边，不变形）。
+    # ref2va（edit 三支）没有首尾帧语义——其输出尺寸由 size 决定、与参考图无关——
+    # 传了报 400；参考素材请走 reference_images。
+    first_frame: str | None = Field(None, description="首帧图（仅 minimax-h3 / -lift / fasth3）：成为输出第 1 帧，按画布 cover 裁剪；支持 base64/http(s)/本地路径")
+    last_frame: str | None = Field(None, description="尾帧图（仅 minimax-h3 / -lift / fasth3）：成为输出最后 1 帧，按画布 cover 裁剪；支持 base64/http(s)/本地路径")
+
     # 参考资源（OpenAI 风格扩展字段）：每项可为 dataURL / base64 / http(s) URL / 本地路径。
     # 本地路径支持「绝对路径」或「相对 ComfyUI input 目录的相对路径」（匹配原生 loader 约定）；
     # 落到 input 目录内则免转存、原地引用，否则读字节后上传副本。
     # 网关在提交工作流前，会按实际提供的数量删除多余的参考节点（未上传即删除）。
-    # 数量上限由模型工作流决定（MiniMax H3：最多 6 图 / 3 视频 / 3 音频）。
-    reference_images: list[str] | None = Field(None, description="参考图（最多 6 张），支持 base64/http(s)/本地路径（绝对路径或相对 input 目录）")
+    # 数量上限由模型工作流决定（MiniMax H3 edit：最多 6 图 / 3 视频 / 3 音频）。
+    # 仅 ref2va 系（edit 三支）与图像多图编辑档收；fl2va（minimax-h3 / -lift / fasth3）
+    # 的首尾帧走 first_frame / last_frame 专属参数，传 reference_images 报 400。
+    reference_images: list[str] | None = Field(None, description="参考图（edit 档最多 6 张；fl2va 档不收，首尾帧请用 first_frame/last_frame），支持 base64/http(s)/本地路径")
     reference_videos: list[str] | None = Field(None, description="参考视频（最多 3 个），支持 base64/http(s)/本地路径（绝对路径或相对 input 目录）")
     reference_audios: list[str] | None = Field(None, description="参考音频（最多 3 个），支持 base64/http(s)/本地路径（绝对路径或相对 input 目录）")
 

@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.13.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.14.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -266,8 +266,10 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `scale` | float? | **放大倍率**（仅 `minimax-h3-lift` / `-lift-edit`）：输出 = 768p 画布 × scale，默认 1.875 → 2520x1440；其它模型传了报 400 |
 | `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"910.inputs.rho": 0.3}`。`minimax-h3-lift` 的可调项：`910.inputs.rho`（SelfLift-zero 像素锚阻尼，默认 0=纯学习 lift 纹理最强；0.3 实测高频 -18%）、`910.inputs.w_min`/`w_max`（阻尼强度上下限，默认 0.5/1.0）。放大倍率 `scale` 已是正式请求参数，不必走透传 |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |
-| `image` | string\|string[]? | 图生视频输入 |
-| `reference_images` | string[]? | 参考图，最多 6，支持 base64/URL/本地路径 |
+| `image` | string\|string[]? | 图生视频输入（视频档不收，传了 400 并指路：fl2va 用 `first_frame`/`last_frame`，edit 用 `reference_images`） |
+| `first_frame` | string? | **首帧图**（仅 fl2va：`minimax-h3` / `-lift` / `fasth3`）：成为输出第 1 帧，按画布 size 做 **cover 等比铺满 + 居中裁剪**（不变形）；支持 base64/URL/本地路径。edit 三支传了报 400 —— 参考档输出尺寸由 `size` 决定、参考图只是 conditioning，没有首尾帧语义。⚠️ **模型侧跟随度（09-24 实测）**：base 系 keyframe 需要**足够步数**（8 步不跟随、30 步完美跟随，lift 产物为证）；fasth3 在 **576p 档 keyframe 失效**（768p 正常）—— 要首帧严格跟随：base 系 ≥30 步、fasth3 ≥768p |
+| `last_frame` | string? | **尾帧图**（仅 fl2va 同上三支）：成为输出最后 1 帧，同 cover 裁剪。`first_frame` / `last_frame` 与 `reference_images` **互斥**（传错方向 400 + 指路） |
+| `reference_images` | string[]? | 参考图（仅 ref2va：edit 三支，最多 6），支持 base64/URL/本地路径；fl2va 三支传了报 400（首尾帧请用 `first_frame`/`last_frame`） |
 | `reference_videos` | string[]? | 参考视频，最多 3 |
 | `reference_audios` | string[]? | 参考音频，最多 3 |
 | `response_format` | enum? | `url`（默认）/ `b64_json` / `file` / `path` |
@@ -338,11 +340,11 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | **`flux2-klein-image-edit-turbo`** | image | **image-to-image** | Flux2 Klein 9B **多图参考**编辑（最多 4 张），语义改写/换背景首选（见 5.1） |
 | **`qwen-image-2.1`** | image | text-to-image / **image-to-image** | Qwen-Image 2.1：**文生与多图参考编辑同一支**（25 步，Qwen3-VL 文本编码）。不带参考图即纯文生，原生 2K 档位、默认 1024x1024（`size` 直传，支持非方图）；带 1–6 张参考图（`reference_images`）即多图编辑，输出尺寸跟随第 1 张参考图 |
 | **`utility-birefnet-remove-background`** | image | **image-to-image**（promptless） | 去背景独立工具，无 prompt，透明 PNG；专属端点 `/v1/images/remove-background` |
-| `minimax-h3` | video | text-to-video | H3 文生视频（base 30 步）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@30（网关无 `quality` 分档 —— 它只能表达 size + steps，与直接传参等价） |
+| `minimax-h3` | video | text-to-video / first-last-frame | H3 首尾帧生视频（base 30 步）：`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@30（网关无 `quality` 分档 —— 它只能表达 size + steps，与直接传参等价） |
 | `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，30 步（支持图/视频/音频参考） |
-| `minimax-h3-lift` | video | text-to-video / image-to-video | base 骨架 + 确定性放大：30 步原生采样 → 学习式 latent lift（默认 2520x1440）；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧；分块参数按本机显存自动分档 |
+| `minimax-h3-lift` | video | text-to-video / first-last-frame | base 骨架 + 确定性放大：30 步原生采样 → 学习式 latent lift（默认 2520x1440）；`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）；分块参数按本机显存自动分档 |
 | `minimax-h3-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 edit 骨架（Ref2VA 权重，30 步）；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
-| `fasth3` | video | text-to-video / image-to-video | FastVideo FastH3 8 步蒸馏档；`reference_images` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（首尾帧走关键帧槽 `first_frame` / `last_frame`，见 [WORKFLOWS.md](WORKFLOWS.md)）。定位**草稿 / 快周转**，非 49/50 步的等价替代 |
+| `fasth3` | video | text-to-video / first-last-frame | FastVideo FastH3 8 步蒸馏档；`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪，走关键帧槽，见 [WORKFLOWS.md](WORKFLOWS.md)）。定位**草稿 / 快周转**，非 49/50 步的等价替代 |
 | `fasth3-edit` | video | text-to-video / reference-to-video | FastH3 参考生视频；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪。⚠️ **占位档**：官方未蒸馏 Ref2VA，与 `fasth3` 共用同一份 fl2v 权重 |
 
 > 完整别名与绑定关系见 `models.yaml`；模型清单与用途对照也见 [README.md](README.md#内置模型)。
@@ -433,7 +435,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `list_models` | 列出可用模型及其能力 / 模式 / 默认参数 / 别名 |
 | `generate_image` | 文生图；支持 `negative_prompt`/`seed`/`size`/`steps`/`cfg`/`workflow_overrides`(JSON 字符串)/`filename_prefix`/`mode`；返回 OpenAI 风格响应（含 `seed` 回显，url 已绝对化）；视频模型自动转视频链路。**编辑图片不要用本工具**（用 `edit_image` / `remove_background`） |
 | `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写），改图内文字传 `boogu-image-edit-turbo` / `boogu-image-edit`；**多图参考**传 `reference_images`（klein 4 槽 / qwen 6 槽）；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
-| `generate_video` | 文生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`reference_images|videos|audios`/`steps`/`attention`/`scale`/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
+| `generate_video` | 文生视频 / 首尾帧生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`first_frame`/`last_frame`（fl2va 三支）/`reference_images|videos|audios`（edit 三支）/`steps`/`attention`/`scale`/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
 | `remove_background` | 图片去背景（BiRefNet，独立工具，无需提示词）；参数 `image`(本地路径/URL/dataURL/base64)、`response_format`(默认 url)、`filename_prefix` |
 | `get_task` | 查询异步任务状态与产物（含 `prompt_id`、是否有工作流快照、`output`、`error`）；同步回执里的 `task_id` 同样能查 |
 | `cancel_task` | 取消任务：`task_id` 非空取消指定任务（pending 移出队列 / running 中断）；**空则中断 ComfyUI 当前执行任务** |

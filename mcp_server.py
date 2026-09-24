@@ -409,7 +409,18 @@ async def generate_video_tool(
     size: str = "",
     seed: int | None = None,
     negative_prompt: str = "",
-    reference_images: list[str] | None = None,
+    first_frame: str | None = Field(
+        None,
+        description="首帧图（仅 minimax-h3 / -lift / fasth3）：成为输出第 1 帧，按画布 cover 裁剪；edit 档传了报 400。",
+    ),
+    last_frame: str | None = Field(
+        None,
+        description="尾帧图（仅 minimax-h3 / -lift / fasth3）：成为输出最后 1 帧，按画布 cover 裁剪；edit 档传了报 400。",
+    ),
+    reference_images: list[str] | None = Field(
+        None,
+        description="参考图（仅 edit 档与图像多图编辑；fl2va 档不收，首尾帧请用 first_frame/last_frame）。",
+    ),
     reference_videos: list[str] | None = None,
     reference_audios: list[str] | None = None,
     steps: int | None = None,
@@ -431,6 +442,8 @@ async def generate_video_tool(
         size=size or None,
         seed=seed,
         negative_prompt=negative_prompt or None,
+        first_frame=first_frame,
+        last_frame=last_frame,
         reference_images=reference_images,
         reference_videos=reference_videos,
         reference_audios=reference_audios,
