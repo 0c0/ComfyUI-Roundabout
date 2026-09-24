@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.11.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.12.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -443,7 +443,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `health` | 网关与 ComfyUI 后端健康状态 |
 | `get_view_url` | 返回可视化页面地址（`{url}`，浏览器直接打开）：浏览 input/output 资源 + 实时任务进度。用户问「生成的东西在哪看」「给我查看页面」时调用，把 `url` 原样给用户 |
 | `check_weights` | **权重体检**（只读、不占 GPU）：列出内置工作流当前缺失的权重文件与每条的下载命令，避免等到 `generate*` 报 400 才发现权重没下 |
-| `get_skills` | 返回配套 agent-skills 的清单与安装地址（`roundabout` / `h3-playbook` / `qwen-image-prompt-writing` / `h3-prompt-writing`），每条带 `source` 标明是本网关维护还是模型官方维护 |
+| `get_skills` | 返回配套 agent-skills 的清单与安装地址（`roundabout` / `h3-playbook` / `qwen-image-prompt-writing` / `h3-prompt-writing`），每条带 `source`（本网关维护 / 模型官方维护）与 `skill_version`（该 skill 当前应有的内容版本；official 条目恒 `null`）。本地已装 skill 的 frontmatter `skill_version` 低于此值 ⇒ 副本过期，按 `install_url` 重装 |
 | `pin_view_item` | 把产出钉到可视化页面的**任务看板**（顶部无限画布）：产物来源 `url` / `path` / `task_id` 三选一（优先级依次降低），`x`/`y` 给坐标（不给则自动排到空位），`w`/`h` 定尺寸，`note` 可写说明；`path` 指向 input/output 内的目录时自动落成**目录卡**（有可跳转的 `dir`），落在 input/output **之外**的真实目录/文件则标记为**外部卡**（`ext:{path,is_dir}`，页面上看不到内容，点它在系统文件管理器里打开）。返回 `view_url`；**要不要把页面地址给用户由 agent 自行判断** |
 | | ↳ **批量**：传 `items: [{...}, ...]` 一次钉一批（一次落盘、严格按数组顺序排布；**批量时不得同传单卡字段**，同传返回 400 而不是替你猜哪边生效） |
 | `clear_view_board` | 清空看板并**归档进历史**（`label` 给这份归档命名；**不给则按内容自动命名**，如「7 张 · image/text · 10:24」，不再是认不出的「未命名」）。这一轮交付完、或要切换任务时调用；归档可在页面「历史」里回看，也可用 `get_view_board_history` 取回 |
