@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.7.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.8.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -20,7 +20,7 @@
                           │        ▼                                     │
                           │   内部 uvicorn (127.0.0.1, streamable-http)   │
                           │        端口由系统分配或按映射表指定          │
-                          │        = MCP Server (19 tools)               │
+                          │        = MCP Server (20 tools)               │
                           └───────────────┬──────────────────────────────┘
                                           │ 复用
                           ┌───────────────▼──────────────────────────────┐
@@ -409,13 +409,13 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 ---
 
-## 7. MCP 网关（19 个工具）
+## 7. MCP 网关（20 个工具）
 
 **默认启用**（`MCP_ENABLED` 默认 `true`）：装好 `mcp` / `uvicorn`、重启 ComfyUI 即可用，不需要任何配置。
 
 传输：`streamable-http`，端点 `/mcp`（共享端口挂在 ComfyUI 端口，或 `MCP_HOST:<MCP_PORT>` 独立，端口由 `MCP_PORT` / `MCP_PORT_MAP` 决定）。与 REST 完全互通。
 
-工具分四类：**生成**（`generate_image` / `edit_image` / `remove_background` / `generate_video`）、**查询与控制**（`get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`）、**运维**（`reload` / `get_view_url` / `get_skills`）、**看板**（`pin_view_item` / `clear_view_board` / `get_view_board_history` / `load_view_board`）。
+工具分四类：**生成**（`generate_image` / `edit_image` / `remove_background` / `generate_video`）、**查询与控制**（`get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`）、**运维**（`reload` / `get_view_url` / `get_skills`）、**看板**（`pin_view_item` / `clear_view_board` / `get_view_board` / `get_view_board_history` / `load_view_board`）。
 
 > 工具的 `description` **只保留一句话定位**；参数细节（逐模型生效性、区间、枚举、默认值、参考槽
 > 数量、尺寸档位）一律查 `get_tool_info`。该工具与 REST 的 `/roundabout/admin/tool-info` 同源，
@@ -441,6 +441,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `get_skills` | 返回配套 agent-skills 的清单与安装地址（`roundabout` / `h3-playbook` / `qwen-image-prompt-writing` / `h3-prompt-writing`），每条带 `source` 标明是本网关维护还是模型官方维护 |
 | `pin_view_item` | 把产出钉到可视化页面的**任务看板**（顶部无限画布）：产物来源 `url` / `path` / `task_id` 三选一（优先级依次降低），`x`/`y` 给坐标（不给则自动排到空位），`w`/`h` 定尺寸，`note` 可写说明；`path` 指向 input/output 内的目录时自动落成**目录卡**（有可跳转的 `dir`），落在 input/output **之外**的真实目录/文件则标记为**外部卡**（`ext:{path,is_dir}`，页面上看不到内容，点它在系统文件管理器里打开）。返回 `view_url`；**要不要把页面地址给用户由 agent 自行判断** |
 | `clear_view_board` | 清空看板并**归档进历史**（`label` 给这份归档命名）。这一轮交付完、或要切换任务时调用；归档可在页面「历史」里回看，也可用 `get_view_board_history` 取回 |
+| `get_view_board` | 读**当前看板**上有哪些卡片（`id` / 标题 / 类别 / 地址 / 说明 / 模型 / 画布坐标），外加历史归档份数。要接着往上钉之前先看一眼，免得钉重、或与已有卡片叠在一起；用户问「板上有什么」时也用它。看某一轮归档里的卡片用 `get_view_board_history` |
 | `get_view_board_history` | 列出看板的历史归档（每次清空存一份，最近 20 份）；传 `archive_id` 返回该份完整卡片（含地址、note 与坐标），用于回顾上一轮产出、给用户做总结 |
 | `load_view_board` | 把某份归档**载回**当前看板（**替换**语义）：上一轮钉过的卡片回到画布上，接着往下钉。当前看板非空会**先自动归档**它（`auto_archived` 回该归档 id），不静默丢。页面上用户只能只读回看，**载回是 agent 侧入口** |
 
@@ -465,7 +466,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 > 队列区与任务表是两层信息：任务表记录「谁提交了什么、成了什么」，队列反映「此刻 ComfyUI 在算什么」。
 > 后端不可达时队列区标记不可达，任务表照常显示。
 
-- **任务看板**：`看板` 标签页里一块可平移 / 缩放的**无限画布**（高度按视口铺满），由 agent 把产出**钉**上去（可按语义排布：分镜顺序、A/B 对照、按角色分组），用户在页面上一眼看全，不必 agent 逐个把文件拉出来。视频卡缩略图上叠播放角标、点开走同一个灯箱；**目录卡**（agent 钉 input/output 内的目录）点一下就切到资源列表并**进入该目录**；**外部卡**（产物落在 input/output 之外）左上角标「外部」，点它 → 确认 → 交给系统文件管理器打开（仅本机访问时有效，见下）；没有可预览产物的卡片（纯文本卡等）点了会给一条提示，不会毫无反应；右上角 × 移除单张。agent 换任务时调 `clear_view_board` 清空 —— **清空即归档**，随时可在页面「历史」里回看，或**直接删掉某份归档**（删前会确认，不可恢复）。**回看归档是只读的**（`×` 与「清空并归档」在这个模式下连同消失）；要把某份变回当前看板，在回看时点「用这份替换当前看板」（先过确认层，当前内容自动归档），或由 agent 调 `load_view_board`。看板落在节点 `.cache/board.json`，重启 ComfyUI 后仍在。
+- **任务看板**：`看板` 标签页里一块可平移 / 缩放的**无限画布**（高度按视口铺满），由 agent 把产出**钉**上去（可按语义排布：分镜顺序、A/B 对照、按角色分组），用户在页面上一眼看全，不必 agent 逐个把文件拉出来。视频卡缩略图上叠播放角标、点开走同一个灯箱；**目录卡**（agent 钉 input/output 内的目录）点一下就切到资源列表并**进入该目录**；**外部卡**（产物落在 input/output 之外）左上角标「外部」，点它 → 确认 → 交给系统文件管理器打开（仅本机访问时有效，见下）；没有可预览产物的卡片（纯文本卡等）点了会给一条提示，不会毫无反应；右上角 × 移除单张。agent 换任务时调 `clear_view_board` 清空 —— **清空即归档**，随时可在页面「历史」里回看，或**直接删掉某份归档**（删前会确认，不可恢复）。**回看归档是只读的**（`×` 与「清空并归档」在这个模式下连同消失）；要把某份变回当前看板，在回看时点「用这份替换当前看板」（先过确认层，当前内容自动归档），或由 agent 调 `load_view_board`；agent 想看当前板上有哪些卡片用 `get_view_board`。看板落在节点 `.cache/board.json`，重启 ComfyUI 后仍在。
 - **外部路径与文件管理器**：产物落在 ComfyUI 的 input/output 之外时，页面既拿不到 `/view` 地址也读不到缩略图，唯一有意义的动作就是交给操作系统 —— 点外部卡会在跑 ComfyUI 那台机器上拉起文件管理器（目录直接进入，文件定位并选中）。两个边界：①**只在从本机（回环）打开页面时执行**，从局域网别的机器点会收到一句「窗口开不到你这边」的明确提示，而不是静默无反应；②接口只认**当前看板上的卡片 id**，可打开的路径集合恒等于 agent 钉过的那些，卡片被清空后那条路径也随之失效。
 
 支撑端点：

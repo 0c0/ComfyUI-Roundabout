@@ -616,6 +616,30 @@ async def clear_view_board(label: str = "") -> dict[str, Any]:
 
 
 @mcp.tool(
+    name="get_view_board",
+    description=(
+        "读当前**任务看板**上已有哪些卡片（`id` / 标题 / 类别 / 产物地址 / 说明 / 模型 / 画布坐标），"
+        "外加历史归档份数。"
+        "什么时候用：① 要接着往看板上钉东西之前，先看已有什么、坐标占到哪了 —— 免得钉重、或和已有的卡叠在一起；"
+        "② 用户问「现在板上有什么」、或要你做阶段性小结时；"
+        "③ 要确认某张卡是不是**外部卡**（页面看不到内容，用户点它只会在系统文件管理器里打开）。"
+        "看的是**当前看板**；想看某一轮归档里的卡片用 get_view_board_history。"
+        "每张卡的 `url` 是可直接打开的完整地址；`thumb` 是页面用的缩略图，对你是长串噪音、这里省掉。"
+    ),
+)
+async def get_view_board() -> dict[str, Any]:
+    """当前看板的卡片清单（agent 侧读取入口；不含页面用的缩略图地址）。"""
+    items = [{k: v for k, v in i.items() if k != "thumb"} for i in board.snapshot()]
+    return {
+        "ok": True,
+        "count": len(items),
+        "history_count": len(board._history),
+        "items": items,
+        "view_url": view_url(),
+    }
+
+
+@mcp.tool(
     name="get_view_board_history",
     description=(
         "列出任务看板的历史归档（每次 clear_view_board 都会存一份），用来回顾上一轮钉过什么、"
