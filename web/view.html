@@ -748,6 +748,8 @@ async function loadBoard() {
   $('boardPanel').hidden = items.length === 0 && !d.history_count;
   $('boardCount').textContent = `${items.length} 张`;
   $('boardHistoryN').textContent = d.history_count ? ` (${d.history_count})` : '';
+  // 空态提示每次都要同步：空看板的签名恒为空串，与初始 boardSig 相同 ⇒ 会在下面提前 return
+  $('boardEmpty').hidden = items.length > 0;
   const sig = boardSignature(items);
   if (sig === boardSig) return;
   const first = boardSig === '';
