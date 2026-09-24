@@ -369,6 +369,7 @@
     <div class="viewing-bar" id="boardViewing" hidden>
       <span id="boardViewingText">正在回看历史归档</span>
       <span class="vb-acts">
+        <button class="btn" id="boardCopyIdBtn">复制 ID</button>
         <button class="btn" id="boardReplaceBtn">用这份替换当前看板</button>
         <button class="btn" id="boardBackBtn">返回当前看板</button>
       </span>
@@ -547,6 +548,44 @@ function toast(msg) {
 
 function hideFresh() {
   $('freshPill').hidden = true;
+}
+
+// ---- 复制归档 ID：把「认哪一轮」交给用户，agent 只负责照着做 ----
+// 用户面对 label / 张数 / 时间一眼就认得出要续接哪一份；agent 拿 id 直接载入就行，
+// 不必先拉一遍历史列表去猜 —— 那是几次往返换一个本来不必猜的问题。
+// 非安全上下文（用局域网 IP 打开页面）下没有 navigator.clipboard，退到 execCommand。
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (err) { /* 权限被拒或非安全上下文 → 走回退 */ }
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return !!ok;
+  } catch (err) { return false; }
+}
+
+// 两条路都不通时把 ID 原样摊在提示里让人手抄 —— 「点了没反应」比手抄一串 ID 更糟
+async function copyArchiveId(id, btn) {
+  const ok = await copyText(id);
+  if (btn) {
+    const old = btn.textContent;
+    btn.textContent = ok ? '已复制 ✓' : '复制失败';
+    setTimeout(() => { btn.textContent = old; }, 1400);
+  }
+  toast(ok ? '归档 ID 已复制 · 粘给 agent 让它接着这份继续' : `复制失败，手动记录这份 ID：${id}`);
+  return ok;
 }
 
 // 通用确认层：有副作用的动作（拉起系统窗口 / 删掉一份归档）都先问一句再动手，
@@ -1051,6 +1090,7 @@ async function loadHistory() {
       <span class="hm">${h.count} 张 · ${fmtTime(h.created)}</span>
       <span class="sp"></span>
       <button class="btn" data-view="${esc(h.id)}">查看</button>
+      <button class="btn" data-copy="${esc(h.id)}" title="归档 ID ${esc(h.id)} —— 复制后粘给 agent，让它接着这份继续">复制 ID</button>
       <button class="btn danger" data-drop="${esc(h.id)}" data-label="${esc(h.label)}" data-count="${h.count}">删除</button>
     </div>`).join('');
 }
@@ -1064,7 +1104,11 @@ $('boardHistoryClose').onclick = () => { $('boardHistory').hidden = true; };
 $('boardHistoryList').addEventListener('click', async e => {
   const v = e.target.closest('[data-view]');
   const x = e.target.closest('[data-drop]');
-  if (!v && !x) return;
+  const c = e.target.closest('[data-copy]');
+  if (!v && !x && !c) return;
+
+  // 「复制 ID」既不碰数据也不发请求：用户拿这串 ID 去交给 agent，比让 agent 扫列表猜准得多
+  if (c) { copyArchiveId(c.dataset.copy, c); return; }
 
   if (x) {                                  // 删一份归档：删掉就没了，先确认再发
     const dropId = x.dataset.drop;
@@ -1141,6 +1185,13 @@ $('boardReplaceBtn').onclick = () => {
       loadHistory();
     },
   });
+};
+
+// 只读态也留着这个按钮：它只读剪贴板、不动数据；而用户正是在看清这一轮内容之后，
+// 才最清楚要把哪一份交给 agent 接着做。
+$('boardCopyIdBtn').onclick = () => {
+  if (!viewingArchive) return;
+  copyArchiveId(viewingArchive, $('boardCopyIdBtn'));
 };
 
 

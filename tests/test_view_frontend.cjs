@@ -80,6 +80,8 @@ let revealStatus = 200;      // 改成 403 模拟「后端在另一台机器上�
 let histDeletes = [];        // 每次 DELETE 归档的 id
 let histListLoads = 0;
 let boardLoads = [];         // 每次 POST /board/history/{id}/load 的归档 id
+let copied = [];             // clipboard.writeText 收到的文本
+let execCopies = 0;          // execCommand 回退被调用的次数（非安全上下文那条路）
 
 function fakeFetch(url, init) {
   const u = new URL(url, 'http://127.0.0.1:8188');
@@ -146,6 +148,16 @@ async function main() {
     beforeParse(window) {
       window.fetch = fakeFetch;
       window.scrollTo = () => {};
+      // 剪贴板：默认给一个可用的 clipboard.writeText（页面走的首选路径）。
+      // 测回退时把它删掉 —— 用局域网 IP 打开页面时浏览器就是没有这个 API。
+      Object.defineProperty(window.navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: async t => { copied.push(t); } },
+      });
+      Object.defineProperty(window.document, 'execCommand', {
+        configurable: true,
+        value: () => { execCopies += 1; return true; },
+      });
       // jsdom 把页面当成后台标签（hidden=true），会让探测直接跳过；强制可见才能测
       Object.defineProperty(window.document, 'hidden', { configurable: true, get: () => false });
       Object.defineProperty(window.document, 'visibilityState', { configurable: true, get: () => 'visible' });
@@ -154,6 +166,14 @@ async function main() {
   const { window } = dom;
   const $ = id => window.document.getElementById(id);
   const settle = () => new Promise(r => setTimeout(r, 20));
+  // 剪贴板桩：测「非安全上下文」时把 clipboard 摘掉、把 execCommand 换成失败版。
+  // 必须用 defineProperty —— beforeParse 里注入时 value 不可写，直接赋值会静默失败。
+  const stubClipboard = () => Object.defineProperty(window.navigator, 'clipboard', {
+    configurable: true, value: { writeText: async t => { copied.push(t); } },
+  });
+  const stubExec = ok => Object.defineProperty(window.document, 'execCommand', {
+    configurable: true, value: () => { execCopies += 1; return ok; },
+  });
 
   await settle();   // 等脚本底部那一次 loadFiles / loadTasks 跑完
 
@@ -264,6 +284,40 @@ async function main() {
   check('被拒时点明「另一台机器」', $('toast').textContent.includes('另一台机器'), $('toast').textContent);
   revealStatus = 200;
 
+  // ---- 复制归档 ID：认哪一轮交给用户，agent 照着 id 载入就行，不必先扫一遍历史列表 ----
+  console.log('== 复制归档 ID ==');
+  $('boardHistoryBtn').click();
+  await settle();
+  const copyBtn = $('boardHistoryList').querySelector('[data-copy]');
+  check('历史行有「复制 ID」按钮', !!copyBtn);
+  check('按钮 title 里带出 ID 本身',
+        !!copyBtn && copyBtn.getAttribute('title').includes('arch_1'),
+        copyBtn && copyBtn.getAttribute('title'));
+  copyBtn.click();
+  await settle();
+  check('复制的内容就是归档 id', copied.length === 1 && copied[0] === 'arch_1', JSON.stringify(copied));
+  check('按钮给出「已复制」反馈', copyBtn.textContent.includes('已复制'), copyBtn.textContent);
+  check('提示说清是交给 agent 接着做', $('toast').textContent.includes('agent'), $('toast').textContent);
+
+  // 非安全上下文（用局域网 IP 打开页面）没有 navigator.clipboard ⇒ 必须退到 execCommand，
+  // 否则这批用户点了永远是失败 —— 而这功能恰恰是他们要用的
+  delete window.navigator.clipboard;
+  copyBtn.click();
+  await settle();
+  check('没有 clipboard API 时走 execCommand 回退', execCopies === 1, String(execCopies));
+
+  // 两条路都不通：明说失败并把 ID 摊出来，而不是「点了没反应」
+  stubExec(false);
+  copyBtn.click();
+  await settle();
+  check('复制失败时把 ID 摊在提示里',
+        $('toast').textContent.includes('复制失败') && $('toast').textContent.includes('arch_1'),
+        $('toast').textContent);
+
+  stubClipboard();          // 恢复可用剪贴板，后面「回看横幅也能复制」还要用
+  stubExec(true);
+  $('boardHistoryClose').click();
+
   console.log('== 删一份归档：也要先确认 ==');
   $('boardHistoryBtn').click();
   await settle();
@@ -307,6 +361,17 @@ async function main() {
   check('卡片 × 在只读下被撤掉',
         delBtns.length > 0 && delBtns.every(b => window.getComputedStyle(b).display === 'none'),
         `${delBtns.length} 个 ×`);
+
+  console.log('== 回看横幅也能复制 ID（只读态保留）==');
+  check('只读下复制入口仍在',
+        window.getComputedStyle($('boardCopyIdBtn')).display !== 'none',
+        window.getComputedStyle($('boardCopyIdBtn')).display);
+  const copiedBefore = copied.length;
+  $('boardCopyIdBtn').click();
+  await settle();
+  check('横幅复制的是正在回看的归档 id',
+        copied.length === copiedBefore + 1 && copied[copied.length - 1] === 'arch_1',
+        JSON.stringify(copied));
 
   console.log('== 回看里替换当前看板：先确认，再 POST ==');
   $('boardReplaceBtn').click();

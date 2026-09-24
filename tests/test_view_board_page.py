@@ -33,6 +33,10 @@
  11. **「载入」只留在回看里，且是唯一的破坏性动作**（本轮）：列表行不再有载入按钮；
      替换入口在横幅内，点击必经确认层，且「先确认 → 再 POST → 再退出只读」顺序不能乱；
      返回与替换共用同一条退出路径（`exitArchive`），避免其中一条忘了摘掉只读状态。
+ 12. **「认哪一轮」交给用户**（本轮）：归档 id 有两个复制入口（历史行 + 只读回看横幅），
+     复制优先 `navigator.clipboard`、在非安全上下文回退 `execCommand`（用局域网 IP 打开时没有
+     clipboard API），两条都不通则把 id 摊在提示里让人手抄；复制分支不得夹带写请求。
+     判据 29–33。
 
 这些用源码顺序断言即可覆盖，不必引入 jsdom：判据是「谁在谁前面」与「哪一支在不在」，
 与实现细节无关。
@@ -115,6 +119,10 @@ def invariants(html: str) -> dict[str, bool]:
     clear_body = fn_body(script[clear_i:], "onclick = async ()")
     # 只读时该被撤掉的那段 CSS
     reading_css = style[style.index("#boardPanel.reading") : style.index("#boardHistoryN")]
+    copy_text = fn_body(script, "async function copyText(")
+    copy_archive = fn_body(script, "async function copyArchiveId(")
+    copy_i = script.index("if (c) {")
+    copy_branch = script[copy_i : script.index("\n", copy_i)]
     return {
         # 1. 空态同步必须早于「签名相同就返回」
         "空态同步早于签名早退": order(load_board,
@@ -210,6 +218,24 @@ def invariants(html: str) -> dict[str, bool]:
         "历史计数不再打数字":
             "$('boardHistoryN').textContent" not in script
             and "$('boardHistoryN').hidden" in load_board,
+        # ---- 本轮（把「认哪一轮」交给用户：复制归档 ID 交给 agent）----
+        # 29. 两个入口：历史行，以及只读回看横幅 —— 回看时用户刚看清内容，最知道要把哪一份交出去
+        "历史行有复制 ID 入口": "data-copy=" in script,
+        "回看横幅也有复制 ID 入口": "boardCopyIdBtn" in viewing_bar,
+        "回看横幅的复制按钮接了 handler": "$('boardCopyIdBtn').onclick" in script,
+        # 30. 只读态不撤复制入口 —— 它只读剪贴板、不写数据，撤掉反而少一条出路
+        "只读态保留复制入口": "boardCopyIdBtn" not in reading_css,
+        # 31. 非安全上下文（用局域网 IP 打开页面）没有 navigator.clipboard ⇒ 必须留 execCommand
+        #     回退；否则那批用户点了永远是失败，而这功能正是给他们用的
+        "复制优先 clipboard 且留 execCommand 回退":
+            "navigator.clipboard" in copy_text and "execCommand" in copy_text,
+        # 32. 两条路都不通时不能静默：「点了没反应」比手抄一串 ID 更糟，
+        #     所以失败分支必须把 id 本身插进提示里（不是只说一句「复制失败」就完事）
+        "复制失败时把 ID 摊出来": "复制失败" in copy_archive and "${id}" in copy_archive,
+        # 33. 复制是只读动作：那条分支不得夹带写请求
+        "复制分支不发写请求":
+            "copyArchiveId" in copy_branch
+            and not any(k in copy_branch for k in ("method", "POST", "DELETE")),
     }
 
 
@@ -301,6 +327,25 @@ def main() -> int:
     check("自校验：退出只读时不摘 reading 类，判据变红",
           exit_mut != exit_body
           and red_on(html.replace(exit_body, exit_mut, 1), "退出只读时摘掉 reading 类"),
+          "变异后仍然通过 ⇒ 该判据抓不到回归")
+
+    # ---- 自校验（本轮新增）：复制入口、剪贴板回退、失败提示 ----
+    row_line = [ln for ln in script.split("\n") if "data-copy=" in ln][0]
+    check("自校验：历史行去掉复制按钮，判据变红",
+          red_on(html.replace(row_line + "\n", "", 1), "历史行有复制 ID 入口"),
+          "变异后仍然通过 ⇒ 该判据抓不到回归")
+
+    ct = fn_body(script, "async function copyText(")
+    ct_mut = ct.replace("document.execCommand('copy')", "false", 1)
+    check("自校验：删掉 execCommand 回退，判据变红",
+          ct_mut != ct
+          and red_on(html.replace(ct, ct_mut, 1), "复制优先 clipboard 且留 execCommand 回退"),
+          "变异后仍然通过 ⇒ 该判据抓不到回归")
+
+    ca = fn_body(script, "async function copyArchiveId(")
+    ca_mut = ca.replace("手动记录这份 ID：${id}", "手动记录")
+    check("自校验：复制失败时不再摊出 ID，判据变红",
+          ca_mut != ca and red_on(html.replace(ca, ca_mut, 1), "复制失败时把 ID 摊出来"),
           "变异后仍然通过 ⇒ 该判据抓不到回归")
 
     print(f"\n===== {passed} passed / {failed} failed =====")
