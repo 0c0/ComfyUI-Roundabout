@@ -281,6 +281,11 @@ class Settings:
     # ---- 负向分流：支持负向提示词的模型，自动把 prompt 内 "no/without/not X" 抽进 negative_prompt ----
     auto_split_negative: bool = field(default_factory=lambda: _env_bool("AUTO_SPLIT_NEGATIVE", True))
 
+    # ---- 看板「在资源管理器中打开」：默认仅限本机请求 ----
+    # 远程请求放开时窗口会开在**服务器**这台机器上，点的人看不到 ⇒ 默认拒。
+    # 部署场景（页面发布到公网、服务器就是自己的机器）设 REVEAL_ALLOW_REMOTE=1 放开。
+    reveal_allow_remote: bool = field(default_factory=lambda: _env_bool("REVEAL_ALLOW_REMOTE", False))
+
     @property
     def auth_enabled(self) -> bool:
         return self.auth_required and bool(self.api_keys)

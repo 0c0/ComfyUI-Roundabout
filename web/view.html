@@ -638,7 +638,7 @@ function askReveal(it) {
         // 「后端在别的机器上」是这个动作唯一的固有限制，单独给一句人话（其余错误透传后端文案）
         const code = d && d.error && d.error.code;
         toast(code === 'reveal_not_local'
-          ? '后端在另一台机器上，窗口开不到你这边 —— 请在跑 ComfyUI 的那台机器上打开本页'
+          ? '后端在另一台机器上，窗口开不到你这边 —— 请在跑 ComfyUI 的那台机器上打开本页；若后端就在你本机（页面经隧道/反代访问），可在后端设环境变量 REVEAL_ALLOW_REMOTE=1 放开'
           : ((d && d.error && d.error.message) || `打开失败（HTTP ${r.status}）`));
         return;
       }

@@ -262,7 +262,20 @@ def _auto_slot(w: float, h: float) -> tuple[float, float]:
             x, y = col * (CARD_W + GAP_X), row * (CARD_H + GAP_Y)
             if not any(_overlaps(x, y, w, h, i) for i in _items):
                 return x, y
-    return 0.0, 0.0
+    # 200 行都放不下（理论上只有极限堆卡才会走到）：放到现有内容的下一行，别叠回 (0,0)
+    bottom = max((i["y"] + i["h"] for i in _items), default=0.0)
+    return 0.0, bottom + GAP_Y
+
+
+def _covered_by(x: float, y: float, w: float, h: float) -> list[dict[str, Any]]:
+    """与给定矩形重叠的已有卡（id+title）——显式坐标会遮挡时的回执警示。
+
+    只在 append **之前**调用（probe 尚不在 _items 里），调用方负责这个顺序。
+    """
+    return [
+        {"id": i["id"], "title": i.get("title", "")}
+        for i in _items if _overlaps(x, y, w, h, i)
+    ]
 
 
 # ------------------------------------------------------------------ 看板操作
@@ -343,6 +356,16 @@ def _build_item(
 
     card_w = _num(w, CARD_W, SIZE_MIN, SIZE_MAX)
     card_h = _num(h, CARD_H, SIZE_MIN, SIZE_MAX)
+    # 入参给了尺寸但被 clamp ⇒ 回执标 size_adjusted（w=1 当倍率用的典型手滑，别让 agent 无感）
+    size_adjusted = False
+    for raw, clamped in ((w, card_w), (h, card_h)):
+        if raw in (None, ""):
+            continue
+        try:
+            if abs(float(raw) - clamped) > 0.01:
+                size_adjusted = True
+        except (TypeError, ValueError):
+            size_adjusted = True
     # 两个坐标都给了才算「显式摆放」；只给一个是手滑，退回自动排布
     if x is not None and x != "" and y is not None and y != "":
         card_x = _num(x, 0, -COORD_LIMIT, COORD_LIMIT)
@@ -366,6 +389,8 @@ def _build_item(
         "w": card_w,
         "h": card_h,
     }
+    if size_adjusted:
+        item["size_adjusted"] = True
     # 目录卡：带上可跳转的目标（root + 相对路径），前端点了就切到文件列表并进这个目录
     if dir_target:
         item["dir"] = dir_target
@@ -403,6 +428,8 @@ def pin(
         title=title, url=url, path=path, task_id=task_id, note=note, kind=kind,
         model=model, x=x, y=y, w=w, h=h, request=request,
     )
+    # 遮挡警示在 append 前算：自动落位恒为空，显式 x/y 压到已有卡时回执告知 agent「盖住了谁」
+    covered = _covered_by(item["x"], item["y"], item["w"], item["h"])
     _items.append(item)
     dropped = 0
     if len(_items) > MAX_ITEMS:
@@ -411,7 +438,11 @@ def pin(
     _save()
     log.info("board pinned %s (%s) -> %s%s", item["id"], item["kind"], item["title"],
              f", dropped {dropped} oldest" if dropped else "")
-    return item
+    receipt = dict(item)
+    if covered:
+        # 只进回执不落库：落库的副本会随画布变化过时（被盖的卡被删/移走后就成了假信息）
+        receipt["covered"] = covered
+    return receipt
 
 
 def brief(item: dict[str, Any]) -> dict[str, Any]:
@@ -419,8 +450,14 @@ def brief(item: dict[str, Any]) -> dict[str, Any]:
 
     单张 pin 回整条 item 是有用的（agent 要 id 与坐标）；一次回 20 张时
     note / thumb / task_id / origin 就成了噪音，只留定位用的那几个字段。
+    `covered`（显式坐标盖住了谁）是布局警示，跟坐标一起保留。
     """
-    return {k: item.get(k) for k in ("id", "title", "kind", "url", "model", "x", "y")}
+    out = {k: item.get(k) for k in ("id", "title", "kind", "url", "model", "x", "y")}
+    if item.get("covered"):
+        out["covered"] = item["covered"]
+    if item.get("size_adjusted"):
+        out["size_adjusted"] = True
+    return out
 
 
 _PIN_STR_FIELDS = ("title", "url", "path", "task_id", "note", "kind", "model")
@@ -451,11 +488,14 @@ def pin_many(specs: list[dict[str, Any]], request: web.Request | None = None) ->
 
     start = len(_items)
     built: list[dict[str, Any]] = []
+    covered_map: dict[int, list[dict[str, Any]]] = {}
     try:
         for spec in specs:
             if not isinstance(spec, dict):
                 raise APIError("Every entry of 'items' must be an object.", param="items")
             built.append(_build_item(**_spec_kwargs(spec), request=request))
+            covered_map[id(built[-1])] = _covered_by(built[-1]["x"], built[-1]["y"],
+                                                     built[-1]["w"], built[-1]["h"])
             _items.append(built[-1])
     except Exception:
         del _items[start:]          # 本批已 append 的全部撤回，内存回到调用前
@@ -468,7 +508,16 @@ def pin_many(specs: list[dict[str, Any]], request: web.Request | None = None) ->
     _save()
     log.info("board pinned %d item(s) in one batch%s", len(built),
              f", dropped {dropped} oldest" if dropped else "")
-    return {"items": built, "count": len(_items), "dropped": dropped}
+    # covered 只进回执不落库：built 里的 dict 与 _items 同引用，必须拷贝后再注入，
+    # 否则内存态被污染、下次 _save() 把过时的 covered 写进盘
+    receipts: list[dict[str, Any]] = []
+    for i in built:
+        r = dict(i)
+        c = covered_map.get(id(i)) or []
+        if c:
+            r["covered"] = c
+        receipts.append(r)
+    return {"items": receipts, "count": len(_items), "dropped": dropped}
 
 
 def snapshot() -> list[dict[str, Any]]:
@@ -808,10 +857,12 @@ async def reveal(request: web.Request) -> web.Response:
     开成「随便什么路径都能打开」。归档里的卡片不算（那些路径已不在当前看板）。
     """
     _authorize(request)
-    if not _is_local(request):
+    if not (_is_local(request) or settings.reveal_allow_remote):
         raise APIError(
             "This action opens a window on the machine running ComfyUI,"
-            " which is not the machine this request came from.",
+            " which is not the machine this request came from."
+            " If ComfyUI runs on YOUR machine and you reached this page through a"
+            " tunnel/reverse proxy, set REVEAL_ALLOW_REMOTE=1 to allow it.",
             status_code=403, code="reveal_not_local", param="request",
         )
     try:

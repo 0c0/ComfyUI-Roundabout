@@ -594,8 +594,13 @@ async def get_view_url() -> dict[str, Any]:
         "把一张产出卡片钉到可视化页面的**任务看板**（顶部那块无限画布），用户在页面上一眼看全，"
         "不必你逐个把文件拉给他看。产物来源三选一：`url` / `path` / `task_id`（优先级依次降低）。"
         "`x`/`y` 给了就摆在那个坐标（画布可平移缩放、坐标允许负数），不给就自动排到空位 —— "
-        "要表达顺序、对照或分组（例如分镜 1-5 横排、A/B 两列、按角色分区）就自己给坐标，"
-        "卡片尺寸用 `w`/`h`。没有产物也能钉纯文本卡（`note` + kind=text），用来写进度说明或小结。"
+        "自动排布**永不遮挡**已有卡；给 x/y 则原样摆上去，压到已有卡时回执带 `covered`/`warning`"
+        "（后钉的卡显示在上层，列表里就是被盖住的卡）。要表达顺序、对照或分组（例如分镜 1-5 横排、"
+        "A/B 两列、按角色分区）优先用批量 items 数组按序自动排布，确需精确坐标再自己给，"
+        "卡片尺寸用 `w`/`h` —— **单位是 px（像素），不是倍率或换算单位**：默认 200×168，"
+        "有效范围 40–2000，超出会被静默压回边界（传 1 得到的是 40px 迷你卡，不是「1 倍」），"
+        "一般保持默认即可，要放大看细节不如让用户点开原图。"
+        "没有产物也能钉纯文本卡（`note` + kind=text），用来写进度说明或小结。"
         "**要一次钉多张就传 `items` 数组**（每项形如上面那套字段）：一次往返、一次落盘，且严格按"
         "数组顺序排布 —— 逐张调不只是慢，并发时位置还会乱。批量时顶层的单卡字段（title/url/x…）"
         "一个都别传，同传会被明确拒绝，而不是替你猜哪边生效。"
@@ -658,6 +663,28 @@ async def pin_view_item(
                 f"其中 {len(outside)} 张的产物不在 ComfyUI 的 input/output 目录内，页面上看不到"
                 f"内容、卡片会标「外部」：{'、'.join(outside[:5])}"
             )
+        overlapped = [i for i in result["items"] if i.get("covered")]
+        if overlapped:
+            names = "、".join(
+                f"「{i.get('title') or i['id']}」→{len(i['covered'])} 张"
+                for i in overlapped[:5]
+            )
+            extra = (
+                f"；另有 {len(overlapped)} 张与已有卡重叠（后钉的在上层，盖住了：{names}）"
+                if payload.get("warning")
+                else (
+                    f"{len(overlapped)} 张与已有卡重叠（后钉的显示在上层，盖住了：{names}）。"
+                    "不给 x/y 让后端自动找空位即可避免遮挡。"
+                )
+            )
+            payload["warning"] = (payload.get("warning") or "") + extra
+        adjusted = [i for i in result["items"] if i.get("size_adjusted")]
+        if adjusted:
+            msg = (
+                f"另有 {len(adjusted)} 张的 w/h 超出 40–2000 被压回边界（单位是 px，不是倍率），"
+                "实际尺寸见回执。"
+            )
+            payload["warning"] = (payload.get("warning") or "") + msg
         return payload
 
     try:
@@ -675,6 +702,16 @@ async def pin_view_item(
         "count": len(board.snapshot()),
         "view_url": view_url(),
     }
+    if item.get("covered"):
+        # 显式 x/y 压到已有卡上：后钉的在图层上方，列表里的卡被盖住 —— 让 agent 知道
+        payload["warning"] = (
+            f"这张卡与 {len(item['covered'])} 张已有卡重叠（后钉的显示在上层，盖住了："
+            + "、".join(f"「{c['title']}」" for c in item["covered"][:5])
+            + "）。不给 x/y 让后端自动找空位即可避免遮挡。"
+        )
+    if item.get("size_adjusted"):
+        msg = (f"w/h 超出有效范围 40–2000，实际按 {item['w']}x{item['h']} 落卡（单位是 px，不是倍率）。")
+        payload["warning"] = (payload.get("warning") + " " if payload.get("warning") else "") + msg
     if not item.get("url") and item.get("path"):
         # 产物在 input/output 之外：页面没有缩略图/预览，只能交给系统文件管理器打开
         payload["warning"] = (
