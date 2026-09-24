@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.15.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.16.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -297,13 +297,14 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 查询任务状态与产物（两命名空间等价）。
 
 - `queued→pending`、`processing→in_progress`、`succeeded→completed`、`failed→failed`、`cancelled→cancelled`（原样透出）。
-- `completed` 时附 `output:{ "data":[...] }`（url 已绝对化）；`failed` 时附 `error:{ "message", "code" }`。
+- `completed` 时附 `output:{ "data":[...] }`（url 已绝对化）与顶层 `size`（实际输出尺寸 "WxH"，与同步响应同位 —— 不必再去 ffprobe 产物）；`failed` 时附 `error:{ "message", "code" }`。未终态两者都没有。
 
 ```json
 {
   "id": "<task_id>", "object": "image_generation.task", "status": "completed",
-  "created_at": 1700000000, "model": "minimax-h3",
-  "output": { "data": [ { "url": "http://host:8188/v1/videos/files/xxxx.mp4" } ] }
+  "created_at": 1700000000, "model": "minimax-h3-lift",
+  "output": { "data": [ { "url": "http://host:8188/v1/videos/files/xxxx.mp4" } ] },
+  "size": "2528x1440"
 }
 ```
 
@@ -411,7 +412,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 ## 6. 响应模型（schemas）
 
 - **ImageResponse / VideoResponse**：`created`(int) + `data`(list, 每项 `url`/`b64_json`/`path`/`revised_prompt`) + `seed`(int|int[]|null) + `usage`(null) + `task_id`(同步链路在任务表的 id，供钉卡反查) + `references`(视频参考图回显) + `size`(实际输出尺寸 "WxH")。
-- **异步 task 对象**：`id` / `object:"image_generation.task"` / `status` / `created_at` / `model` / (`output`|`error`)。
+- **异步 task 对象**：`id` / `object:"image_generation.task"` / `status` / `created_at` / `model` / (`output`|`error`) / `size`（仅 `completed` 且该次生成有尺寸回显时出现，取值同同步响应的 `size`）。
 - **错误**：`{ "error": { "message": "...", "code": "...", "param": "..." } }`，HTTP 状态对应 4xx/5xx（如 `400` 参数错误、`404` task_not_found、`422` 配置校验失败、`500` 内部错误）。
 - **权重缺失会被改写成下载指引**：ComfyUI 的 combo 校验拒掉提交时（`value_not_in_list`，报错形态 `Value not in list (unet_name: 'x.safetensors' not in [...])`），网关把该 400 的 `message` 补成「文件名 + 目标目录 + `curl` 命令」。数据来自仓库根的 `weights.yaml`；索引里没有的文件（如 `LoadImage` 的输入图）**保持原报错不变**，不会给出错的下载地址。
 
@@ -448,6 +449,10 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `check_weights` | **权重体检**（只读、不占 GPU）：列出内置工作流当前缺失的权重文件与每条的下载命令，避免等到 `generate*` 报 400 才发现权重没下 |
 | `get_skills` | 返回配套 agent-skills 的清单与安装地址（`roundabout` / `h3-playbook` / `qwen-image-prompt-writing` / `h3-prompt-writing`），每条带 `source`（本网关维护 / 模型官方维护）与 `skill_version`（该 skill 当前应有的内容版本；official 条目恒 `null`）。本地已装 skill 的 frontmatter `skill_version` 低于此值 ⇒ 副本过期，按 `install_url` 重装 |
 | `view_board` | 看板**唯一操作入口**，按 `action` 分发（顶部无限画布）：<br>**`pin`** — 钉卡：产物来源 `url` / `path` / `task_id` 三选一（优先级依次降低），`x`/`y` 给坐标（不给则自动排到空位，**自动排布永不遮挡**；显式坐标压到已有卡时回执带 `covered`），`w`/`h` 定尺寸（**px 单位**，40–2000，超界压回且回 `size_adjusted:true`），`note` 可写说明；`path` 在 input/output 内的目录 → **目录卡**，input/output **之外**的真实路径 → **外部卡**（`ext:{path,is_dir}`）。**批量传 `items: [{...}, ...]`**（一次落盘、按数组顺序排布；批量时同传单卡字段返回 400）。返回 `view_url`；**要不要把页面地址给用户由 agent 自行判断**<br>**`remove`** — 删**一张**卡（`id` 必填；删单张不必清整板重钉），id 不存在回 `{ok:false, code:"board_item_not_found"}`<br>**`clear`** — 清空看板并**归档进历史**（`label` 命名；不给则按内容自动命名，如「7 张 · image/text · 10:24」）<br>**`get`** — 读**当前看板**卡片清单 + **内联最近 3 份归档摘要**（`history_limit` 可调、0 = 不要），钉东西前先看一眼免得钉重<br>**`history`** — 列历史归档（摘要带指纹 `kinds` / `preview` / `models`）；传 `archive_id` 返回该份完整卡片<br>**`load`** — 把归档**载回**当前看板（**替换**语义，当前非空先自动归档、回 `auto_archived`）；`archive_id` **优先用用户从页面「历史」复制的 12 位十六进制**，留空 = 载回最近一份；id 不存在回 `archive_not_found`（两者都不是工具异常） |
+
+> `get_skills` 的清单与 `skill_version` 单一数据源在 `gateway/skills.py`：bump skill 内容版本时
+> 同步那里，`tests/test_skill_version_sync.py` 会拿它与本机已装 skill 的 frontmatter 对拍
+> （历史上版本号曾与 skill 仓库各改各的，结果是静默漂移——agent 永远以为本地副本不过期）。
 
 > **错误形态（MCP）**：「目标不存在」一族（`task_not_found` / `prompt_not_in_queue` /
 > `archive_not_found`，含钉卡时给未知 `task_id`）**不抛工具异常**，统一回

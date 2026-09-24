@@ -307,9 +307,9 @@ async def video_task(request: web.Request) -> web.Response:
 
     返回 OpenAI image_generation.task 对象：
       {"id","object":"image_generation.task","status","created_at","model",
-       "output":{"data":[...]} (completed), "error":{"message","code"} (failed)}
+       "output":{"data":[...]}, "size":"WxH"} (completed), "error":{"message","code"} (failed)}
     status 枚举对齐 OpenAI：queued→pending / processing→in_progress / succeeded→completed / failed→failed。
-    output 中的相对 url 会补全为绝对地址。
+    output 中的相对 url 会补全为绝对地址；`size` 是与同步请求同一个位置的「实际输出尺寸」回显。
     """
     task_id = request.match_info["id"]
     task = task_store.get(task_id)
@@ -327,6 +327,11 @@ async def video_task(request: web.Request) -> web.Response:
         # OpenAI 标准：output.data[]，每个元素含 url / b64_json
         output = {"data": task.result.get("data", [])}
         payload["output"] = _absolutize(output, request)
+        # 与同步响应同位补齐实际输出尺寸 "WxH"（task.result 就是 VideoResponse.model_dump，
+        # 之前只透出 output.data 把它丢了，轮询完要知分辨率只能自己 ffprobe 产物）。
+        # 只有 succeeded 才有——产物没落盘之前谈不上分辨率。
+        if task.result.get("size"):
+            payload["size"] = task.result["size"]
     elif task.status == "failed":
         payload["error"] = {"message": task.error, "code": task.code}
     return web.json_response(payload)

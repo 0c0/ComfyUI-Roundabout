@@ -94,6 +94,7 @@ else:
     )
     from gateway.log_filters import client_gone, exception_chain_names  # noqa: E402
     from gateway.registry import registry  # noqa: E402
+    from gateway.skills import build_skills_payload  # noqa: E402
     from gateway.schemas import ImageGenerationRequest, VideoGenerationRequest  # noqa: E402
     from gateway.tasks import task_store  # noqa: E402
     from gateway.viewer import view_url  # noqa: E402
@@ -475,7 +476,7 @@ async def get_task(task_id: str) -> dict[str, Any]:
     task = task_store.get(task_id)
     if task is None:
         return _missing(f"No such task: '{task_id}'.", "task_not_found")
-    return {
+    payload: dict[str, Any] = {
         "id": task.id,
         "status": _openai_status(task.status),
         "model": task.model,
@@ -485,6 +486,11 @@ async def get_task(task_id: str) -> dict[str, Any]:
         "output": _absolutize_urls(task.result) if task.result else None,
         "error": {"message": task.error, "code": task.code} if task.error else None,
     }
+    # 与 REST GET /v1/videos/tasks/{id} 同位：同步响应里的实际输出尺寸回显。
+    # 只看 status=succeeded 才补——产物没落盘时没有尺寸可言。
+    if task.status == "succeeded" and task.result and task.result.get("size"):
+        payload["size"] = task.result["size"]
+    return payload
 
 
 # ---- 工具 7：cancel_task --------------------------------------------------
@@ -868,55 +874,7 @@ async def get_skills() -> dict[str, Any]:
     """配套 agent-skill 清单。agent 接到图像/视频生成、H3 提示词、模型注册等请求时，
     应先调用本工具拿到 skill 列表并安装，再继续。返回结构化 dict（server / version / skills[]）。
     """
-    return {
-        "server": "comfyui-roundabout",
-        "version": VERSION,
-        "skills": [
-            {
-                "name": "roundabout",
-                "install_url": "https://github.com/0c0/roundabout-skill",
-                "purpose": "本 MCP 服务器的总入口用法：模型选择、请求参数、排障、注册/下线工作流。",
-                "when_to_use": "拿不准用哪个工具/参数、要注册或排查工作流、或想看某模型能力边界时查它。",
-                "source": "roundabout",
-                "published": True,
-                "skill_version": "1.0.0",
-            },
-            {
-                "name": "h3-playbook",
-                "install_url": "https://github.com/0c0/h3-playbook-skill",
-                "purpose": "MiniMax H3 / FastH3 官方使用手册口径：提示词三段式公式、三类生成模式写法差异、"
-                           "时长/分辨率/宽高比/输入上限。",
-                "when_to_use": "写 MiniMax H3 / FastH3 视频提示词前必查，确保提示词结构正确、不踩能力边界。",
-                "source": "roundabout",
-                "published": True,
-                "skill_version": "1.0.0",
-            },
-            {
-                "name": "qwen-image-prompt-writing",
-                "install_url": "https://github.com/0c0/qwen-image2.1-prompt-writing-skill",
-                "purpose": "Qwen-Image-2.1 官方 Prompt Enhancer 契约的手写替身：t2i 观察者报告与 edit 改写指令，产出 rewritten_prompt + wh_ratio / ratio_follow 结构。",
-                "when_to_use": "用网关 qwen-image-2.1 档出图/改图，或要把一句粗糙需求扩写成该模型能吃的描述前必查。",
-                "source": "roundabout",
-                "published": True,
-                "skill_version": "1.0.0",
-            },
-            {
-                "name": "h3-prompt-writing",
-                "install_url": "https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing",
-                "purpose": "MiniMax 官方的 H3 提示词写作指南：T2VA / I2VA / FL2VA / L2VA 的最终提示词结构，以及 Ref2VA 六段改写格式。",
-                "when_to_use": "写 H3 提示词时与 h3-playbook 配合：playbook 管能不能做，writing 管字段与段落怎么写。",
-                "source": "official",
-                "published": True,
-                "skill_version": None,
-            },
-        ],
-        "note": "source 区分两类：roundabout = 本网关维护，official = 模型厂商自己维护（内容以其仓库为准）。"
-                "skill_version = 该 skill 当前应有的内容版本，与 skill 仓库 SKILL.md frontmatter 的 "
-                "skill_version 同步维护；本地已装副本的 frontmatter 版本若低于此值，说明副本已过期，"
-                "重新安装（install_url）即可拿到新版。official 条目版本不可控，恒为 null。"
-                "其余专精 skill 不随本仓库发布，不在此列出。安装方式：把 install_url 交给 agent 的 skill "
-                "安装流程（裸 URL 即可，无需指定目录）。",
-    }
+    return build_skills_payload(VERSION)
 
 
 # ---- 工具 14：check_weights ------------------------------------------------
@@ -962,6 +920,8 @@ async def _run_video_task_and_notify(
             items = task.result.get("data") or []
             if items and items[0].get("url"):
                 payload["url"] = _absolutize_urls({"data": items})["data"][0]["url"]
+            if task.result.get("size"):
+                payload["size"] = task.result["size"]
         if task.error:
             payload["error"] = task.error
         try:
