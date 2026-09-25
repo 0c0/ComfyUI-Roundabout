@@ -229,8 +229,10 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 - 键名列表与节点列表**必须等长** —— 数量不一致启动时直接报错，不会让多出来的槽悄悄回落到默认键名。
 - 不写 `*_keys` 时行为与以前完全一致（默认 `ref_images.ref_image_N`）。
 - 节点 id 含冒号（子图扁平化导出的 `105:200`）照抄，绑定路径按 `.` 切分，冒号不影响解析。
-- `fasth3` / `fasth3-edit` 就是这么接的：前者用 `image_keys` 接管首尾帧，后者聚合节点是
-  `MiniMaxH3ReferenceToVideo`，仍走默认键名。
+- `fasth3` / `fasth3-edit` 就是这么接的：前者用 `image_keys` 接管首尾帧，后者仍走默认键名。
+- `minimax-h3` / `-lift` 是混合形态的实例：`image_keys` 前两位接管首尾帧，其余 6 槽走默认
+  `ref_images.ref_image_N` 键名 —— `frame_params` 作为 images 槽的**前缀**声明，前 len(fp) 个槽
+  由 `first_frame` / `last_frame` 供图，剩余槽收 `reference_images`（v1.17 统一节点拓扑）。
 
 ### 首尾帧的 cover 式裁剪缩放：`RoundaboutCoverResize`（fl2va 专属）
 
@@ -245,11 +247,13 @@ fl2va 三支（`minimax-h3` / `-lift` / `fasth3`）的**首尾帧链**各串了�
 - 节点的 `width` / `height` 在 `bindings` 里与聚合节点绑到**同一请求参数**
   （`width: ['136.inputs.width', '147.inputs.width', '161.inputs.width']`），画布改档位时
   两个帧的裁剪目标自动跟随。
-- **ref2va（edit 三支）不接 cover 节点**：参考图只是 conditioning，输出尺寸由空 latent
+- **ref2va（edit 两支）不接 cover 节点**：参考图只是 conditioning，输出尺寸由空 latent
   （请求 `size`）决定、与参考图无关；其内部 `ref_image_size` 处理本就是等比缩放、内容完整，
-  接裁剪反而丢边缘。参数层 `references.frame_params: [first_frame, last_frame]` 声明后，
-  fl2va 的 image 槽由请求字段 `first_frame` / `last_frame` 供图、与 `reference_images`
-  **互斥**（双向 400 + 指路），edit 槽维持 `reference_images`。
+  接裁剪反而丢边缘。
+- **v1.17 统一节点**：`MiniMaxH3UnifiedToVideo`（本包 nodes.py）在一个聚合节点上同时收
+  首尾帧（minimax_keyframes）与参考图/视频/音频（minimax_refs），base 与 edit 两支共用；
+  两支的差别只剩 checkpoint（FL2VA=生成档 / Ref2VA=编辑档）。参数层帧槽与参考槽**并存不互斥**：
+  frame_params 作为 images 前缀，校验只按「槽位存在性」判，无槽字段 400 + 指路，不静默丢弃。
 - 剪枝兼容：`first_frame` / `last_frame` 未提供时，`_prune_unused_references` 的级联删除
   会连同 resize 节点一起删掉（loader → resize 的下游级联），纯文生提交不会悬空。
 - ⚠️ **keyframe 跟随度是模型侧行为（09-24 实测，与接线无关）**：cover 输出已验证正确

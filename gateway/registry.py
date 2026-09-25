@@ -433,10 +433,10 @@ def _normalize_references(raw: dict[str, Any]) -> dict[str, Any]:
             else:
                 norm.append({"nodes": [], "clear": []})
         out["slots"] = norm
-    # frame_params：fl2va 首尾帧的参数层声明 —— 声明后 images 槽逐槽改由请求的
-    # first_frame / last_frame 字段供图（与 reference_images 互斥），如
+    # frame_params：fl2va 首尾帧的参数层声明 —— 声明后 images 的前 len(fp) 个槽改由
+    # 请求的 first_frame / last_frame 字段供图，其余槽仍走 reference_images，如
     # ["first_frame", "last_frame"]。帧会实际成为输出的第一/最后一帧，网关按画布
-    # cover 裁剪；ref2va（edit）不声明，参考图保持等比缩放、内容完整。
+    # cover 裁剪；参考图保持等比缩放、内容完整。
     fp = raw.get("frame_params")
     if fp:
         out["frame_params"] = [str(x) for x in fp]
@@ -490,16 +490,18 @@ def _validate_references(spec: ModelSpec) -> None:
     for i, nid in enumerate(ref.get("audios", [])):
         _need("audios", ref_key(ref, "audios", i) if agg_ins is not None else None, nid, i)
 
-    # frame_params：逐槽改由请求字段供图。与 images 一一对应，且字段必须真实存在于
-    # 视频请求 schema —— 写错字段名会变成永远取不到值的死槽。
+    # frame_params：逐槽改由请求字段供图。作为 images 槽的**前缀**：前 len(fp) 个槽
+    # 取请求字段（first_frame / last_frame），其余槽回落 reference_images —— 统一节点
+    # 拓扑下首尾帧与参考图同挂一个聚合节点，两族并存（如 2 帧槽 + 6 参考槽）。
+    # 字段必须真实存在于视频请求 schema —— 写错字段名会变成永远取不到值的死槽。
     fp = ref.get("frame_params") or []
     if fp:
         from .schemas import VideoGenerationRequest  # 局部导入：包内相对引用，避免运行期包名差异
         n_img = len(ref.get("images", []))
-        if len(fp) != n_img:
+        if len(fp) > n_img:
             raise RuntimeError(
                 f"model `{spec.name}`: references.frame_params 有 {len(fp)} 项，"
-                f"与 references.images 的 {n_img} 项对不上"
+                f"超过 references.images 的 {n_img} 个槽"
             )
         known = set(VideoGenerationRequest.model_fields)
         for i, p in enumerate(fp):

@@ -563,35 +563,47 @@ async def generate_video(
             param="image",
         )
 
-    # ---- 1.5 首尾帧 / 参考图参数分流（fl2va 与 ref2va 互斥）----
-    # fl2va（frame_params）：帧成为输出的第一/最后一帧，走 cover 裁剪；
-    # ref2va（edit 三支）：输出尺寸由 size 决定（空 latent），参考图只是 conditioning，
-    # 不存在首尾帧语义。传错字段一律 400 + 指路，不静默丢弃。
+    # ---- 1.5 首尾帧 / 参考图 / 参考视频音频的槽位校验 ----
+    # 统一节点拓扑下帧与参考图并存：frame_params 声明的槽走首尾帧（cover 裁剪、
+    # 成为输出的第一/最后一帧），images 剩余槽走 reference_images（conditioning）。
+    # 校验只按「槽位存在性」判：请求字段没有对应槽就 400 + 指路，不静默丢弃。
     ref_cfg = spec.references or {}
     frame_params = ref_cfg.get("frame_params") or []
     img_slots = ref_cfg.get("images") or []
+    ref_slots = max(len(img_slots) - len(frame_params), 0)
     for p in ("first_frame", "last_frame"):
         if getattr(req, p, None) and p not in frame_params:
             if img_slots:
-                hint = (f" `{spec.name}` is a reference-editing model: pass images via "
-                        f"`reference_images` (its output size follows `size`, refs are conditioning only).")
+                hint = (f" `{spec.name}` has no frame slots wired: images go via "
+                        f"`reference_images` (up to {ref_slots or len(img_slots)}).")
             else:
                 hint = " Models with first/last frame slots: minimax-h3, minimax-h3-lift, fasth3."
             raise APIError(f"Model `{spec.name}` does not take `{p}`.{hint}", param=p)
-    if req.reference_images and frame_params:
+    if req.reference_images and not ref_slots:
+        if frame_params:
+            raise APIError(
+                f"Model `{spec.name}` takes images only via `first_frame`/`last_frame` "
+                f"(frames become actual output frames; reference slots are not wired).",
+                param="reference_images",
+            )
         raise APIError(
-            f"Model `{spec.name}` takes frames via `first_frame`/`last_frame`, "
-            f"not `reference_images` (frames become actual output frames; "
-            f"reference-editing models are the ones taking `reference_images`).",
+            f"Model `{spec.name}` declares no image reference slots.",
             param="reference_images",
         )
-    if req.reference_images and img_slots and len(req.reference_images) > len(img_slots):
-        # 此前视频路径漏了数量校验：超槽数的参考图会被静默忽略（wire 循环 break）。
+    if req.reference_images and len(req.reference_images) > ref_slots:
+        # 超槽数的参考图不再被 wire 循环静默截断。
         raise APIError(
-            f"`reference_images` accepts at most {len(img_slots)} image(s) for `{spec.name}` "
+            f"`reference_images` accepts at most {ref_slots} image(s) for `{spec.name}` "
             f"(got {len(req.reference_images)}).",
             param="reference_images",
         )
+    for field, cat in (("reference_videos", "videos"), ("reference_audios", "audios")):
+        if getattr(req, field, None) and not (ref_cfg.get(cat) or []):
+            raise APIError(
+                f"Model `{spec.name}` declares no {cat} reference slots "
+                f"(FL2VA checkpoints do not consume reference video/audio).",
+                param=field,
+            )
 
     # ---- 2. 上传输入图 ----
     uploaded: str | None = None
@@ -748,10 +760,10 @@ def _slot_values(spec: ModelSpec, req: ImageGenerationRequest | VideoGenerationR
     """按槽序返回每个 image 槽的图源（None = 该槽未提供）。
 
     两类拓扑：
-      - **frame_params**（fl2va 首尾帧）：槽 i 取请求字段 `frame_params[i]`
-        （first_frame / last_frame），与 reference_images 互斥 —— 帧会实际成为
-        输出的第一/最后一帧，语义是「帧」不是「参考」；
-      - **常规参考槽**（ref2va / 图像多图编辑）：槽 i 取 reference_images[i]，
+      - **frame_params 前缀**（统一节点 / fl2va）：前 len(fp) 个槽取请求字段
+        `frame_params[i]`（first_frame / last_frame），语义是「帧」—— 实际成为输出的
+        第一/最后一帧；其余槽回落 reference_images，语义是「参考」。
+      - **纯参考槽**（无 frame_params）：全部槽取 reference_images[i]，
         `image` 的单图回落仍只在图像档生效（见 `_ref_images`）。
 
     接线与剪枝必须用同一份判断，故共用本函数。
@@ -759,7 +771,13 @@ def _slot_values(spec: ModelSpec, req: ImageGenerationRequest | VideoGenerationR
     ref = spec.references or {}
     fp = ref.get("frame_params") or []
     if fp:
-        return [getattr(req, p, None) for p in fp]
+        n = len(ref.get("images") or [])
+        imgs = _ref_images(spec, req)
+        return [
+            (getattr(req, fp[i], None) if i < len(fp)
+             else (imgs[i - len(fp)] if i - len(fp) < len(imgs) else None))
+            for i in range(n)
+        ]
     imgs = _ref_images(spec, req)
     n = len(ref.get("images") or [])
     return [imgs[i] if i < len(imgs) else None for i in range(n)]
@@ -902,7 +920,7 @@ async def _wire_references(
     for i, nid in enumerate(ref.get("images", [])):
         val = vals[i] if i < len(vals) else None
         if not val:
-            break  # 后续槽全空（列表语义下未提供的尾部槽由剪枝删除）
+            continue  # 未提供的槽由剪枝删除；混合拓扑下帧槽与参考槽各自前缀填充
         param_name = fp[i] if i < len(fp) else "reference_images"
         node_value, desc = await _stage_ref(str(val), "image", param_name, client, trace, i)
         node = wf.get(str(nid))

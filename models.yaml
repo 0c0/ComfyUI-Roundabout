@@ -431,7 +431,7 @@ models:
   #     含点号、路径按 `.` 切分无法寻址 ⇒ 调它们只能改工作流 JSON + `/admin/reload`。
   minimax-h3:
     workflow: video_minimax_h3.json
-    description: MiniMax H3 (FL2VA) —— 文生视频 / 首尾帧生视频，30 步，低显存分块按档位自适应
+    description: MiniMax H3 (FL2VA) —— 生成档：文生视频 / 首尾帧 / 参考图 / 帧+参考组合；参考视频/音频槽已接入（FL2VA 消费未标定，视频编辑主口径走 minimax-h3-edit），30 步，低显存分块按档位自适应
     mode: video
     capabilities:
     - text-to-video
@@ -441,12 +441,32 @@ models:
     references:
       aggregator: '136'
       frame_params: [first_frame, last_frame]
+      videos:
+      - '180'
+      - '181'
+      - '182'
+      audios:
+      - '183'
+      - '184'
+      - '185'
       images:
       - '137'
       - '139'
+      - '170'
+      - '171'
+      - '172'
+      - '173'
+      - '174'
+      - '175'
       image_keys:
       - first_frame
       - last_frame
+      - ref_images.ref_image_0
+      - ref_images.ref_image_1
+      - ref_images.ref_image_2
+      - ref_images.ref_image_3
+      - ref_images.ref_image_4
+      - ref_images.ref_image_5
     vram_adaptive: true
     defaults:
       width: 1344
@@ -479,7 +499,7 @@ models:
     - h3
   minimax-h3-edit:
     workflow: video_minimax_h3_edit.json
-    description: MiniMax H3 Edit —— 参考 / 图生视频编辑，30 步，低显存分块按档位自适应
+    description: MiniMax H3 Edit (Ref2VA) —— 编辑档：参考视频编辑 / 动作·运镜迁移 / 音频复用 / 参考图，30 步，低显存分块按档位自适应
     mode: video
     capabilities:
     - text-to-video
@@ -677,7 +697,7 @@ models:
   # rho / w_min / w_max 仍是模板固定值（节点 910），精调走 workflow_overrides（如 910.inputs.rho=0.3）。
   minimax-h3-lift:
     workflow: video_minimax_h3_lift.json
-    description: MiniMax H3 Lift —— base 骨架 + 确定性放大：`size` = 768p 第一采画布（默认 1344x768，保持原生别改大），30 步采样 → latent lift × `scale`（默认 1.875 → 输出 2520x1440）；构图零重掷，纹理最强；支持首尾帧
+    description: MiniMax H3 Lift —— 生成档骨架 + 确定性放大：`size` = 768p 第一采画布（默认 1344x768，保持原生别改大），30 步采样 → latent lift × `scale`（默认 1.875 → 输出 2520x1440）；构图零重掷，纹理最强；支持首尾帧 / 参考图 / 帧+参考组合（参考视频/音频 FL2VA 消费未标定）
     mode: video
     capabilities:
     - text-to-video
@@ -686,12 +706,32 @@ models:
     references:
       aggregator: '136'
       frame_params: [first_frame, last_frame]
+      videos:
+      - '180'
+      - '181'
+      - '182'
+      audios:
+      - '183'
+      - '184'
+      - '185'
       images:
       - '137'
       - '139'
+      - '170'
+      - '171'
+      - '172'
+      - '173'
+      - '174'
+      - '175'
       image_keys:
       - first_frame
       - last_frame
+      - ref_images.ref_image_0
+      - ref_images.ref_image_1
+      - ref_images.ref_image_2
+      - ref_images.ref_image_3
+      - ref_images.ref_image_4
+      - ref_images.ref_image_5
     # 放大阶段要解码 2520x1440，比常规 H3 慢；想要完全不限时仍可设 JOB_TIMEOUT=0。
     timeout: 2700
     vram_adaptive: true
@@ -728,11 +768,11 @@ models:
     - minimax-h3-upscale
 
   # Ref2VA 版 lift：放大机制与上面那支完全一致，差别只在工作流源于 edit ——
-  #   ref2va 权重 + MiniMaxH3ReferenceToVideo 聚合 + 参考槽全套 6 图 / 3 视频 / 3 音频。
+  #   ref2va 权重 + 统一聚合节点（编辑档）+ 参考槽全套 6 图 / 3 视频 / 3 音频。
   # ⚠️ 未标定：步数 30（随 edit 统一），放大与参考的组合效果没做过 A/B。
   minimax-h3-lift-edit:
     workflow: video_minimax_h3_lift_edit.json
-    description: MiniMax H3 Lift Ref2VA —— edit 骨架（30 步）+ 确定性放大：参考图 / 视频 / 音频生视频后过一遍学习式 latent lift
+    description: MiniMax H3 Lift Ref2VA —— 编辑档骨架（30 步）+ 确定性放大：参考视频编辑 / 动作·运镜迁移 / 音频复用 / 参考图生视频后过一遍学习式 latent lift
     mode: video
     capabilities:
     - text-to-video

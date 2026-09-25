@@ -53,8 +53,9 @@ print("== 1. 前端不认识的键必须原样保留 ==")
 merged = merge_model_entry(LIFT, FRONTEND_PAYLOAD)
 for key in ("references", "vram_adaptive"):
     check(f"{key} 保留", merged.get(key) == LIFT.get(key), merged.get(key))
-check("references 嵌套内容未变（首尾帧槽 image_keys）",
-      (merged.get("references") or {}).get("image_keys") == ["first_frame", "last_frame"],
+check("references 嵌套内容未变（image_keys 前缀帧槽 + 余量参考槽默认键）",
+      (merged.get("references") or {}).get("image_keys")[:2] == ["first_frame", "last_frame"]
+      and (merged.get("references") or {}).get("image_keys")[2] == "ref_images.ref_image_0",
       merged.get("references"))
 check("references.aggregator 仍是 136", (merged.get("references") or {}).get("aggregator") == "136")
 check("vram_adaptive 仍为 true", merged.get("vram_adaptive") is True)

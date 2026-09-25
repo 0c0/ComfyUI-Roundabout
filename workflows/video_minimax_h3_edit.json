@@ -290,7 +290,7 @@
         0
       ]
     },
-    "class_type": "MiniMaxH3ReferenceToVideo",
+    "class_type": "MiniMaxH3UnifiedToVideo",
     "_meta": {
       "title": "MiniMax H3 Reference to Video"
     }

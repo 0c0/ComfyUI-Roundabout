@@ -484,7 +484,7 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 
 ### 第三方节点依赖
 
-> 这些工作流用到的节点**除 lift 系列（`minimax-h3-lift*`）、基础两支 `minimax-h3` / `-edit`、以及 FastH3 两支（它们都接了低显存分块节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3ReferenceToVideo` / `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。
+> 这些工作流用到的节点**除 lift 系列（`minimax-h3-lift*`）、基础两支 `minimax-h3` / `-edit`、以及 FastH3 两支（它们都接了低显存分块节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。
 > lift 系列额外依赖一个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3LatentLift` + `latent_upscale_models/` 下的上采样权重）。
 > 需要 KJNodes 的 `MiniMaxChunkFeedForward` 做 FFN 分块：**全部 6 支视频档**。低显存都走两级 —— `BlockSparseAttention`（comfy 核心节点，省 attention）→ `MiniMaxChunkFeedForward`：base 四支（`minimax-h3` / `-edit` / `minimax-h3-lift*`）的稀疏档位是 `sol-attn`（training-free，约保留 16% key block），FastH3 两支是 `vsa`（其权重按 10% cube 稀疏训练）。
 > ⛔ **不要在这 6 支里接 KJNodes 的 `MiniMaxLowVRAMAttention`**：它替换 `block.forward`，而 `BlockSparseAttention` 的 block patch 会无条件补传 `attention=` 关键字（`comfy/ldm/minimax/model.py`），签名对不上 ⇒ 实测 `TypeError`。两者**硬互斥**，因此 base 四支原先的 LowVRAM 节点已于 2026-09-21 撤除（`head_chunks` 档位值随之失去消费者，保留在表里仅为复原方便）。

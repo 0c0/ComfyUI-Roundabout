@@ -28,7 +28,7 @@ SKILLS: list[dict[str, Any]] = [
         "when_to_use": "拿不准用哪个工具/参数、要注册或排查工作流、或想看某模型能力边界时查它。",
         "source": "roundabout",
         "published": True,
-        "skill_version": "1.2.1",
+        "skill_version": "1.3.0",
     },
     {
         "name": "h3-playbook",

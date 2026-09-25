@@ -182,9 +182,14 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
         return False, "video-only (lift stage)"
     if name in ("reference_images", "reference_videos", "reference_audios"):
         ref = spec.references or {}
-        if name == "reference_images" and (ref.get("frame_params") or []):
-            # fl2va：image 槽由 first_frame/last_frame 供图，reference_images 互斥（400）
-            return False, "fl2va model takes frames via `first_frame`/`last_frame`, not `reference_images`"
+        if name == "reference_images":
+            # 帧槽走 first_frame/last_frame；images 里剩余的槽才收 reference_images
+            ref_slots = max(len(ref.get("images") or []) - len(ref.get("frame_params") or []), 0)
+            if not ref_slots:
+                if ref.get("frame_params"):
+                    return False, "model takes images via `first_frame`/`last_frame` only (no reference slots wired)"
+                return False, "model declares no image reference slots"
+            return True, None
         cat = name.split("_")[1]
         n = len((ref.get(cat) or []))
         if n:
@@ -203,10 +208,11 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
 def _slot_counts(spec) -> dict[str, int]:
     ref = spec.references or {}
     out = {cat: len(ref.get(cat) or []) for cat in ("images", "videos", "audios")}
-    if ref.get("frame_params"):
-        # fl2va：image 槽实为首尾帧槽（reference_images 互斥），按参数语义重新归类
-        out["frames"] = out["images"]
-        out["images"] = 0
+    fp = ref.get("frame_params") or []
+    if fp:
+        # 统一节点拓扑：前 len(fp) 个 image 槽是首尾帧槽，其余收 reference_images
+        out["frames"] = min(len(fp), out["images"])
+        out["images"] = max(out["images"] - len(fp), 0)
     return out
 
 
