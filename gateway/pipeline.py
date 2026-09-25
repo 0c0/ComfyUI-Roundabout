@@ -514,6 +514,10 @@ async def generate_video(
             f"Model `{spec.name}` is not a video model (mode={spec.mode}). Use /v1/images/generations instead.",
             param="model",
         )
+    # ---- 0. 自动换档：声明了 route 的模型（如 minimax-h3）在请求携带对应字段
+    # （reference_videos / reference_audios）时整体换到目标档（如 minimax-h3-edit），
+    # 之后的槽位校验 / 接线 / 默认值全部按目标档执行 —— 单一入口吃所有组合。
+    spec = registry.apply_route(spec, req)
     n = _validate_n(req.n)
     # 视频默认 url：base64 一个几 MB 的视频不现实
     response_format = (req.response_format or "url").lower()

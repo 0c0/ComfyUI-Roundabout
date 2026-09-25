@@ -87,6 +87,9 @@ class ModelSpec:
     mode_choices: list[str] = field(default_factory=list)  # 模型自定义候选（如 [Quality, Default, Turbo]）；当前内置模型均未声明
     # 视频参考资源拓扑（动态删除未上传节点用）：aggregator + 各资源类别的 load 节点 id 列表
     references: dict[str, Any] | None = None
+    # 请求字段 → 目标模型的自动路由（如 minimax-h3 带 reference_videos 时换档到
+    # minimax-h3-edit）：单一入口吃所有组合，换档逻辑收敛在 registry.apply_route。
+    route: dict[str, str] = field(default_factory=dict)
     # 工具类工作流（去背景等）没有提示词概念：声明后可不绑 prompt，
     # 且 pipeline 不会再要求请求带 prompt。
     promptless: bool = False
@@ -196,6 +199,17 @@ class Registry:
                 raise ModelNotFound(key, self._order)
             return spec
 
+    def apply_route(self, spec: ModelSpec, req: Any) -> ModelSpec:
+        """按请求字段执行 `route` 换档：声明了 route 且请求携带对应字段时，
+        返回目标模型的 spec；否则原样返回。只换档不递归（目标模型不得再声明 route）。"""
+        for field_name, dst in (spec.route or {}).items():
+            if getattr(req, field_name, None):
+                target = self.resolve(dst)
+                if target.route:
+                    raise RuntimeError(f"model `{spec.name}`: route target `{target.name}` must not declare its own route")
+                return target
+        return spec
+
     # -- 加载 --
     def _build(
         self,
@@ -295,6 +309,7 @@ class Registry:
                 timeout=float(cfg["timeout"]) if cfg.get("timeout") else None,
                 mode_choices=[str(a) for a in (cfg.get("mode_choices") or [])],
                 references=ref,
+                route={str(k): str(v) for k, v in (cfg.get("route") or {}).items()},
                 promptless=bool(cfg.get("promptless")),
                 vram_adaptive=bool(cfg.get("vram_adaptive")),
                 vram_tier=tier,

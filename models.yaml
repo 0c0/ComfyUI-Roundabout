@@ -431,24 +431,19 @@ models:
   #     含点号、路径按 `.` 切分无法寻址 ⇒ 调它们只能改工作流 JSON + `/admin/reload`。
   minimax-h3:
     workflow: video_minimax_h3.json
-    description: MiniMax H3 (FL2VA) —— 生成档：文生视频 / 首尾帧 / 参考图 / 帧+参考组合；参考视频/音频槽已接入（09-25 双实测：音频不迁移音色、视频不迁移动作——同 seed 基线同样弹跳且衰减类似，参考仅带来构图/细节级扰动；动作/运镜/音色迁移主口径走 minimax-h3-edit），30 步，低显存分块按档位自适应
+    description: MiniMax H3 (FL2VA) —— 生成档：文生视频 / 首尾帧 / 参考图 / 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-edit（09-25 实测 FL2VA 不迁移音色/动作，参考内容只有 Ref2VA 消费），30 步，低显存分块按档位自适应
     mode: video
     capabilities:
     - text-to-video
     - image-to-video
     output_node: '92'
     timeout: 1800
+    route:
+      reference_videos: minimax-h3-edit
+      reference_audios: minimax-h3-edit
     references:
       aggregator: '136'
       frame_params: [first_frame, last_frame]
-      videos:
-      - '180'
-      - '181'
-      - '182'
-      audios:
-      - '183'
-      - '184'
-      - '185'
       images:
       - '137'
       - '139'
@@ -697,23 +692,18 @@ models:
   # rho / w_min / w_max 仍是模板固定值（节点 910），精调走 workflow_overrides（如 910.inputs.rho=0.3）。
   minimax-h3-lift:
     workflow: video_minimax_h3_lift.json
-    description: MiniMax H3 Lift —— 生成档骨架 + 确定性放大：`size` = 768p 第一采画布（默认 1344x768，保持原生别改大），30 步采样 → latent lift × `scale`（默认 1.875 → 输出 2520x1440）；构图零重掷，纹理最强；支持首尾帧 / 参考图 / 帧+参考组合（音频/视频参考实测均不迁移内容，动作/音色迁移走 -lift-edit）
+    description: MiniMax H3 Lift —— 生成档骨架 + 确定性放大：`size` = 768p 第一采画布（默认 1344x768，保持原生别改大），30 步采样 → latent lift × `scale`（默认 1.875 → 输出 2520x1440）；构图零重掷，纹理最强；支持首尾帧 / 参考图 / 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-lift-edit（FL2VA 不迁移内容，实测见 minimax-h3）
     mode: video
     capabilities:
     - text-to-video
     - image-to-video
     output_node: '92'
+    route:
+      reference_videos: minimax-h3-lift-edit
+      reference_audios: minimax-h3-lift-edit
     references:
       aggregator: '136'
       frame_params: [first_frame, last_frame]
-      videos:
-      - '180'
-      - '181'
-      - '182'
-      audios:
-      - '183'
-      - '184'
-      - '185'
       images:
       - '137'
       - '139'

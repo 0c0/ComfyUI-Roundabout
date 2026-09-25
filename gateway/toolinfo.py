@@ -221,6 +221,11 @@ def _model_entry(spec) -> dict[str, Any]:
     fields = _walk_request_fields(VideoGenerationRequest if is_video else ImageGenerationRequest)
     for field in fields:
         applies, reason = _applies(spec, field["name"])
+        # route 换档字段（如 minimax-h3 的 reference_videos → -edit）：本档虽无槽，
+        # 请求携带时网关会整体换档执行，对调用方等效于「生效」。
+        if not applies and field["name"] in (spec.route or {}):
+            applies, reason = True, None
+            field["routed_to"] = spec.route[field["name"]]
         field["applies"] = applies
         if reason:
             field["inactive_reason"] = reason
@@ -240,6 +245,8 @@ def _model_entry(spec) -> dict[str, Any]:
         "timeout": spec.timeout,
         "fields": fields,
     }
+    if spec.route:
+        entry["route"] = dict(spec.route)
     if spec.size_choices:
         entry["size_choices"] = list(spec.size_choices)
     if spec.mode_choices:

@@ -257,42 +257,6 @@
         "175",
         0
       ],
-      "ref_videos.ref_video_0": [
-        "300",
-        0
-      ],
-      "ref_video_audios.ref_video_audio_0": [
-        "300",
-        1
-      ],
-      "ref_audios.ref_audio_0": [
-        "183",
-        0
-      ],
-      "ref_videos.ref_video_1": [
-        "301",
-        0
-      ],
-      "ref_video_audios.ref_video_audio_1": [
-        "301",
-        1
-      ],
-      "ref_audios.ref_audio_1": [
-        "184",
-        0
-      ],
-      "ref_videos.ref_video_2": [
-        "302",
-        0
-      ],
-      "ref_video_audios.ref_video_audio_2": [
-        "302",
-        1
-      ],
-      "ref_audios.ref_audio_2": [
-        "185",
-        0
-      ],
       "audio_vae": [
         "120",
         0
@@ -434,78 +398,6 @@
     "class_type": "LoadImage",
     "inputs": {
       "image": "example.png"
-    }
-  },
-  "180": {
-    "class_type": "LoadVideo",
-    "inputs": {
-      "file": "example.mp4"
-    }
-  },
-  "183": {
-    "class_type": "LoadAudio",
-    "inputs": {
-      "audio": "example.wav"
-    }
-  },
-  "181": {
-    "class_type": "LoadVideo",
-    "inputs": {
-      "file": "example.mp4"
-    }
-  },
-  "184": {
-    "class_type": "LoadAudio",
-    "inputs": {
-      "audio": "example.wav"
-    }
-  },
-  "182": {
-    "class_type": "LoadVideo",
-    "inputs": {
-      "file": "example.mp4"
-    }
-  },
-  "185": {
-    "class_type": "LoadAudio",
-    "inputs": {
-      "audio": "example.wav"
-    }
-  },
-  "300": {
-    "class_type": "GetVideoComponents",
-    "inputs": {
-      "video": [
-        "180",
-        0
-      ]
-    },
-    "_meta": {
-      "title": "RefVideo 0 -> frames+audio"
-    }
-  },
-  "301": {
-    "class_type": "GetVideoComponents",
-    "inputs": {
-      "video": [
-        "181",
-        0
-      ]
-    },
-    "_meta": {
-      "title": "RefVideo 1 -> frames+audio"
-    }
-  },
-  "302": {
-    "class_type": "GetVideoComponents",
-    "inputs": {
-      "video": [
-        "182",
-        0
-      ]
-    },
-    "_meta": {
-      "title": "RefVideo 2 -> frames+audio"
     }
   }
 }

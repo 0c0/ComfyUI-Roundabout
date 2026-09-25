@@ -65,8 +65,8 @@ def offline_section() -> None:
     c_gen = slot_counts("minimax-h3")
     check("生成档 frames=2", c_gen.get("frames") == 2, c_gen)
     check("生成档 images=6", c_gen.get("images") == 6, c_gen)
-    check("生成档 videos=3 audios=3（音频实测不迁移音色，槽位已接）",
-          (c_gen.get("videos"), c_gen.get("audios")) == (3, 3), c_gen)
+    check("生成档 videos/audios 槽已拆除（09-25 实测 FL2VA 不迁移内容）",
+          (c_gen.get("videos", 0), c_gen.get("audios", 0)) == (0, 0), c_gen)
     c_edit = slot_counts("minimax-h3-edit")
     check("编辑档 frames 不存在", "frames" not in c_edit or c_edit.get("frames") in (0, None), c_edit)
     check("编辑档 images=6 videos=3 audios=3",
@@ -127,6 +127,23 @@ async def http_section() -> None:
     check("编辑档传首帧 → 400", st == 400 and "first_frame" in json.dumps(js), (st, js))
     st, js = await call({"model": "fasth3", "prompt": "x", "reference_images": ["r.png"]})
     check("fasth3 纯帧槽传参考图 → 400", st == 400, (st, js))
+
+    # ---- route 自动换档（v1.25.0）：生成系带音视频参考 → 对应 -edit 档 ----
+    base_spec = registry.resolve("minimax-h3")
+    req_v = types.SimpleNamespace(reference_videos=["v.mp4"], reference_audios=None)
+    req_a = types.SimpleNamespace(reference_videos=None, reference_audios=["a.wav"])
+    req_none = types.SimpleNamespace(reference_videos=None, reference_audios=None)
+    check("生成档带 reference_videos → 路由到 -edit",
+          registry.apply_route(base_spec, req_v).name == "minimax-h3-edit")
+    check("生成档带 reference_audios → 路由到 -edit",
+          registry.apply_route(base_spec, req_a).name == "minimax-h3-edit")
+    check("生成档无参考不换档", registry.apply_route(base_spec, req_none) is base_spec)
+    check("lift 带参考 → 路由到 -lift-edit",
+          registry.apply_route(registry.resolve("minimax-h3-lift"), req_v).name == "minimax-h3-lift-edit")
+    check("路由目标不得再声明 route（防递归）", not registry.resolve("minimax-h3-edit").route)
+    f_rv = [x for x in toolinfo._model_entry(base_spec)["fields"] if x["name"] == "reference_videos"][0]
+    check("toolinfo: 生成档 reference_videos 标 routed_to 且生效",
+          f_rv.get("applies") is True and f_rv.get("routed_to") == "minimax-h3-edit", f_rv)
 
     await site.stop()
     await runner.cleanup()

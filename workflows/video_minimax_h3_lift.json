@@ -257,40 +257,8 @@
         "175",
         0
       ],
-      "ref_videos.ref_video_0": [
-        "180",
-        0
-      ],
-      "ref_video_audios.ref_video_audio_0": [
-        "180",
-        1
-      ],
-      "ref_audios.ref_audio_0": [
-        "183",
-        0
-      ],
-      "ref_videos.ref_video_1": [
-        "181",
-        0
-      ],
-      "ref_video_audios.ref_video_audio_1": [
-        "181",
-        1
-      ],
-      "ref_audios.ref_audio_1": [
-        "184",
-        0
-      ],
-      "ref_videos.ref_video_2": [
-        "182",
-        0
-      ],
-      "ref_video_audios.ref_video_audio_2": [
-        "182",
-        1
-      ],
-      "ref_audios.ref_audio_2": [
-        "185",
+      "audio_vae": [
+        "120",
         0
       ]
     },
@@ -430,42 +398,6 @@
     "class_type": "LoadImage",
     "inputs": {
       "image": "example.png"
-    }
-  },
-  "180": {
-    "class_type": "LoadVideo",
-    "inputs": {
-      "file": "example.mp4"
-    }
-  },
-  "183": {
-    "class_type": "LoadAudio",
-    "inputs": {
-      "audio": "example.wav"
-    }
-  },
-  "181": {
-    "class_type": "LoadVideo",
-    "inputs": {
-      "file": "example.mp4"
-    }
-  },
-  "184": {
-    "class_type": "LoadAudio",
-    "inputs": {
-      "audio": "example.wav"
-    }
-  },
-  "182": {
-    "class_type": "LoadVideo",
-    "inputs": {
-      "file": "example.mp4"
-    }
-  },
-  "185": {
-    "class_type": "LoadAudio",
-    "inputs": {
-      "audio": "example.wav"
     }
   },
   "900": {
