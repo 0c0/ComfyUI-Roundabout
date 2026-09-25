@@ -258,11 +258,11 @@
         0
       ],
       "ref_videos.ref_video_0": [
-        "180",
+        "300",
         0
       ],
       "ref_video_audios.ref_video_audio_0": [
-        "180",
+        "300",
         1
       ],
       "ref_audios.ref_audio_0": [
@@ -270,11 +270,11 @@
         0
       ],
       "ref_videos.ref_video_1": [
-        "181",
+        "301",
         0
       ],
       "ref_video_audios.ref_video_audio_1": [
-        "181",
+        "301",
         1
       ],
       "ref_audios.ref_audio_1": [
@@ -282,15 +282,19 @@
         0
       ],
       "ref_videos.ref_video_2": [
-        "182",
+        "302",
         0
       ],
       "ref_video_audios.ref_video_audio_2": [
-        "182",
+        "302",
         1
       ],
       "ref_audios.ref_audio_2": [
         "185",
+        0
+      ],
+      "audio_vae": [
+        "120",
         0
       ]
     },
@@ -466,6 +470,42 @@
     "class_type": "LoadAudio",
     "inputs": {
       "audio": "example.wav"
+    }
+  },
+  "300": {
+    "class_type": "GetVideoComponents",
+    "inputs": {
+      "video": [
+        "180",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "RefVideo 0 -> frames+audio"
+    }
+  },
+  "301": {
+    "class_type": "GetVideoComponents",
+    "inputs": {
+      "video": [
+        "181",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "RefVideo 1 -> frames+audio"
+    }
+  },
+  "302": {
+    "class_type": "GetVideoComponents",
+    "inputs": {
+      "video": [
+        "182",
+        0
+      ]
+    },
+    "_meta": {
+      "title": "RefVideo 2 -> frames+audio"
     }
   }
 }

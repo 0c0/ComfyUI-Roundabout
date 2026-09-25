@@ -419,7 +419,7 @@ async def generate_video_tool(
     ),
     reference_images: list[str] | None = Field(
         None,
-        description="参考图（仅 edit 档与图像多图编辑；fl2va 档不收，首尾帧请用 first_frame/last_frame）。",
+        description="参考图（按模型声明的槽位生效）：与首尾帧可同传（帧走 first_frame/last_frame）；edit 档只收参考，帧传了报 400。",
     ),
     reference_videos: list[str] | None = None,
     reference_audios: list[str] | None = None,
