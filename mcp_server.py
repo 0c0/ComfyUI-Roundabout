@@ -77,6 +77,7 @@ if __package__:
     from .gateway.log_filters import client_gone, exception_chain_names  # noqa: E402
     from .gateway.registry import registry  # noqa: E402
     from .gateway.schemas import ImageGenerationRequest, VideoGenerationRequest  # noqa: E402
+    from .gateway.skills import build_skills_payload  # noqa: E402
     from .gateway.tasks import task_store  # noqa: E402
     from .gateway.viewer import view_url  # noqa: E402
 else:
