@@ -33,12 +33,14 @@ SKILLS: list[dict[str, Any]] = [
     {
         "name": "h3-playbook",
         "install_url": "https://github.com/0c0/h3-playbook-skill",
-        "purpose": "MiniMax H3 / FastH3 官方使用手册口径：提示词三段式公式、三类生成模式写法差异、"
-                   "时长/分辨率/宽高比/输入上限。",
-        "when_to_use": "写 MiniMax H3 / FastH3 视频提示词前必查，确保提示词结构正确、不踩能力边界。",
+        "purpose": "MiniMax H3 单一入口（官方使用手册口径 + 官方 h3-prompt-writing 契约合并版）："
+                   "三段式公式、五类模式判定（T2VA/I2VA/FL2VA/L2VA/Ref2VA）、Ref2VA 六段改写格式、"
+                   "素材用途标签、时长/分辨率/宽高比/输入上限、踩坑表。",
+        "when_to_use": "写 MiniMax H3 / FastH3 视频提示词前必查（含字段级结构与 Ref2VA 六段格式），"
+                       "或判断某个需求 H3 能不能做、排查口型/切镜/乱码问题时查它。",
         "source": "roundabout",
         "published": True,
-        "skill_version": "1.0.0",
+        "skill_version": "2.0.0",
     },
     {
         "name": "qwen-image-prompt-writing",
@@ -49,16 +51,6 @@ SKILLS: list[dict[str, Any]] = [
         "source": "roundabout",
         "published": True,
         "skill_version": "1.0.0",
-    },
-    {
-        "name": "h3-prompt-writing",
-        "install_url": "https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing",
-        "purpose": "MiniMax 官方的 H3 提示词写作指南：T2VA / I2VA / FL2VA / L2VA 的最终提示词结构，"
-                   "以及 Ref2VA 六段改写格式。",
-        "when_to_use": "写 H3 提示词时与 h3-playbook 配合：playbook 管能不能做，writing 管字段与段落怎么写。",
-        "source": "official",
-        "published": True,
-        "skill_version": None,
     },
 ]
 

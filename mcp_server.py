@@ -194,11 +194,9 @@ SERVER_INSTRUCTIONS = (
     "- qwen-image-prompt-writing skill (https://github.com/0c0/qwen-image2.1-prompt-writing-skill): the Qwen-Image-2.1 prompt contract "
     "(t2i observer report / edit instruction + wh_ratio / ratio_follow) behind this server's "
     "qwen-image-2.1 model.\n"
-    "- h3-prompt-writing skill (https://github.com/MiniMax-AI/MiniMax-H3/tree/main/skills/h3-prompt-writing): MiniMax's OWN writing guide for H3 prompt "
-    "fields, section order and timing notation (T2VA / I2VA / FL2VA / L2VA / Ref2VA) — maintained "
-    "by MiniMax, not by this server.\n"
-    "For MiniMax H3 / FastH3 prompts load h3-playbook FIRST for limits, then h3-prompt-writing for "
-    "the field format; for Qwen-Image-2.1 prompts load qwen-image-prompt-writing; consult "
+    "For MiniMax H3 / FastH3 prompts load h3-playbook (single entry: limits + prompt formulas + "
+    "field-level structures for T2VA/I2VA/FL2VA/L2VA/Ref2VA, merged with MiniMax's own "
+    "h3-prompt-writing guide); for Qwen-Image-2.1 prompts load qwen-image-prompt-writing; consult "
     "roundabout when unsure which tool or parameter to use."
 )
 
