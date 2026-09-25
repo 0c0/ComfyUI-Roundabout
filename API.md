@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.21.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.22.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -271,7 +271,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `first_frame` | string? | **首帧图**（声明 frame_params 的模型：`minimax-h3` / `-lift` / `fasth3`）：成为输出第 1 帧，按画布 size 做 **cover 等比铺满 + 居中裁剪**（不变形）；支持 base64/URL/本地路径。无帧槽的模型传了报 400。⚠️ **模型侧跟随度（09-24 实测）**：base 系 keyframe 需要**足够步数**（8 步不跟随、30 步完美跟随，lift 产物为证）；fasth3 在 **576p 档 keyframe 失效**（768p 正常）—— 要首帧严格跟随：base 系 ≥30 步、fasth3 ≥768p |
 | `last_frame` | string? | **尾帧图**（同 `first_frame` 三支）：成为输出最后 1 帧，同 cover 裁剪。统一节点拓扑下**可与 `reference_images` 同传**（帧槽是帧语义，参考槽是 conditioning 语义，各走各的槽） |
 | `reference_images` | string[]? | 参考图（最多 6），支持 base64/URL/本地路径；与首尾帧可同传（v1.17 统一节点拓扑） |
-| `reference_videos` | string[]? | 参考视频，最多 3：视频编辑 / 动作 / 运镜参考。槽位在 H3 六支全部接入；**FL2VA 权重（minimax-h3 / -lift）对视频参考的消费未标定**，视频编辑主口径走 Ref2VA 权重（`minimax-h3-edit` / `-lift-edit`）。无视频槽的模型（fasth3）传了 400 |
+| `reference_videos` | string[]? | 参考视频，最多 3：视频编辑 / 动作 / 运镜参考。槽位在 H3 六支全部接入。**09-25 实测**：FL2VA 权重（minimax-h3 / -lift）**可迁移动作语义**（红球下落测试：带参考输出出现下落落案轨迹、同 seed 无参考基线无此轨迹），为语义级跟随非精确复刻；精确动作 / 运镜迁移主口径走 Ref2VA 权重（`minimax-h3-edit` / `-lift-edit`）。无视频槽的模型（fasth3）传了 400 |
 | `reference_audios` | string[]? | 参考音频，最多 3：音频复用 / 音色节奏参考。**09-25 远端实测**：FL2VA 权重（minimax-h3 / -lift）音频条件可达但**不迁移音色**（输出 H3S 自有合成音色）；音色 / 台词复用主口径走 Ref2VA 两支（`minimax-h3-edit` / `-lift-edit`，实测可输出参考音色的台词） |
 | `response_format` | enum? | `url`（默认）/ `b64_json` / `file` / `path` |
 | `background` | `"pending"`? | **异步**触发：POST 立即返回 task 对象 |
