@@ -65,7 +65,7 @@ def offline_section() -> None:
     c_gen = slot_counts("minimax-h3")
     check("生成档 frames=2", c_gen.get("frames") == 2, c_gen)
     check("生成档 images=6", c_gen.get("images") == 6, c_gen)
-    check("生成档 videos=3 audios=3（FL2VA 消费未标定，槽位已接）",
+    check("生成档 videos=3 audios=3（音频实测不迁移音色，槽位已接）",
           (c_gen.get("videos"), c_gen.get("audios")) == (3, 3), c_gen)
     c_edit = slot_counts("minimax-h3-edit")
     check("编辑档 frames 不存在", "frames" not in c_edit or c_edit.get("frames") in (0, None), c_edit)

@@ -55,6 +55,9 @@ STALE_PHRASES: list[tuple[str, str]] = [
     ("FL2VA checkpoints do not consume reference video/audio",
      "v1.20.0 起删除该括注：FL2VA 音频/视频参考消费未标定 ≠ 不消费，"
      "报错文案不应对未标定能力下结论"),
+    ("FL2VA 消费未标定",
+     "09-25 远端实测已标定音频：FL2VA 条件可达但不迁移音色（输出 H3S 自有音色），"
+     "音色/台词复用走 edit 档；视频参考仍未标定须单独写明，不可再笼统说「消费未标定」"),
 ]
 
 # 扫描载体：语义表述可能落盘的所有位置。

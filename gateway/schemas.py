@@ -180,7 +180,7 @@ class VideoGenerationRequest(BaseModel):
     # 参考视频/音频仅 Ref2VA 系（edit 两支）接入，FL2VA 权重不消费（传了 400）。
     reference_images: list[str] | None = Field(None, description="参考图（有剩余参考槽的模型最多 6 张；与首尾帧可同传），支持 base64/http(s)/本地路径")
     reference_videos: list[str] | None = Field(None, description="参考视频（最多 3 个）：视频编辑 / 动作 / 运镜参考；FL2VA 权重的消费未标定，视频编辑主口径走 minimax-h3-edit；支持 base64/http(s)/本地路径")
-    reference_audios: list[str] | None = Field(None, description="参考音频（最多 3 个）：音频复用 / 音色节奏参考；FL2VA 权重的消费未标定，主口径走 minimax-h3-edit；支持 base64/http(s)/本地路径")
+    reference_audios: list[str] | None = Field(None, description="参考音频（最多 3 个）：音频复用 / 音色节奏参考；09-25 实测 FL2VA 权重不迁移音色（输出 H3S 自有音色），音色/台词复用主口径走 minimax-h3-edit；支持 base64/http(s)/本地路径")
 
     # 直接改写工作流节点，形如 {"3.inputs.cfg": 4.5}
     workflow_overrides: dict[str, Any] | None = None
