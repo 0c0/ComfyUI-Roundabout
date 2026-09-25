@@ -16,7 +16,7 @@ name = "roundabout"
 # 版本号纪律：**新功能（新端点 / 新 MCP 工具 / 新模型或工作流）随同批提交升 minor**
 # （1.2.0 → 1.3.0），纯修复升 patch；API.md 顶部的「当前版本」必须同步，由
 # tests/test_version.py 守。运行期 VERSION 由本文件派生，别在任何 .py 里硬编码。
-version = "1.20.0"
+version = "1.20.1"
 description = "Expose ComfyUI workflows as an OpenAI-compatible REST API and an MCP server, so AI agents drive local image/video generation with semantic parameters instead of whole workflow graphs."
 license = { file = "LICENSE" }
 requires-python = ">=3.10"

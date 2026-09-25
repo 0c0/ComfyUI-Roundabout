@@ -52,6 +52,9 @@ STALE_PHRASES: list[tuple[str, str]] = [
     ("首尾帧与参考图互斥", "同上，v1.17.0 起两者可同传"),
     ("不支持参考图", "现行口径：视频档参考图按模型槽位生效（reference_images/videos/audios）"),
     ("不接受参考", "现行口径：参考素材按模型槽位生效，无槽字段才 400"),
+    ("FL2VA checkpoints do not consume reference video/audio",
+     "v1.20.0 起删除该括注：FL2VA 音频/视频参考消费未标定 ≠ 不消费，"
+     "报错文案不应对未标定能力下结论"),
 ]
 
 # 扫描载体：语义表述可能落盘的所有位置。

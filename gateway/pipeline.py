@@ -600,8 +600,7 @@ async def generate_video(
     for field, cat in (("reference_videos", "videos"), ("reference_audios", "audios")):
         if getattr(req, field, None) and not (ref_cfg.get(cat) or []):
             raise APIError(
-                f"Model `{spec.name}` declares no {cat} reference slots "
-                f"(FL2VA checkpoints do not consume reference video/audio).",
+                f"Model `{spec.name}` declares no {cat} reference slots.",
                 param=field,
             )
 
