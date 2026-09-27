@@ -50,7 +50,7 @@ SKILLS: list[dict[str, Any]] = [
         "when_to_use": "用网关 qwen-image-2.1 档出图/改图，或要把一句粗糙需求扩写成该模型能吃的描述前必查。",
         "source": "roundabout",
         "published": True,
-        "skill_version": "1.0.0",
+        "skill_version": "1.3.0",
     },
 ]
 

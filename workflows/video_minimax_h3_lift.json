@@ -232,7 +232,7 @@
         "161",
         0
       ],
-      "ref_image_size": "match",
+      "ref_image_size": "max",
       "ref_images.ref_image_0": [
         "170",
         0

@@ -120,7 +120,7 @@ class MiniMaxH3UnifiedToVideo(io.ComfyNode):
                              tooltip="Frame count at 24 fps, snapped up to the model's 17k+5 grid (124 = ~5s; trained range is ~124-362, longer is untested)"),
                 io.Image.Input("first_frame", optional=True),
                 io.Image.Input("last_frame", optional=True),
-                io.Combo.Input("ref_image_size", options=["match", "max"], default="match",
+                io.Combo.Input("ref_image_size", options=["match", "max"], default="max",
                     tooltip="Reference image sizing. 'match' scales each ref (down only, keeping aspect) to the generation's pixel area; 'max' uses the reference pipeline's 2048px short edge for best identity fidelity. Reference tokens ride through every sampling step, so 'max' can be several times slower."),
                 io.Autogrow.Input("ref_images", optional=True,
                     template=io.Autogrow.TemplatePrefix(
@@ -143,7 +143,7 @@ class MiniMaxH3UnifiedToVideo(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, clip, prompt, width, height, length, ref_image_size="match",
+    def execute(cls, clip, prompt, width, height, length, ref_image_size="max",
                 vae=None, audio_vae=None, first_frame=None, last_frame=None,
                 ref_images=None, ref_videos=None, ref_video_audios=None,
                 ref_audios=None) -> io.NodeOutput:
