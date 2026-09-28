@@ -431,7 +431,7 @@ models:
   #     含点号、路径按 `.` 切分无法寻址 ⇒ 调它们只能改工作流 JSON + `/admin/reload`。
   minimax-h3:
     workflow: video_minimax_h3.json
-    description: MiniMax H3 (FL2VA) —— 生成档：文生视频 / 首尾帧 / 参考图 / 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-edit（09-25 实测 FL2VA 不迁移音色/动作，参考内容只有 Ref2VA 消费），30 步，低显存分块按档位自适应
+    description: MiniMax H3 (FL2VA) —— 生成档：文生视频 / 首尾帧 / 参考图 / 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-edit（09-25 实测 FL2VA 不迁移音色/动作，参考内容只有 Ref2VA 消费），20 步，低显存分块按档位自适应
     mode: video
     capabilities:
     - text-to-video
@@ -466,7 +466,7 @@ models:
     defaults:
       width: 1344
       height: 768
-      steps: 30
+      steps: 20
       sampler_name: res_multistep
       scheduler: simple
       denoise: 1
@@ -494,7 +494,7 @@ models:
     - h3
   minimax-h3-edit:
     workflow: video_minimax_h3_edit.json
-    description: MiniMax H3 Edit (Ref2VA) —— 编辑档：参考视频编辑 / 动作·运镜迁移 / 音频复用 / 参考图，30 步，低显存分块按档位自适应
+    description: MiniMax H3 Edit (Ref2VA) —— 编辑档：参考视频编辑 / 动作·运镜迁移 / 音频复用 / 参考图，20 步，低显存分块按档位自适应
     mode: video
     capabilities:
     - text-to-video
@@ -522,7 +522,7 @@ models:
     defaults:
       width: 1344
       height: 768
-      steps: 30
+      steps: 20
       sampler_name: res_multistep
       scheduler: simple
       denoise: 1
@@ -692,7 +692,7 @@ models:
   # rho / w_min / w_max 仍是模板固定值（节点 910），精调走 workflow_overrides（如 910.inputs.rho=0.3）。
   minimax-h3-lift:
     workflow: video_minimax_h3_lift.json
-    description: MiniMax H3 Lift —— 生成档骨架 + 确定性放大：`size` = 768p 第一采画布（默认 1344x768，保持原生别改大），30 步采样 → latent lift × `scale`（默认 1.875 → 输出 2520x1440）；构图零重掷，纹理最强；支持首尾帧 / 参考图 / 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-lift-edit（FL2VA 不迁移内容，实测见 minimax-h3）
+    description: MiniMax H3 Lift —— 生成档骨架 + 确定性放大：`size` = 768p 第一采画布（默认 1344x768，保持原生别改大），20 步采样 → latent lift × `scale`（默认 1.875 → 输出 2520x1440）；构图零重掷，纹理最强；支持首尾帧 / 参考图 / 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-lift-edit（FL2VA 不迁移内容，实测见 minimax-h3）
     mode: video
     capabilities:
     - text-to-video
@@ -728,7 +728,7 @@ models:
     defaults:
       width: 1344
       height: 768
-      steps: 30
+      steps: 20
       sampler_name: res_multistep
       scheduler: simple
       denoise: 1
@@ -762,7 +762,7 @@ models:
   # ⚠️ 未标定：步数 30（随 edit 统一），放大与参考的组合效果没做过 A/B。
   minimax-h3-lift-edit:
     workflow: video_minimax_h3_lift_edit.json
-    description: MiniMax H3 Lift Ref2VA —— 编辑档骨架（30 步）+ 确定性放大：参考视频编辑 / 动作·运镜迁移 / 音频复用 / 参考图生视频后过一遍学习式 latent lift
+    description: MiniMax H3 Lift Ref2VA —— 编辑档骨架（20 步）+ 确定性放大：参考视频编辑 / 动作·运镜迁移 / 音频复用 / 参考图生视频后过一遍学习式 latent lift
     mode: video
     capabilities:
     - text-to-video
@@ -791,7 +791,7 @@ models:
     defaults:
       width: 1344
       height: 768
-      steps: 30
+      steps: 20
       sampler_name: res_multistep
       scheduler: simple
       denoise: 1

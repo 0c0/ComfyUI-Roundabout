@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.26.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.27.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -268,7 +268,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"910.inputs.rho": 0.3}`。`minimax-h3-lift` 的可调项：`910.inputs.rho`（SelfLift-zero 像素锚阻尼，默认 0=纯学习 lift 纹理最强；调高会压高频细节）、`910.inputs.w_min`/`w_max`（阻尼强度上下限，默认 0.5/1.0）。放大倍率 `scale` 已是正式请求参数，不必走透传 |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |
 | `image` | string\|string[]? | 图生视频输入（视频档不收，传了 400 并指路：帧用 `first_frame`/`last_frame`，参考图用 `reference_images`） |
-| `first_frame` | string? | **首帧图**（声明 frame_params 的模型：`minimax-h3` / `-lift` / `fasth3`）：成为输出第 1 帧，按画布 size 做 **cover 等比铺满 + 居中裁剪**（不变形）；支持 base64/URL/本地路径。无帧槽的模型传了报 400。⚠️ **模型侧跟随度（09-24 实测）**：base 系 keyframe 需要**足够步数**（8 步不跟随、30 步完美跟随，lift 产物为证）；fasth3 在 **576p 档 keyframe 失效**（768p 正常）—— 要首帧严格跟随：base 系 ≥30 步、fasth3 ≥768p |
+| `first_frame` | string? | **首帧图**（声明 frame_params 的模型：`minimax-h3` / `-lift` / `fasth3`）：成为输出第 1 帧，按画布 size 做 **cover 等比铺满 + 居中裁剪**（不变形）；支持 base64/URL/本地路径。无帧槽的模型传了报 400。⚠️ **模型侧跟随度（09-24 实测）**：base 系 keyframe 需要**足够步数**（8 步不跟随、30 步完美跟随，lift 产物为证）；fasth3 在 **576p 档 keyframe 失效**（768p 正常）—— 要首帧严格跟随：base 系 ≥20 步即可（09-28 实测默认 20 步下 f0 与源图 cover 裁剪对位良好；8 步不跟随、30 步完美跟随为 09-24 实测）、fasth3 ≥768p |
 | `last_frame` | string? | **尾帧图**（同 `first_frame` 三支）：成为输出最后 1 帧，同 cover 裁剪。统一节点拓扑下**可与 `reference_images` 同传**（帧槽是帧语义，参考槽是 conditioning 语义，各走各的槽） |
 | `reference_images` | string[]? | 参考图（最多 6），支持 base64/URL/本地路径；与首尾帧可同传（v1.17 统一节点拓扑） |
 | `reference_videos` | string[]? | 参考视频，最多 3：视频编辑 / 动作 / 运镜参考。**槽位在 Ref2VA 系三支**（`minimax-h3-edit` / `-lift-edit` / `fasth3-edit`）；传给 `minimax-h3` / `-lift` 时**自动换档**到对应 -edit 模型执行（09-25 实测：FL2VA 权重不迁移动作——同 seed 基线同样弹跳且衰减类似，参考仅构图/细节级扰动——参考内容只有 Ref2VA 消费，故换档而非本档执行）。fasth3 无路由、传了 400。注意：换档后走 edit 槽位规则，帧与音视频参考不能同单（帧会被 400） |
@@ -342,10 +342,10 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | **`flux2-klein-image-edit-turbo`** | image | **image-to-image** | Flux2 Klein 9B **多图参考**编辑（最多 4 张），语义改写/换背景首选（见 5.1） |
 | **`qwen-image-2.1`** | image | text-to-image / **image-to-image** | Qwen-Image 2.1：**文生与多图参考编辑同一支**（25 步，Qwen3-VL 文本编码）。不带参考图即纯文生，原生 2K 档位、默认 1024x1024（`size` 直传，支持非方图）；带 1–6 张参考图（`reference_images`）即多图编辑，输出尺寸跟随第 1 张参考图 |
 | **`utility-birefnet-remove-background`** | image | **image-to-image**（promptless） | 去背景独立工具，无 prompt，透明 PNG；专属端点 `/v1/images/remove-background` |
-| `minimax-h3` | video | text-to-video / first-last-frame | H3 首尾帧生视频（base 30 步）：`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@30（网关无 `quality` 分档 —— 它只能表达 size + steps，与直接传参等价） |
-| `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，30 步（支持图/视频/音频参考） |
+| `minimax-h3` | video | text-to-video / first-last-frame | H3 首尾帧生视频（base 20 步）：`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@20（网关无 `quality` 分档 —— 它只能表达 size + steps，与直接传参等价） |
+| `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，20 步（支持图/视频/音频参考） |
 | `minimax-h3-lift` | video | text-to-video / first-last-frame | base 骨架 + 确定性放大：`size` = 768p 第一采画布（默认 1344x768），latent lift × `scale`（默认 1.875 → 输出 2520x1440）；`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）；分块参数按本机显存自动分档 |
-| `minimax-h3-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 edit 骨架（Ref2VA 权重，30 步）；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
+| `minimax-h3-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 edit 骨架（Ref2VA 权重，20 步）；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
 | `fasth3` | video | text-to-video / first-last-frame | FastVideo FastH3 8 步蒸馏档；`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪，走关键帧槽，见 [WORKFLOWS.md](WORKFLOWS.md)）。定位**草稿 / 快周转**，非 49/50 步的等价替代 |
 | `fasth3-edit` | video | text-to-video / reference-to-video | FastH3 参考生视频；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪。⚠️ **占位档**：官方未蒸馏 Ref2VA，与 `fasth3` 共用同一份 fl2v 权重 |
 
