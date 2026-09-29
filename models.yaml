@@ -355,7 +355,7 @@ models:
   # 会把模板占位图 `__REF_1__.png` 当参考喂进去。`image` 改由 pipeline 落成第 1 张参考图。
   qwen-image-2.1:
     workflow: image_qwen_image_2_1.json
-    description: Qwen-Image 2.1 —— 文生图 / 多图参考编辑同支（25 步，Qwen3-VL 文本编码）；不带参考图即纯文生（size 直传，原生 2K、默认 1024x1024），带 1–6 张参考图则跟随第 1 张参考图的尺寸
+    description: Qwen-Image 2.1 —— 文生图 / 多图参考编辑同支（25 步，Qwen3-VL 文本编码）；不带参考图即纯文生（size 直传，原生 2K、默认 1024x1024），带 1–6 张参考图则跟随第 1 张参考图的尺寸；⚠️ 迭代编辑每轮换新 seed（不传/-1 即随机）：同 seed 连续重绘残差噪声线性累加、画面变脏（09-28 实测）
     mode: image
     capabilities:
     - text-to-image

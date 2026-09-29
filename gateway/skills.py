@@ -1,13 +1,14 @@
 """配套 agent-skill 清单（get_skills 的唯一数据源）。
 
 为什么独立成模块：
-    skill 清单以前直接写在 `mcp_server.py` 里，而每个条目的 `skill_version` 又必须与
-    对应 skill 仓库 SKILL.md frontmatter 的 `skill_version` 一致 —— 一个事实两处手工
-    维护，必然漂移；漂移本身还是**静默**的（没有任何地方报错，agent 只是拿到一个过期
-    的版本号，据此判断「本地副本不必更新」）。抽到这里之后：
-      * 升 skill 只需要改这一处（`SKILLS` 里的 `skill_version`）；
-      * `tests/test_skill_version_sync.py` 会把这里的值与本机已装副本的 frontmatter
-        对拍，忘了同步就让测试红。
+    skill 清单以前直接写在 `mcp_server.py` 里，版本号漂移是**静默**的（agent 拿到过期版本号，
+    据此判断「本地副本不必更新」）。抽到这里之后，版本同步又经历了两代：
+
+      * v1：SKILLS 表手写 `skill_version`，`tests/test_skill_version_sync.py` 与本机已装副本
+        的 frontmatter 对拍 —— 护栏能红，但同步动作仍靠人记得，实际漏过。
+      * v2（现行）：**版本号从 `skills_manifest.json` 读取**（生成物，`tools/release.py
+        gen-manifest` 扫描本机 skill 副本 frontmatter 产出）。单一事实源 = SKILL.md frontmatter，
+        本模块不再手写任何版本号；`release.py check` 会拦「manifest 过期」和「手写版本号回潮」。
 
     `mcp_server.py` 太重（拉 ComfyClient / registry / MCPServer），独立成模块也让测试
     可以只 import 这份数据。
@@ -15,6 +16,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 # skill_version 的口径：**该 skill 当前应有的内容版本**，与 skill 仓库 SKILL.md
@@ -28,7 +31,7 @@ SKILLS: list[dict[str, Any]] = [
         "when_to_use": "拿不准用哪个工具/参数、要注册或排查工作流、或想看某模型能力边界时查它。",
         "source": "roundabout",
         "published": True,
-        "skill_version": "1.8.1",
+        "skill_version": None,
     },
     {
         "name": "h3-playbook",
@@ -40,7 +43,7 @@ SKILLS: list[dict[str, Any]] = [
                        "或判断某个需求 H3 能不能做、排查口型/切镜/乱码问题时查它。",
         "source": "roundabout",
         "published": True,
-        "skill_version": "2.0.0",
+        "skill_version": None,
     },
     {
         "name": "qwen-image-prompt-writing",
@@ -50,22 +53,47 @@ SKILLS: list[dict[str, Any]] = [
         "when_to_use": "用网关 qwen-image-2.1 档出图/改图，或要把一句粗糙需求扩写成该模型能吃的描述前必查。",
         "source": "roundabout",
         "published": True,
-        "skill_version": "1.3.0",
+        "skill_version": None,
     },
 ]
 
 _NOTE = (
     "source 区分两类：roundabout = 本网关维护，official = 模型厂商自己维护（内容以其仓库为准）。"
-    "skill_version = 该 skill 当前应有的内容版本，与 skill 仓库 SKILL.md frontmatter 的 "
-    "skill_version 同步维护；本地已装副本的 frontmatter 版本若低于此值，说明副本已过期，"
-    "重新安装（install_url）即可拿到新版。official 条目版本不可控，恒为 null。"
+    "skill_version = 该 skill 当前应有的内容版本，源自 skill 仓库 SKILL.md frontmatter（由网关"
+    " release 流程生成 manifest 后在此注入）；本地已装副本的 frontmatter 版本若低于此值，说明副本"
+    "已过期，重新安装（install_url）即可拿到新版。official 条目版本不可控，恒为 null。"
     "其余专精 skill 不随本仓库发布，不在此列出。安装方式：把 install_url 交给 agent 的 skill "
     "安装流程（裸 URL 即可，无需指定目录）。"
 )
 
+_MANIFEST_PATH = Path(__file__).with_name("skills_manifest.json")
+
+
+def _inject_versions() -> None:
+    """把 manifest 里的版本注入 SKILLS；manifest 缺失/缺条目时**不炸 import**，
+    留 None，在 build_skills_payload 组包时才报错 —— 让 release.py 的 gen-manifest
+    可以在 manifest 尚不存在时照常 import 本模块。"""
+    try:
+        data = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
+        versions: dict[str, str] = data.get("skills", {})
+    except (OSError, ValueError):
+        return
+    for entry in SKILLS:
+        if entry.get("source") == "roundabout":
+            entry["skill_version"] = versions.get(entry["name"])
+
+
+_inject_versions()
+
 
 def build_skills_payload(server_version: str) -> dict[str, Any]:
     """组装 get_skills 的返回体（server / version / skills[] / note）。"""
+    missing = [e["name"] for e in SKILLS
+               if e.get("source") == "roundabout" and not e.get("skill_version")]
+    if missing:
+        raise RuntimeError(
+            f"skills_manifest.json 缺少自维护 skill 的版本号：{missing} —— "
+            f"跑 `python tools/release.py gen-manifest` 重新生成（源 = 各 SKILL.md frontmatter）")
     return {
         "server": "comfyui-roundabout",
         "version": server_version,
