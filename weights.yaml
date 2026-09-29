@@ -152,3 +152,18 @@ files:
     repo: LBH-123-AI/Minimax_h3_latent_Upscaler
     path: minimax_h3_latent_upscaler_3d_conv_v1/minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetensors
     size_gb: 0.69
+  - file: seedvr2_7b_int8_convrot.safetensors
+    dir: diffusion_models
+    repo: Comfy-Org/SeedVR2
+    path: diffusion_models/seedvr2_7b_int8_convrot.safetensors
+    size_gb: 7.76
+  - file: seedvr2_ema_vae_fp16.safetensors
+    dir: vae
+    repo: Comfy-Org/SeedVR2
+    path: vae/seedvr2_ema_vae_fp16.safetensors
+    size_gb: 0.47
+  - file: sam3.1_multiplex_fp16.safetensors
+    dir: checkpoints
+    repo: Comfy-Org/sam3.1
+    path: checkpoints/sam3.1_multiplex_fp16.safetensors
+    size_gb: 1.63

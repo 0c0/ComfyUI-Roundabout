@@ -284,6 +284,45 @@ models:
     - birefnet-remove-bg
     - utility_birefnet_remove_background
     - remove-background
+  utility-seedvr2-upscale:
+    workflow: utility_seedvr2_upscale.json
+    description: "SeedVR2 7B Int8 图像放大 —— 独立工具类，无 prompt，只需 image；multiplier 倍率 1-8（默认 4），color_correction 可选 none/lab/wavelet/adain（默认 none）；输出尺寸 = 输入 × multiplier；⚠️ 8GiB 显存靠 offload 慢速可跑，大倍率 + 大图会显著变慢"
+    mode: image
+    promptless: true
+    capabilities:
+    - image-to-image
+    output_node: '12'
+    timeout: 1800
+    defaults:
+      multiplier: 4.0
+      color_correction: none
+    bindings:
+      image: 1.inputs.image
+      multiplier: 3.inputs.scale_by
+      color_correction: 11.inputs.color_correction_method
+      seed: 9.inputs.seed
+      filename_prefix: 12.inputs.filename_prefix
+    aliases:
+    - seedvr2-upscale
+    - utility_seedvr2_upscale
+  utility-sam3-segment:
+    workflow: utility_sam3_segment.json
+    description: "SAM3.1 文本提示分割抠图 —— prompt = 要抠的目标描述（开放词汇，如 'the cat'），只需单图；threshold 置信度 0-1（默认 0.5）；输出 = 目标保留、背景透明的 PNG；与 BiRefNet 去背景的区别：按文本语义选目标，不是整图主体"
+    mode: image
+    capabilities:
+    - image-to-image
+    output_node: '6'
+    timeout: 300
+    defaults:
+      threshold: 0.5
+    bindings:
+      prompt: 2.inputs.text
+      image: 3.inputs.image
+      threshold: 4.inputs.threshold
+      filename_prefix: 6.inputs.filename_prefix
+    aliases:
+    - sam3-segment
+    - utility_sam3_segment
   flux2-klein-image-edit-turbo:
     workflow: image_flux2_klein_image_edit_turbo.json
     description: Flux2 Klein 9B Edit Turbo —— 多图参考编辑 6 步快速版（参考图 + 提示词改写，Qwen3-VL 文本编码），尺寸跟随第一张参考图，输出约 1MP；参考图走 reference_images（最多 4 张）

@@ -283,6 +283,7 @@ def _endpoints() -> dict[str, list[str]]:
         ],
         "mcp": [
             "list_models", "generate_image", "edit_image", "remove_background",
+            "process_image",
             "generate_video", "get_task", "cancel_task", "queue_status",
             "get_workflow", "reload", "health", "get_view_url", "get_skills",
             "check_weights", "get_tool_info",

@@ -25,6 +25,7 @@ task_store 异步任务表、ComfyClient 后端客户端），本文件只做协
     generate_image    文生图 / 图生图（同步或异步，异步返回 task 对象）
     edit_image        提示词驱动的图像编辑（含多图参考）
     remove_background 图片去背景（BiRefNet，无需提示词）
+    process_image     图像处理统一入口（action: upscale=SeedVR2 放大 / remove_background=去背景 / segment=SAM3 文本抠图）
     generate_video    文生视频 / 参考生视频（同步或异步，异步返回 task 对象）
     get_task          查询异步任务状态与产物（含 prompt_id / 工作流快照）
     cancel_task       取消 ComfyUI 中运行的任务
@@ -381,6 +382,57 @@ async def remove_background(
         response_format=response_format or None,  # type: ignore[arg-type]
         filename_prefix=filename_prefix or None,
         image=image or None,
+    )
+    result = await generate_tracked(req)
+    return _absolutize_urls(result.model_dump(exclude_none=True))
+
+
+# ---- 工具 5b：process_image（图像处理统一入口）---------------------------
+@mcp.tool(
+    name="process_image",
+    description=(
+        "图像处理统一入口，按 action 分发："
+        "\"upscale\" = SeedVR2 7B Int8 放大（multiplier 倍率 1-8，默认 4，输出 = 输入 × 倍率）；"
+        "\"remove_background\" = BiRefNet 去背景（输出透明 PNG）；"
+        "\"segment\" = SAM3 文本提示分割抠图（prompt = 目标描述，如 \"the cat\"，按语义选目标）。"
+        "所有 action 均无需尺寸参数；response_format 默认 url，可改 path / b64_json。"
+    ),
+)
+async def process_image(
+    action: str,
+    image: str,
+    prompt: str = "",
+    multiplier: float = 4.0,
+    color_correction: str = "none",
+    threshold: float = 0.5,
+    response_format: str = "url",
+    filename_prefix: str = "",
+) -> dict[str, Any]:
+    action = (action or "").strip().lower()
+    model_map = {
+        "upscale": "utility-seedvr2-upscale",
+        "remove_background": "utility-birefnet-remove-background",
+        "segment": "utility-sam3-segment",
+    }
+    if action not in model_map:
+        return _missing(
+            f"未知 action: {action!r}（可选：upscale / remove_background / segment）", "invalid_action"
+        )
+    extra: dict[str, Any] = {}
+    if action == "upscale":
+        extra["multiplier"] = max(1.0, min(8.0, float(multiplier)))
+        extra["color_correction"] = color_correction or "none"
+    elif action == "segment":
+        if not (prompt or "").strip():
+            return _missing("segment 需要 prompt（要抠的目标描述）", "prompt_required")
+        extra["threshold"] = max(0.0, min(1.0, float(threshold)))
+    req = ImageGenerationRequest(
+        model=model_map[action],
+        prompt=(prompt or None) if action == "segment" else None,
+        response_format=response_format or None,  # type: ignore[arg-type]
+        filename_prefix=filename_prefix or None,
+        image=image or None,
+        **extra,
     )
     result = await generate_tracked(req)
     return _absolutize_urls(result.model_dump(exclude_none=True))

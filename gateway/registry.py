@@ -48,6 +48,11 @@ KNOWN_PARAMS = {
     "num_frames",
     # ---- H3 Lift 放大倍率（仅 minimax-h3-lift 两支有绑定）----
     "scale",
+    # ---- SeedVR2 图像放大（仅 utility-seedvr2-upscale 有绑定）----
+    "multiplier",
+    "color_correction",
+    # ---- SAM3 文本提示分割（仅 utility-sam3-segment 有绑定）----
+    "threshold",
     # ---- 低显存分块（按显卡档位自动填默认值，见 gateway/vram.py）----
     "chunks",
     "head_chunks",

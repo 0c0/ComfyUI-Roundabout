@@ -117,7 +117,7 @@ git clone https://github.com/0c0/qwen-image2.1-prompt-writing-skill.git <agent �
 **两套接入层，共享同一个引擎**
 
 - **OpenAI 兼容 REST**：`/v1/images/generations`（文生图 / 图生图）、`/v1/images/edits`（multipart 标准编辑）、`/v1/images/remove-background`（去背景）、`/v1/videos/generations`（视频，支持异步）。返回格式可选 `b64_json` / `url` / `file` / `path`，可直接替换 OpenAI 官方地址使用。
-- **MCP 服务（16 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `generate_video`，查询类 `get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills`，看板类 `view_board`（单入口按 action 分发：pin / remove / clear / get / history / load）。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 钉到看板」全流程。
+- **MCP 服务（17 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `process_image` / `generate_video`，查询类 `get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills`，看板类 `view_board`（单入口按 action 分发：pin / remove / clear / get / history / load）。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 钉到看板」全流程。
 - **共享端口**：MCP 端点 `/mcp` 直接挂在 ComfyUI 同一端口（`http://<comfyui>:8188/mcp`），不用额外开端口、不用另起进程；REST 与 MCP 共用同一份注册表、生成链路与任务表。
 
 **声明式模型注册**
@@ -310,7 +310,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 
 ## 权重清单（内置工作流的全部依赖）
 
-**本仓库不包含任何权重文件**（体积与许可原因）。内置的 17 个工作流共引用 **22 个**权重文件，合计约 **215 GB**（图像档约 94 GB / 视频档约 121 GB）；下面两张清单表共 **25 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个 hyperflow LoRA），仅作参考，计入则约 222 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入这 22 个。）
+**本仓库不包含任何权重文件**（体积与许可原因）。内置的 19 个工作流共引用 **25 个**权重文件，合计约 **225 GB**（图像档约 103 GB / 视频档约 121 GB）；下面两张清单表共 **28 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个 hyperflow LoRA），仅作参考，计入则约 231 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入这 25 个。）
 
 这些文件基本都在 **HuggingFace 的 Comfy-Org 官方仓库**里（少数为模型原厂或社区仓库，已在表中标注）。国区建议把端点换成镜像，repo ID 与 repo 内路径完全一致：
 
@@ -337,10 +337,11 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 | `models/text_encoders/` | 文本编码器 |
 | `models/vae/` | VAE（视频档另有音频 VAE） |
 | `models/loras/` | LoRA 与蒸馏加速权重 |
+| `models/checkpoints/` | SAM3 等完整 checkpoint |
 | `models/latent_upscale_models/` | SelfLift 的 latent 上采样权重 |
 | `models/background_removal/` | BiRefNet 抠图 |
 
-### 图像档（15 个文件，约 94 GB）
+### 图像档（18 个文件，约 103 GB）
 
 | 文件 | 目标目录 | 体积 | 下载源（HF repo） | repo 内路径 |
 |---|---|---|---|---|
@@ -359,6 +360,9 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 | `qwen3vl_8b_int8_convrot.safetensors` | `text_encoders/` | 9.35 GB | `Comfy-Org/Qwen-Image-2.1` | `text_encoders/` |
 | `qwen_image_2.1_vae_bf16.safetensors` | `vae/` | 0.68 GB | `Comfy-Org/Qwen-Image-2.1` | `vae/` |
 | `birefnet.safetensors` | `background_removal/` | 0.44 GB | `Comfy-Org/BiRefNet` | `background_removal/` |
+| `seedvr2_7b_int8_convrot.safetensors` | `diffusion_models/` | 7.76 GB | `Comfy-Org/SeedVR2` | `diffusion_models/` |
+| `seedvr2_ema_vae_fp16.safetensors` | `vae/` | 0.47 GB | `Comfy-Org/SeedVR2` | `vae/` |
+| `sam3.1_multiplex_fp16.safetensors` | `checkpoints/` | 1.63 GB | `Comfy-Org/sam3.1` | `checkpoints/` |
 
 **几个共用 / 易混点：**
 
