@@ -27,6 +27,13 @@ RoundaboutCoverResize —— 参考图 cover 式缩放裁剪。
   LoadImage(参考槽0) -> RoundaboutCoverResize -> 聚合节点 first_frame /
   ref_images.ref_image_0；节点的 width/height 在 models.yaml 里与聚合节点的
   width/height 绑定到同一个请求参数，画布改档位时裁剪目标自动跟随。
+
+RoundaboutSizeProbe —— 把最终画面的实测像素尺寸报给网关（只读 shape，不写盘）。
+  接在 VAEDecode 的**输出**上，随 /history 一起回来，供同步回执的 size 字段取证：
+  IMAGE 的 shape 就是最终画面像素，不必知道 VAE 倍率，也不会被 lift 的换算误差带偏。
+  视频产物是 mp4，与其生成完再落盘解析 moov box（二次 IO），不如让图自己报数。
+  H3 / FastH3 六支视频档都带它（节点 950）；模板里没有它的工作流，
+  网关回落到「画布 × scale」的换算。
 """
 import math
 
@@ -245,12 +252,52 @@ class MiniMaxH3UnifiedToVideo(io.ComfyNode):
         return io.NodeOutput(cond, latent)
 
 
+class RoundaboutSizeProbe:
+    """把最终画面的像素尺寸报给网关（OUTPUT_NODE，只报数不写盘）。
+
+    为什么需要它：同步回执的 `size` 必须是**实际生效**的尺寸，而不是请求参数的回读
+    （漏传 `size` 时读到的是模型 defaults；lift 档的真实尺寸还要过一遍放大节点，换算
+    值一旦与工作流实现脱节就会静默撒谎）。网关的取证手段因此分两套，本节点是视频那套：
+
+      · 图像档 —— 产物字节本就在内存里，读 PNG/JPEG 头零成本（gateway.params.image_dimensions）；
+      · 视频档 —— 产物是 mp4，读尺寸得先落盘再解析 moov box（二次 IO + 一个解析器），
+        不值当，改由本节点在**解码后、编码前**把 IMAGE 张量的实测宽高随 /history 报回。
+
+    接在 VAEDecode 的**输出**上（不是 latent）：IMAGE 的 shape 就是最终画面像素，
+    不必知道 VAE 的倍率，也不会被 lift / 裁剪节点的换算误差带偏。
+
+    只读 shape、不克隆张量 —— 产物与显存都不受影响；模板里没有它的工作流，
+    网关读不到就回落到「画布 × scale」的换算（见 pipeline.estimated_video_size）。
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images": ("IMAGE", {
+                    "tooltip": "接最终解码后的画面（VAEDecode 输出）：只读尺寸，不改内容。"}),
+            },
+        }
+
+    RETURN_TYPES = ()
+    FUNCTION = "probe"
+    OUTPUT_NODE = True
+    CATEGORY = "roundabout"
+    DESCRIPTION = "把最终画面的实测像素尺寸报给网关，供同步回执的 size 字段取证。"
+
+    def probe(self, images):
+        height, width = int(images.shape[1]), int(images.shape[2])
+        return {"ui": {"size": [f"{width}x{height}"]}}
+
+
 NODE_CLASS_MAPPINGS = {
     "RoundaboutCoverResize": RoundaboutCoverResize,
     "MiniMaxH3UnifiedToVideo": MiniMaxH3UnifiedToVideo,
+    "RoundaboutSizeProbe": RoundaboutSizeProbe,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "RoundaboutCoverResize": "Cover Resize (Roundabout)",
     "MiniMaxH3UnifiedToVideo": "MiniMax H3 Unified to Video (Roundabout)",
+    "RoundaboutSizeProbe": "Size Probe (Roundabout)",
 }

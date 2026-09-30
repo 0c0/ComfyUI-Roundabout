@@ -84,6 +84,76 @@ def _round8(v: int) -> int:
     return max(64, int(round(v / 8.0)) * 8)
 
 
+def image_dimensions(data: bytes) -> tuple[int, int] | None:
+    """从产物字节里读像素尺寸 (width, height)；读不出返回 None。
+
+    为什么放在这里：同步回执要回显「实际生效尺寸」，而**唯一不会撒谎的证据是产物本身**。
+    从入参 width/height 反推会在两类档位上给出错值 ——
+      · 请求没传 `size` 时，入参拿到的是模型 defaults，回显它就等于把默认值伪装成用户选择；
+      · 有参考素材的合并档（Qwen 2.1，`use_custom_size=false`）latent 跟随第 1 张参考图，
+        直传的 width/height 根本不参与，此时只能读产物。
+    所以口径是「读产物像素」，入参只在读不出时兜底（见 pipeline.response_size）。
+
+    零依赖头解析（不引入 Pillow —— 网关只装了 mcp/uvicorn，且产物规模不该为此拖进图像库）：
+      · PNG：签名 + IHDR（大端 16/20 字节处）
+      · GIF87a/89a：逻辑屏幕描述符（小端 6/8 字节处）
+      · WebP：RIFF 容器，三种帧头 VP8（有损）/ VP8L（无损）/ VP8X（扩展）
+      · JPEG：扫 SOF0..SOF15 段（跳过 DHT/JPG/DAC —— 它们也落在 0xC0..0xCF 里）
+    """
+    if not data:
+        return None
+
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        if len(data) >= 24 and data[12:16] == b"IHDR":
+            w = int.from_bytes(data[16:20], "big")
+            h = int.from_bytes(data[20:24], "big")
+            return (w, h) if w and h else None
+        return None
+
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        if len(data) >= 10:
+            w = int.from_bytes(data[6:8], "little")
+            h = int.from_bytes(data[8:10], "little")
+            return (w, h) if w and h else None
+        return None
+
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        chunk = data[12:16]
+        if chunk == b"VP8 " and len(data) >= 30:
+            # 有损：帧头 3 字节起始码 + 2 字节宽 + 2 字节高（各 14 位有效，高 2 位是缩放标志）
+            w = int.from_bytes(data[26:28], "little") & 0x3FFF
+            h = int.from_bytes(data[28:30], "little") & 0x3FFF
+            return (w, h) if w and h else None
+        if chunk == b"VP8L" and len(data) >= 25:
+            bits = int.from_bytes(data[21:25], "little")
+            return ((bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1)
+        if chunk == b"VP8X" and len(data) >= 30:
+            w = int.from_bytes(data[24:27], "little") + 1
+            h = int.from_bytes(data[27:30], "little") + 1
+            return (w, h)
+        return None
+
+    if data[:2] == b"\xff\xd8":
+        i, n = 2, len(data)
+        while i + 9 < n:
+            if data[i] != 0xFF:
+                i += 1
+                continue
+            marker = data[i + 1]
+            if marker in (0x01,) or 0xD0 <= marker <= 0xD9:
+                i += 2
+                continue
+            seg = int.from_bytes(data[i + 2:i + 4], "big")
+            if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                h = int.from_bytes(data[i + 5:i + 7], "big")
+                w = int.from_bytes(data[i + 7:i + 9], "big")
+                return (w, h) if w and h else None
+            i += 2 + seg if seg >= 2 else 2
+        return None
+
+    return None
+
+
 # ------------------------------------------------------------------ 视频分辨率预设
 # 视频模型（MiniMax H3 等）用「画质档位 × 宽高比」描述分辨率。这里把用户友好的
 # 预设键换算成具体 width/height。**所有维度必须是 32 的倍数**：隐空间 16 倍下采样后

@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.29.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.30.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -180,7 +180,7 @@ MCP 客户端配置（`mcp.json`）：
 | `prompt` | string | 正向提示词（必填） |
 | `model` | string? | 模型名/别名；空用默认；**视频模型会自动路由到视频链路** |
 | `n` | int | 张数，1–`MAX_N`（默认 1） |
-| `size` | string? | `"1024x1024"` / `"auto"` / 空=模型默认 |
+| `size` | string? | `"1024x1024"` / `"auto"` / 空=模型默认。**空即落模型默认值，回执里的 `size` 会如实报出它** —— 别把默认值当成自己传的尺寸 |
 | `style` | string? | `vivid|natural`（在 models.yaml 的 `style_presets` 里映射为提示词后缀） |
 | `response_format` | enum? | `url`（**默认**，图像与视频一致；局域网内直接给可打开的地址）/ `b64_json`（内联字节）/ `file` / `path` |
 | `negative_prompt` | string? | 反向提示词。**只在 `cfg > 1` 时参与计算**：`cfg = 1` 时 ComfyUI 走 cfg1 优化、整条负向分支根本不执行 —— 传了不报错也不生效。实测同一张图（同 seed 同 prompt）只改负向：`cfg=1` ⇒ MAE `0.0000`，`cfg=4` ⇒ `23.5`（阳性对照）。模板默认 `cfg=1` 的模型（如 `qwen-image-2.1`）要负向起作用就得抬 `cfg`。自动负向分流（`AUTO_SPLIT_NEGATIVE`）同理 |
@@ -201,13 +201,20 @@ MCP 客户端配置（`mcp.json`）：
   "data": [ { "url": "http://host:8188/v1/images/files/xxxx.png", "revised_prompt": null } ],
   "seed": 123456789,
   "usage": null,
-  "task_id": "1700000000-a1b2c3"
+  "task_id": "1700000000-a1b2c3",
+  "size": "1376x768"
 }
 ```
 
 > **同步回执也带 `task_id`**：同步链路同样在网关任务表留一条记录，把它交给
 > `POST /roundabout/view/board/items` 的 `task_id` 来源即可钉卡，不必自己拼产物地址。
 > 任务表记录 6 小时后过期（见 §错误处理）。
+
+> **同步回执也带 `size`，而且它是实测值**：图像档读产物字节头（PNG/JPEG/GIF/WebP，产物本就
+> 在内存里，零额外 IO），视频档由工作流内的 `RoundaboutSizeProbe` 节点在解码后把实测宽高随
+> `/history` 报回；两者都取不到才回落到「画布 × `scale`」的换算。**报的是实际落盘的像素尺寸，
+> 不是请求参数的回读** —— 于是两种静默情况都能在回执里当场看出来：漏传 `size`（落模型默认）
+> 与编辑档 `size` 本就不生效（输出跟随参考图）。
 
 #### `POST /v1/images/edits`
 
@@ -280,7 +287,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 > **外部来源的参考素材会被复制进 ComfyUI 的 `input/`**：`http(s)` / `dataURL` / `base64`，以及**不在 `input/` 目录下**的本地路径（含 `output/`、`temp/`）都要先转存；命名形如 `{请求id}_ref{img|vid|aud}_{槽位序号}.{ext}`（如 `18ae9470d11a-0_refvid_0.mp4`，其中 `18ae9470d11a-0` 是 `请求id-批次号`）。**已经在 `input/` 内的文件免转存、沿用原名**。输入图与 mask 同理，命名为 `{请求id}_src.{ext}` / `{请求id}_mask.{ext}`。这些副本会留在 `input/` 里，需要时自行清理。
 
-**同步响应**（200）：`{ "created", "data":[{ "url" }], "seed", "references":[...], "size":"2528x1440" }`（`size` = 实际输出尺寸；lift 档为 latent × scale 的精确换算）。
+**同步响应**（200）：`{ "created", "data":[{ "url" }], "seed", "references":[...], "size":"2528x1440" }`（`size` = 实际输出尺寸，取证口径见上文图像响应里的说明 —— 工作流内尺寸探针实测，探针缺失才回落 latent × scale 换算）。
 
 **异步响应**（200）：
 
@@ -411,7 +418,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 ## 6. 响应模型（schemas）
 
-- **ImageResponse / VideoResponse**：`created`(int) + `data`(list, 每项 `url`/`b64_json`/`path`/`revised_prompt`) + `seed`(int|int[]|null) + `usage`(null) + `task_id`(同步链路在任务表的 id，供钉卡反查) + `references`(视频参考图回显) + `size`(实际输出尺寸 "WxH")。
+- **ImageResponse / VideoResponse**：`created`(int) + `data`(list, 每项 `url`/`b64_json`/`path`/`revised_prompt`) + `seed`(int|int[]|null) + `usage`(null) + `task_id`(同步链路在任务表的 id，供钉卡反查) + `references`(视频参考图回显) + `size`(实际输出尺寸 "WxH"；**实测** —— 图像读产物字节头、视频由工作流内的尺寸探针自报，都不是请求参数的回读)。
 - **异步 task 对象**：`id` / `object:"image_generation.task"` / `status` / `created_at` / `model` / (`output`|`error`) / `size`（仅 `completed` 且该次生成有尺寸回显时出现，取值同同步响应的 `size`）。
 - **错误**：`{ "error": { "message": "...", "code": "...", "param": "..." } }`，HTTP 状态对应 4xx/5xx（如 `400` 参数错误、`404` task_not_found、`422` 配置校验失败、`500` 内部错误）。
 - **权重缺失会被改写成下载指引**：ComfyUI 的 combo 校验拒掉提交时（`value_not_in_list`，报错形态 `Value not in list (unet_name: 'x.safetensors' not in [...])`），网关把该 400 的 `message` 补成「文件名 + 目标目录 + `curl` 命令」。数据来自仓库根的 `weights.yaml`；索引里没有的文件（如 `LoadImage` 的输入图）**保持原报错不变**，不会给出错的下载地址。

@@ -12,13 +12,14 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any
 
-from .comfy_client import ComfyClient, collect_images
+from .comfy_client import ComfyClient, collect_images, reported_size
 from .config import settings
 from .errors import APIError
 from .params import (
     _asset_ext,
     apply_presets,
     ext_and_mime,
+    image_dimensions,
     load_image_input,
     mime_for_ext,
     parse_size,
@@ -198,6 +199,56 @@ def _input_abs_path(filename: str, subfolder: str) -> str | None:
     return str((path / filename).resolve())
 
 
+def response_size(
+    rendered: list[RenderedImage],
+    values: dict[str, Any],
+    reported: str | None = None,
+) -> str | None:
+    """同步回执里的 `size`：**实际落盘**的 "WxH"。
+
+    三条取证路径，全是实测，没有一条是「把请求参数读回来」（那会在两类档位上撒谎：漏传
+    `size` 时读到的是模型 defaults；有参考素材的合并档 latent 跟随参考图、根本不看
+    width/height —— 见 `params.image_dimensions` 的注释）：
+
+      1. `reported` —— 工作流里 RoundaboutSizeProbe 自报的尺寸（接在 VAEDecode 后，
+         随 /history 一起回来）。装了它的档位走这条，视频六支即是；
+      2. 产物字节头（`image_dimensions`）—— 图像档产物字节本就在内存里，读头零成本，
+         所以图像档不必为此改工作流；
+      3. 画布 width/height —— 前两条都取不到（自定义输出节点吐非图片字节等罕见情况）
+         才退回「组装时打算用的尺寸」。
+
+    三者皆无则返回 None —— 不编造一个尺寸出来。
+
+    抽成纯函数是为了让回归测试能直接打这条真实路径（同 `build_video_values` 的理由）。
+    """
+    if reported:
+        return reported
+    for img in rendered:
+        dims = image_dimensions(img.data)
+        if dims:
+            return f"{dims[0]}x{dims[1]}"
+    w, h = values.get("width"), values.get("height")
+    if w and h:
+        return f"{int(w)}x{int(h)}"
+    return None
+
+
+def estimated_video_size(values: dict[str, Any]) -> str | None:
+    """视频尺寸的**换算**值：lift 档 = latent(画布/16) × scale 取整后再 ×16；其余 = 画布。
+
+    只作回落用 —— 工作流装了 RoundaboutSizeProbe 时以它实测自报的值为准（见 `response_size`）。
+    保留换算是因为工作流模板有可能没带 probe（旧模板 / 手工改过的图），那时至少还有个
+    合理值，而不是干脆不报。
+    """
+    w, h = values.get("width"), values.get("height")
+    if not w or not h:
+        return None
+    eff_scale = values.get("scale") or 1.0
+    out_w = int(round(w // 16 * eff_scale)) * 16
+    out_h = int(round(h // 16 * eff_scale)) * 16
+    return f"{out_w}x{out_h}"
+
+
 async def generate(
     req: ImageGenerationRequest,
     client: ComfyClient,
@@ -352,19 +403,20 @@ async def generate(
     t0 = time.monotonic()
     rendered: list[RenderedImage] = []
     used_seeds: list[int] = []  # 捕获每次实际解析后的种子，用于响应回显
+    reported: str | None = None  # 工作流自报的实测尺寸（probe 节点）；模板没装则保持 None
 
     if spec.supports_batch and n > 1:
         values["batch_size"] = n
         values["seed"] = resolve_seed(req.seed)
         used_seeds.append(values["seed"])
-        rendered, _ = await _run_once(spec, values, req.workflow_overrides, client, timeout, request_id, req_refs=req)
+        rendered, _, reported = await _run_once(spec, values, req.workflow_overrides, client, timeout, request_id, req_refs=req)
     else:
         if spec.supports_batch:
             values["batch_size"] = 1
         for i in range(n):
             values["seed"] = resolve_seed(req.seed, i)
             used_seeds.append(values["seed"])
-            rendered_part, _ = await _run_once(spec, values, req.workflow_overrides, client, timeout, f"{request_id}-{i}", req_refs=req)
+            rendered_part, _, reported = await _run_once(spec, values, req.workflow_overrides, client, timeout, f"{request_id}-{i}", req_refs=req)
             rendered += rendered_part
 
     if not rendered:
@@ -407,7 +459,8 @@ async def generate(
             data.append({"b64_json": base64.b64encode(img.data).decode("ascii")})
 
     seed_field: int | list[int] | None = used_seeds[0] if len(used_seeds) == 1 else used_seeds
-    return ImageResponse(created=int(time.time()), data=data, seed=seed_field)  # type: ignore[arg-type]
+    return ImageResponse(created=int(time.time()), data=data, seed=seed_field,
+                         size=response_size(rendered, values, reported))  # type: ignore[arg-type]
 
 
 def build_video_values(
@@ -626,12 +679,13 @@ async def generate_video(
     rendered: list[RenderedImage] = []
     all_refs: list[dict[str, Any]] = []  # 跨 batch 累积的 image 类参考素材描述符（用于响应回显）
     used_seeds: list[int] = []  # 捕获每次实际解析后的种子，用于响应回显
+    reported: str | None = None  # 工作流自报的实测尺寸（probe 节点）；模板没装则保持 None
 
     if spec.supports_batch and n > 1:
         values["batch_size"] = n
         values["seed"] = resolve_seed(req.seed)
         used_seeds.append(values["seed"])
-        rendered_part, ref_descriptors = await _run_once(spec, values, req.workflow_overrides, client, timeout, request_id, req_refs=req, on_submit=on_submit)
+        rendered_part, ref_descriptors, reported = await _run_once(spec, values, req.workflow_overrides, client, timeout, request_id, req_refs=req, on_submit=on_submit)
         rendered += rendered_part
         all_refs += ref_descriptors
     else:
@@ -640,7 +694,7 @@ async def generate_video(
         for i in range(n):
             values["seed"] = resolve_seed(req.seed, i)
             used_seeds.append(values["seed"])
-            rendered_part, ref_descriptors = await _run_once(spec, values, req.workflow_overrides, client, timeout, f"{request_id}-{i}", req_refs=req, on_submit=on_submit)
+            rendered_part, ref_descriptors, reported = await _run_once(spec, values, req.workflow_overrides, client, timeout, f"{request_id}-{i}", req_refs=req, on_submit=on_submit)
             rendered += rendered_part
             all_refs += ref_descriptors
 
@@ -682,12 +736,9 @@ async def generate_video(
 
     references = _build_reference_echo(all_refs, response_format)
     seed_field: int | list[int] | None = used_seeds[0] if len(used_seeds) == 1 else used_seeds
-    # 实际输出尺寸回显：lift 档 = latent(画布/16) × scale 取整后再 ×16；其余 = 画布本身。
-    eff_scale = values.get("scale") or 1.0
-    out_w = int(round(values["width"] // 16 * eff_scale)) * 16
-    out_h = int(round(values["height"] // 16 * eff_scale)) * 16
+    # 实际输出尺寸：优先用工作流自报的实测值（probe 节点），没有才回落「画布 × scale」换算。
     return VideoResponse(created=int(time.time()), data=data, seed=seed_field, references=references,
-                         size=f"{out_w}x{out_h}")  # type: ignore[arg-type]
+                         size=reported or estimated_video_size(values))  # type: ignore[arg-type]
 
 
 async def _run_once(
@@ -699,7 +750,7 @@ async def _run_once(
     trace: str,
     req_refs: ImageGenerationRequest | VideoGenerationRequest | None = None,
     on_submit: Any | None = None,
-) -> tuple[list[RenderedImage], list[dict[str, Any]]]:
+) -> tuple[list[RenderedImage], list[dict[str, Any]], str | None]:
     workflow = build_workflow(spec, values, overrides)
     ref_descriptors: list[dict[str, Any]] = []
     # 参考资源（图像档的多图编辑与视频档一样走这套）：先接入实际提供的参考素材，
@@ -731,7 +782,9 @@ async def _run_once(
             raw = await client.fetch_image(ref)
             ext, mime = ext_and_mime(ref.get("filename"), raw)
             out.append(RenderedImage(data=raw, ext=ext, mime=mime, ref=ref))
-        return out, ref_descriptors
+        # 工作流自报的实测尺寸（模板没装 probe 时为 None）：随 history 一起拿到，
+        # 不额外读写产物文件
+        return out, ref_descriptors, reported_size(entry, workflow)
 
 
 def _validate_n(n: int) -> int:

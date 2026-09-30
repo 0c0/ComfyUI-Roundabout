@@ -337,5 +337,17 @@
       "width": 1344,
       "height": 768
     }
+  },
+  "950": {
+    "inputs": {
+      "images": [
+        "105:10",
+        0
+      ]
+    },
+    "class_type": "RoundaboutSizeProbe",
+    "_meta": {
+      "title": "尺寸探针（Roundabout）"
+    }
   }
 }

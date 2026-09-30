@@ -502,5 +502,17 @@
     "_meta": {
       "title": "FFN 分块"
     }
+  },
+  "950": {
+    "inputs": {
+      "images": [
+        "105:10",
+        0
+      ]
+    },
+    "class_type": "RoundaboutSizeProbe",
+    "_meta": {
+      "title": "尺寸探针（Roundabout）"
+    }
   }
 }

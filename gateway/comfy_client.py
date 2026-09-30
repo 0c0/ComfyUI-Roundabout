@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from typing import Any
@@ -270,6 +271,10 @@ def collect_images(entry: dict[str, Any], output_node: str | None = None) -> lis
     outputs: dict[str, Any] = entry.get("outputs") or {}
     refs: list[dict[str, Any]] = []
     nodes = [output_node] if output_node and output_node in outputs else list(outputs.keys())
+    # 只数**真的产出媒体**的节点：「多节点 ⇒ 忽略 temp 预览图」这条判据的口径是「本次有多个
+    # 产物节点」，而装饰性输出节点（RoundaboutSizeProbe 只报尺寸、不带 images/gifs）不该把它
+    # 顶起来 —— 否则正常产物会被误判成预览图跳过。
+    nodes = [n for n in nodes if any((outputs.get(n) or {}).get(k) for k in ("images", "gifs"))]
     for node_id in nodes:
         node_out = outputs.get(node_id) or {}
         for key in ("images", "gifs"):
@@ -278,6 +283,45 @@ def collect_images(entry: dict[str, Any], output_node: str | None = None) -> lis
                     continue  # 多节点时忽略预览图，只要正式产物
                 refs.append(item)
     return refs
+
+
+# ------------------------------------------------------------------ 实测尺寸
+# 同步回执的 `size` 必须报**实际生效**的尺寸。取证手段有两套，都不产生额外磁盘 IO：
+#   · 图像档 —— 产物字节本就在内存里，读 PNG/JPEG 头即可（gateway.params.image_dimensions）；
+#   · 视频档 —— 产物是 mp4，读尺寸要先落盘再解析 moov box（二次 IO + 解析器），不值当，
+#     改由工作流里的 RoundaboutSizeProbe 节点在解码后、编码前把实测宽高随 /history 报回来。
+PROBE_CLASS = "RoundaboutSizeProbe"
+_SIZE_FORM = re.compile(r"^\d{2,5}x\d{2,5}$")
+
+
+def probe_node_id(workflow: dict[str, Any]) -> str | None:
+    """找出工作流里 RoundaboutSizeProbe 节点的 id；模板没装则 None。
+
+    按**类名**发现而不是写死节点号：模板作者可以随意安排 id（H3 六支视频档放在 950，
+    那只是模板的约定，不是这里的契约）。
+    """
+    for nid, node in (workflow or {}).items():
+        if isinstance(node, dict) and node.get("class_type") == PROBE_CLASS:
+            return str(nid)
+    return None
+
+
+def reported_size(entry: dict[str, Any], workflow: dict[str, Any]) -> str | None:
+    """读 probe 节点随 /history 回来的实测尺寸 "WxH"；没有该节点 / 没跑到就 None。
+
+    probe 返回 `{"ui": {"size": ["1376x768"]}}`，ComfyUI 原样收进 history 的
+    `outputs[node_id]["size"]`。字符串与单元素列表两种形态都认；形态不符（没报 / 报了
+    别的东西）一律当「没报」，交回调用方回落换算值 —— 宁可少报，也不虚构一个尺寸。
+    """
+    nid = probe_node_id(workflow)
+    if not nid:
+        return None
+    raw = ((entry.get("outputs") or {}).get(nid) or {}).get("size")
+    if isinstance(raw, (list, tuple)):
+        raw = raw[0] if raw else None
+    if isinstance(raw, str) and _SIZE_FORM.match(raw.strip()):
+        return raw.strip()
+    return None
 
 
 def _missing_weight_name(err: dict[str, Any]) -> str | None:

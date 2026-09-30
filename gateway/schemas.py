@@ -85,6 +85,11 @@ class ImageResponse(BaseModel):
     # 只传 `task_id` 让后端自己反查产物，不必由调用方拼地址。异步链路同 id 见
     # GET /v1/videos/tasks/{id}（那边回执的顶层字段名叫 `id`）。
     task_id: str | None = None
+    # 实际输出尺寸 "WxH"，取自产物字节本身（见 params.image_dimensions）——不是请求参数的
+    # 回读。差别在两类档位上会显形：请求漏传 `size` 时它会如实报出模型默认（如 1024x1024），
+    # 而不是沉默接受；有参考素材的合并档（Qwen 2.1）latent 跟随参考图，它也报真正落盘的那份。
+    # 回显口径与 VideoResponse.size 一致，但那边是 latent × scale 的换算值（产物是 mp4，读不了头）。
+    size: str | None = None
 
 
 # ============================================================================
