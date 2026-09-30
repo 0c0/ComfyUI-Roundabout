@@ -1,8 +1,8 @@
 {
   "_comment": "生成物（tools/release.py gen-manifest）：skill 版本源自各 SKILL.md frontmatter，手改本文件无效、会被下次生成覆盖。gateway/skills.py 运行期读取本文件。",
-  "generated_at": "2026-09-30T03:22:48Z",
+  "generated_at": "2026-09-30T03:29:35Z",
   "skills": {
-    "roundabout": "1.12.0",
+    "roundabout": "1.12.1",
     "h3-playbook": "2.0.0",
     "qwen-image-prompt-writing": "1.3.0"
   }
