@@ -57,7 +57,11 @@ class TaskStore:
             task.status = "processing"
 
     def attach_prompt(self, task_id: str, prompt_id: str, workflow: dict[str, Any] | None) -> None:
-        """提交成功后回填 ComfyUI prompt_id 与工作流快照（失败任务也能弹窗查看 workflow）。"""
+        """提交成功后回填 ComfyUI prompt_id 与工作流快照（失败任务也能弹窗查看 workflow）。
+
+        `n>1` 的图片请求会串行提交多次，此时后到覆盖先到——留下一份代表性快照即可，
+        是否中途失败也不影响：提交成功过就留痕。
+        """
         task = self._tasks.get(task_id)
         if task is not None:
             task.prompt_id = prompt_id

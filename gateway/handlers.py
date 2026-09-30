@@ -128,7 +128,14 @@ async def generate_tracked(
     task_id, request_id = _new_task(req.model)
     try:
         result = await generate(
-            req, comfy, request_id=request_id, image_inputs=image_inputs, mask_input=mask_input
+            req,
+            comfy,
+            request_id=request_id,
+            image_inputs=image_inputs,
+            mask_input=mask_input,
+            # 提交成功即回填：产物能用 task_id 反查提交图（此前同步任务在任务表里
+            # 既无 prompt_id 也无快照，get_workflow 的第三层永远查不到）。
+            on_submit=lambda pid, wf: task_store.attach_prompt(task_id, pid, wf),
         )
     except Exception as exc:  # noqa: BLE001
         _record_failure(task_id, exc)
@@ -144,7 +151,12 @@ async def generate_video_tracked(req: VideoGenerationRequest):
     """同步生视频，同时在任务表留一条记录（异步链路自带记录，见 _run_video_task）。"""
     task_id, request_id = _new_task(req.model)
     try:
-        result = await generate_video(req, comfy, request_id=request_id)
+        result = await generate_video(
+            req,
+            comfy,
+            request_id=request_id,
+            on_submit=lambda pid, wf: task_store.attach_prompt(task_id, pid, wf),
+        )
     except Exception as exc:  # noqa: BLE001
         _record_failure(task_id, exc)
         raise

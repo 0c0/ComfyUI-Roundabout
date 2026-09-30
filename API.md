@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.30.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.31.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -209,6 +209,10 @@ MCP 客户端配置（`mcp.json`）：
 > **同步回执也带 `task_id`**：同步链路同样在网关任务表留一条记录，把它交给
 > `POST /roundabout/view/board/items` 的 `task_id` 来源即可钉卡，不必自己拼产物地址。
 > 任务表记录 6 小时后过期（见 §错误处理）。
+>
+> 那条记录里同时留有提交时的 `prompt_id` 与**工作流快照**（与异步任务同等待遇），所以
+> `GET /roundabout/admin/queue/workflow/{task_id}` / MCP 的 `get_workflow(task_id)` 能直接
+> 取回本次提交图 —— 这是网关自己的账本，**不依赖 ComfyUI 的 history 还在不在**。
 
 > **同步回执也带 `size`，而且它是实测值**：图像档读产物字节头（PNG/JPEG/GIF/WebP，产物本就
 > 在内存里，零额外 IO），视频档由工作流内的 `RoundaboutSizeProbe` 节点在解码后把实测宽高随
@@ -386,7 +390,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 |---|---|
 | `GET /roundabout/admin/state` | 配置状态（模型文件/目录/model 列表） |
 | `GET /roundabout/admin/queue` | **队列监控合并视图**：ComfyUI running/pending + 网关 tasks，**每个条目含 `seed`** |
-| `GET /roundabout/admin/queue/workflow/{prompt_id}` | 三层查找工作流 JSON：队列 → history → 任务快照 |
+| `GET /roundabout/admin/queue/workflow/{prompt_id}` | 三层查找工作流 JSON：队列 → history → 任务快照。第三层是网关自己的账本，**同步与异步任务的 `task_id` 都能命中**（ComfyUI history 被清也查得到） |
 | `GET /roundabout/admin/weights` | **权重体检**：内置工作流引用的权重里当前缺哪些，每条的下载命令与目标目录（`?unreferenced=1` 附带当前无工作流引用的条目，`?mirror=modelscope` 换下载源） |
 | `GET /roundabout/admin/tool-info` | **调用结构自描述**：逐模型的字段生效性（类型 / 区间 / 枚举 / 默认值 / 是否生效 + 不生效原因）、参考槽数量、别名、生效默认值，加全局限制（张数上限、尺寸档位表、种子上限）。`?view=compact` 取裁剪版，`&model=<名>` 限定单模型，`&fields=0` 省掉字段清单 |
 | `GET /roundabout/admin/workflows` | 列出工作流文件（含校验状态、被哪些模型引用） |
@@ -450,7 +454,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `get_task` | 查询异步任务状态与产物（含 `prompt_id`、是否有工作流快照、`output`、`error`）；同步回执里的 `task_id` 同样能查 |
 | `cancel_task` | 取消任务：`task_id` 非空取消指定任务（pending 移出队列 / running 中断）；**空则中断 ComfyUI 当前执行任务** |
 | `queue_status` | 队列监控：ComfyUI running/pending + 网关 tasks（与 REST `/roundabout/admin/queue` 同源） |
-| `get_workflow` | 三层查找工作流 JSON：队列 → history → 任务快照 |
+| `get_workflow` | 三层查找工作流 JSON：队列 → history → 任务快照。入参可传 ComfyUI `prompt_id`，**也可传网关 `task_id`**（同步回执里的那个 / 异步任务的 id），此时直接命中第三层快照 |
 | `reload` | 热加载 `models.yaml` |
 | `health` | 网关与 ComfyUI 后端健康状态 |
 | `get_view_url` | 返回可视化页面地址（`{url}`，浏览器直接打开）：浏览 input/output 资源 + 实时任务进度。用户问「生成的东西在哪看」「给我查看页面」时调用，把 `url` 原样给用户 |

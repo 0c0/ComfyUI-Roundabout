@@ -583,7 +583,10 @@ async def queue_status() -> dict[str, Any]:
     name="get_workflow",
     description=(
         "三层查找任务的工作流 JSON：ComfyUI 队列 → history → 网关任务快照。"
-        "prompt_id 三层都查不到时回 `{ok:false, code:\"prompt_not_in_queue\"}`。"
+        "入参可传 ComfyUI prompt_id（查队列/history），也可传网关 task_id"
+        "（同步回执里的 task_id、异步任务的 id）——后者直接命中本网关留下的提交快照，"
+        "不依赖 ComfyUI history 是否还在。"
+        "三层都查不到时回 `{ok:false, code:\"prompt_not_in_queue\"}`。"
     ),
 )
 async def get_workflow(prompt_id: str) -> dict[str, Any]:

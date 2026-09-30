@@ -256,7 +256,13 @@ async def generate(
     request_id: str,
     image_inputs: list[bytes] | None = None,
     mask_input: bytes | None = None,
+    on_submit: Any | None = None,
 ) -> ImageResponse:
+    """图片生成。
+
+    ``on_submit(prompt_id, workflow)`` 在提交给 ComfyUI 成功后调用，供任务表回填
+    prompt_id 与工作流快照（与 generate_video 同契约；`n>1` 串行多次提交时后到覆盖先到）。
+    """
     spec = registry.resolve(req.model)
     # 视频模型不应走图片链路（图片请求没有 reference_images 等字段，会触发 AttributeError）。
     # 正常由 handlers.images_generations 在入口处自动路由到视频链路；此处仅作兜底防御。
@@ -409,14 +415,14 @@ async def generate(
         values["batch_size"] = n
         values["seed"] = resolve_seed(req.seed)
         used_seeds.append(values["seed"])
-        rendered, _, reported = await _run_once(spec, values, req.workflow_overrides, client, timeout, request_id, req_refs=req)
+        rendered, _, reported = await _run_once(spec, values, req.workflow_overrides, client, timeout, request_id, req_refs=req, on_submit=on_submit)
     else:
         if spec.supports_batch:
             values["batch_size"] = 1
         for i in range(n):
             values["seed"] = resolve_seed(req.seed, i)
             used_seeds.append(values["seed"])
-            rendered_part, _, reported = await _run_once(spec, values, req.workflow_overrides, client, timeout, f"{request_id}-{i}", req_refs=req)
+            rendered_part, _, reported = await _run_once(spec, values, req.workflow_overrides, client, timeout, f"{request_id}-{i}", req_refs=req, on_submit=on_submit)
             rendered += rendered_part
 
     if not rendered:
