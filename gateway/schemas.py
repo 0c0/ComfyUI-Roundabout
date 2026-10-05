@@ -121,6 +121,12 @@ class VideoGenerationRequest(BaseModel):
     fps: int | None = Field(None, description="帧率")
     num_frames: int | None = Field(None, description="总帧数（部分工作流用帧数而非时长）")
 
+    # ---- Turbo 蒸馏 LoRA 开关（v1.32.0；仅 minimax-h3 / minimax-h3-edit 有绑定）----
+    turbo_lora: float | None = Field(
+        None,
+        description="Turbo LoRA 强度：0=关（默认，零开销）；1.0=8 步蒸馏 Turbo，需配 steps≈8",
+    )
+
     # ---- 注意力档位（仅 base 四支 H3 视频档；FastH3 恒稀疏、无档位）----
     # sol-attn 稀疏更快、显存更省；画质与致密高度一致，差异只在高频细节。
     # dense 档把 BlockSparseAttention.start_percent 顶到 1.0（percent_to_sigma(1.0)=0

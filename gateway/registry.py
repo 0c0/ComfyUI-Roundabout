@@ -48,6 +48,8 @@ KNOWN_PARAMS = {
     "num_frames",
     # ---- H3 Lift 放大倍率（仅 minimax-h3-lift 两支有绑定）----
     "scale",
+    # ---- H3 Turbo LoRA 强度（仅 minimax-h3 / minimax-h3-edit 有绑定；0=关）----
+    "turbo_lora",
     # ---- SeedVR2 图像放大（仅 utility-seedvr2-upscale 有绑定）----
     "multiplier",
     "color_correction",

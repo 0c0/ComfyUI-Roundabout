@@ -476,6 +476,10 @@ async def generate_video_tool(
     reference_videos: list[str] | None = None,
     reference_audios: list[str] | None = None,
     steps: int | None = None,
+    turbo_lora: float | None = Field(
+        None,
+        description="Turbo LoRA 强度开关（仅 minimax-h3 / minimax-h3-edit）：0=关（默认）；1.0=8 步蒸馏 Turbo，需配 steps≈8。",
+    ),
     output_size: str = Field(
         "",
         description="期望输出尺寸（仅 minimax-h3-lift / -lift-edit，如 \"1440p-16:9\"）：网关反推放大倍率，与 scale 互斥；其它模型传了报 400。",
@@ -504,6 +508,7 @@ async def generate_video_tool(
         reference_videos=reference_videos,
         reference_audios=reference_audios,
         steps=steps,
+        turbo_lora=turbo_lora,
         output_size=output_size or None,
         scale=scale,
         background=background or None,

@@ -470,7 +470,7 @@ models:
   #     含点号、路径按 `.` 切分无法寻址 ⇒ 调它们只能改工作流 JSON + `/admin/reload`。
   minimax-h3:
     workflow: video_minimax_h3.json
-    description: MiniMax H3 (FL2VA) —— 生成档：文生视频 / 首尾帧 / 参考图（留在本档，不换档）/ 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-edit（09-25 实测 FL2VA 不迁移音色/动作，参考内容只有 Ref2VA 消费），20 步，低显存分块按档位自适应
+    description: MiniMax H3 (FL2VA) —— 生成档：文生视频 / 首尾帧 / 参考图（留在本档，不换档）/ 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-edit（09-25 实测 FL2VA 不迁移音色/动作，参考内容只有 Ref2VA 消费），20 步，低显存分块按档位自适应；Turbo 快档：`turbo_lora` 强度（0=关默认，1.0=8 步蒸馏，配 steps≈8）
     mode: video
     capabilities:
     - text-to-video
@@ -511,6 +511,7 @@ models:
       denoise: 1
       duration: 5
       fps: 24
+      turbo_lora: 0
 
     bindings:
       filename_prefix: 92.inputs.filename_prefix
@@ -527,13 +528,14 @@ models:
       chunks: 158.inputs.chunks
       seq_threshold: 158.inputs.seq_threshold
       sparse_start_percent: '159.inputs.start_percent'
+      turbo_lora: '160.inputs.strength_model'
     aliases:
     - minimax_h3
     - minimaxh3
     - h3
   minimax-h3-edit:
     workflow: video_minimax_h3_edit.json
-    description: MiniMax H3 Edit (Ref2VA) —— 编辑档：参考视频编辑 / 动作·运镜迁移 / 音频复用 / 参考图，20 步，低显存分块按档位自适应
+    description: MiniMax H3 Edit (Ref2VA) —— 编辑档：参考视频编辑 / 动作·运镜迁移 / 音频复用 / 参考图，20 步，低显存分块按档位自适应；Turbo 快档：`turbo_lora` 强度（0=关默认，1.0=ref2v 8 步蒸馏，配 steps≈8）
     mode: video
     capabilities:
     - text-to-video
@@ -567,6 +569,7 @@ models:
       denoise: 1
       duration: 5
       fps: 24
+      turbo_lora: 0
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
@@ -582,6 +585,7 @@ models:
       chunks: 158.inputs.chunks
       seq_threshold: 158.inputs.seq_threshold
       sparse_start_percent: '159.inputs.start_percent'
+      turbo_lora: '160.inputs.strength_model'
     aliases:
     - minimax_h3_edit
     - minimaxh3edit

@@ -298,7 +298,7 @@
     "inputs": {
       "attention": "comfy kitchen attention",
       "model": [
-        "127",
+        "160",
         0
       ]
     },
@@ -410,6 +410,17 @@
     "class_type": "RoundaboutSizeProbe",
     "_meta": {
       "title": "尺寸探针（Roundabout）"
+    }
+  },
+  "160": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "lora_name": "minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors",
+      "strength_model": 0.0,
+      "model": [
+        "127",
+        0
+      ]
     }
   }
 }

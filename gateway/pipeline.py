@@ -507,6 +507,10 @@ def build_video_values(
             values[key] = explicit
         elif values.get(key) is None:
             values[key] = spec.defaults.get(key)
+    # H3 Turbo LoRA 开关（extra 字段：仅声明了绑定的档消费；未传 → 走 defaults 的 0=关）
+    turbo_val = getattr(req, "turbo_lora", None)
+    if turbo_val is not None:
+        values["turbo_lora"] = float(turbo_val)
     if values.get("width") is None:
         values["width"] = spec.defaults.get("width")
     if values.get("height") is None:

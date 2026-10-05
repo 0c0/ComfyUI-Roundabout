@@ -27,7 +27,7 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 
 ### 可绑定的参数名（白名单）
 
-`prompt` `negative_prompt` `width` `height` `seed` `steps` `cfg` `sampler_name` `scheduler` `denoise` `batch_size` `image` `mask` `filename_prefix` `duration` `fps` `num_frames` `mode` `chunks` `head_chunks` `seq_threshold` `highres_tiling` `sparse_start_percent` `use_custom_size`
+`prompt` `negative_prompt` `width` `height` `seed` `steps` `cfg` `sampler_name` `scheduler` `denoise` `batch_size` `image` `mask` `filename_prefix` `duration` `fps` `num_frames` `mode` `chunks` `head_chunks` `seq_threshold` `highres_tiling` `sparse_start_percent` `turbo_lora` `use_custom_size`
 
 **白名单以外的键会被静默忽略**（只在启动日志里留一条 warning）。厂商特有参数用 `workflow_overrides` 传，不要在 `bindings` 里造名字。
 
@@ -53,6 +53,7 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 | `duration` / `num_frames` | 你自己链路里的时长/帧数节点 |
 | `chunks` / `seq_threshold` | `MiniMaxChunkFeedForward.chunks` / `.seq_threshold`（KJNodes） |
 | `sparse_start_percent` | `BlockSparseAttention.start_percent`（稀疏起始点，`1.0` 因 `percent_to_sigma(1.0)=0` 等效全程关闭稀疏）。**对外的语义参数是 `attention: sparse\|dense`**，由 `params.resolve_attention` 翻译后落到这里；`attention` 只对 base 四支 H3 视频档有效（FastH3 两支恒定稀疏，传了报错） |
+| `turbo_lora` | `LoraLoaderModelOnly.strength_model`（节点 160，仅 minimax-h3 / minimax-h3-edit 有绑定）。0=关（默认，关时不注入开销）；1.0=8 步蒸馏 Turbo（h3 用 fl2v_turbo_8step_v1.0、h3-edit 用 ref2v_turbo_8step_v1.0_768p），**需配 `steps≈8`**；2026-10-05 实测 0.65@8 步端到端 -47%、画面干净、契合度不降 |
 | `head_chunks` | **当前无绑定**：唯一消费者 `MiniMaxLowVRAMAttention` 与 `BlockSparseAttention` 硬互斥，已从 6 支视频档撤除。参数名仍在可注入白名单里，把节点挂回去即可复用；档位表里的值不会注入任何工作流 |
 
 ### 写映射的三条铁律

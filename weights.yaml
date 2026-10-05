@@ -142,6 +142,16 @@ files:
     path: minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors
     size_gb: 3.93
     referenced: false
+  - file: minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors
+    dir: loras
+    repo: Comfy-Org/MiniMax-H3
+    path: loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors
+    size_gb: 1.82
+  - file: minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors
+    dir: loras
+    repo: lightx2v/Minimax-h3-Turbo
+    path: minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors
+    size_gb: 1.82
   - file: fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors
     dir: diffusion_models
     repo: Comfy-Org/FastVideo-FastH3
