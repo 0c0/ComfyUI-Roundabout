@@ -151,6 +151,40 @@ def check() -> None:
     ok = py == api
     print(f"  [{'PASS' if ok else 'FAIL'}] pyproject({py}) == API.md({api})")
     bad += 0 if ok else 1
+    # 4) skill 仓必须已推送 —— 防「manifest 报新版本、远端还是旧内容」（指纹撒谎，
+    #    2026-10-05 实际发生过：h3-playbook 2.1.2 本地改完没推，get_skills 报 2.1.2 而重装只拿到 2.0.0）
+    for entry in SKILLS:
+        if entry.get("source") != "roundabout":
+            continue
+        name = entry["name"]
+        path, _ = local_skill_version(name)
+        if path is None:
+            continue
+        repo = path.parent  # local_skill_version 返回 SKILL.md 文件路径，仓库目录是其父级
+        if not (repo / ".git").exists():
+            continue
+        dirty = subprocess.run(["git", "status", "--porcelain"], cwd=str(repo),
+                               capture_output=True, text=True).stdout.strip()
+        ok = not dirty
+        first = dirty.splitlines()[0] if dirty else ""
+        print(f"  [{'PASS' if ok else 'FAIL'}] {name} 工作树干净"
+              + ("" if ok else f"（未提交改动：{first} …）"))
+        bad += 0 if ok else 1
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo),
+                              capture_output=True, text=True).stdout.strip()
+        try:
+            subprocess.run(["git", "fetch", "-q", "origin"], cwd=str(repo),
+                           capture_output=True, timeout=60)
+            remote = subprocess.run(["git", "rev-parse", "@{upstream}"], cwd=str(repo),
+                                    capture_output=True, text=True).stdout.strip()
+        except subprocess.TimeoutExpired:
+            remote = ""
+        if head and remote:
+            ok = head == remote
+            print(f"  [{'PASS' if ok else 'FAIL'}] {name} 已推送（HEAD == origin/{remote[:7]}）")
+            bad += 0 if ok else 1
+        else:
+            print(f"  [SKIP] {name} 无远端上游或 fetch 失败（离线？）—— 远端一致性未验")
     print(f"\n {'ALL CHECKS PASSED' if not bad else str(bad) + ' CHECK(S) FAILED'}")
     sys.exit(1 if bad else 0)
 
