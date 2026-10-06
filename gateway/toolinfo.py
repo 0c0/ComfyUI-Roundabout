@@ -168,7 +168,7 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
             return False, "video-only"
         if spec.binds("sparse_start_percent"):
             return True, None
-        return False, "model is always sparse (no attention tier; FastH3 pairs vsa with its distilled weights)"
+        return False, "model has no attention tier (weights are always sparse if sparse at all)"
     if name == "scale":
         # 参数解析器按「模型是否声明 scale 绑定」判定，lift 两支正是唯一声明者。
         if spec.binds(name):

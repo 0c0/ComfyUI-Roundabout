@@ -52,7 +52,7 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 | `fps` | `CreateVideo.fps`、`VideoCombine.frame_rate` |
 | `duration` / `num_frames` | 你自己链路里的时长/帧数节点 |
 | `chunks` / `seq_threshold` | `MiniMaxChunkFeedForward.chunks` / `.seq_threshold`（KJNodes） |
-| `sparse_start_percent` | `BlockSparseAttention.start_percent`（稀疏起始点，`1.0` 因 `percent_to_sigma(1.0)=0` 等效全程关闭稀疏）。**对外的语义参数是 `attention: sparse\|dense`**，由 `params.resolve_attention` 翻译后落到这里；`attention` 只对 base 四支 H3 视频档有效（FastH3 两支恒定稀疏，传了报错） |
+| `sparse_start_percent` | `BlockSparseAttention.start_percent`（稀疏起始点，`1.0` 因 `percent_to_sigma(1.0)=0` 等效全程关闭稀疏）。**对外的语义参数是 `attention: sparse\|dense`**，由 `params.resolve_attention` 翻译后落到这里；`attention` 只对 base 四支 H3 视频档有效（其它模型传了报错） |
 | `turbo_lora` | `LoraLoaderModelOnly.strength_model`（节点 160，仅 minimax-h3 / minimax-h3-edit 有绑定）。0=关（默认，关时不注入开销）；1.0=8 步蒸馏 Turbo（h3 用 fl2v_turbo_8step_v1.0、h3-edit 用 ref2v_turbo_8step_v1.0_768p），**需配 `steps≈8`**；2026-10-05 实测 0.65@8 步端到端 -47%、画面干净、契合度不降 |
 | `head_chunks` | **当前无绑定**：唯一消费者 `MiniMaxLowVRAMAttention` 与 `BlockSparseAttention` 硬互斥，已从 6 支视频档撤除。参数名仍在可注入白名单里，把节点挂回去即可复用；档位表里的值不会注入任何工作流 |
 
@@ -230,14 +230,13 @@ curl -X POST http://127.0.0.1:8188/admin/reload
 - 键名列表与节点列表**必须等长** —— 数量不一致启动时直接报错，不会让多出来的槽悄悄回落到默认键名。
 - 不写 `*_keys` 时行为与以前完全一致（默认 `ref_images.ref_image_N`）。
 - 节点 id 含冒号（子图扁平化导出的 `105:200`）照抄，绑定路径按 `.` 切分，冒号不影响解析。
-- `fasth3` / `fasth3-edit` 就是这么接的：前者用 `image_keys` 接管首尾帧，后者仍走默认键名。
 - `minimax-h3` / `-lift` 是混合形态的实例：`image_keys` 前两位接管首尾帧，其余 6 槽走默认
   `ref_images.ref_image_N` 键名 —— `frame_params` 作为 images 槽的**前缀**声明，前 len(fp) 个槽
   由 `first_frame` / `last_frame` 供图，剩余槽收 `reference_images`（v1.17 统一节点拓扑）。
 
 ### 首尾帧的 cover 式裁剪缩放：`RoundaboutCoverResize`（fl2va 专属）
 
-fl2va 三支（`minimax-h3` / `-lift` / `fasth3`）的**首尾帧链**各串了一个本包自带的节点
+fl2va 两支（`minimax-h3` / `-lift`）的**首尾帧链**各串了一个本包自带的节点
 `RoundaboutCoverResize`（`nodes.py`，纯本地节点，不进 MCP / tool-info）：
 `LoadImage(137/139) → RoundaboutCoverResize(147/161) → MiniMaxH3ImageToVideo.first_frame/last_frame`。
 
@@ -259,8 +258,7 @@ fl2va 三支（`minimax-h3` / `-lift` / `fasth3`）的**首尾帧链**各串了�
   会连同 resize 节点一起删掉（loader → resize 的下游级联），纯文生提交不会悬空。
 - ⚠️ **keyframe 跟随度是模型侧行为（09-24 实测，与接线无关）**：cover 输出已验证正确
   （cover 探针整帧绿），但首帧是否真的跟随取决于模型与档位 —— base 系 8 步不跟随、
-  30 步完美跟随（lift 产物为证）；fasth3 768p 跟随、576p 失效。首帧严格跟随的调用口径：
-  base 系 ≥30 步、fasth3 ≥768p。
+  30 步完美跟随（lift 产物为证）。首帧严格跟随的调用口径：base 系 ≥30 步。
 
 ### 参考槽是「链式」而非聚合时：`slots`
 
@@ -319,12 +317,6 @@ models:
     bindings:
       chunks: 158.inputs.chunks              # base 四支同构：MiniMaxChunkFeedForward
       seq_threshold: 158.inputs.seq_threshold
-  fasth3:
-    vram_adaptive: true
-    bindings:
-      chunks: '105:221.inputs.chunks'        # FastH3 两支的分块节点在子图内
-      seq_threshold: '105:221.inputs.seq_threshold'
-      # head_chunks / highres_tiling 当前无节点可绑（见上方参数表）
 ```
 
 - **选档规则**：取 `min_gb` 不超过本机显存的最大一档；匹配留 0.6 GiB 容差（显卡报的可用量普遍略低于标称值，如 12G 卡报 12282 MiB = 11.99 GiB）。

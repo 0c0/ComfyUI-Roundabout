@@ -296,8 +296,7 @@ def resolve_output_scale(output_size: str, in_w: int, in_h: int, spec: ModelSpec
 #   sparse（默认）= 保留 BlockSparseAttention 模板默认起始点 0.2（8 步档吃头 2 步走致密）
 #   dense         = 把 start_percent 顶到 1.0
 # 只给 base 四支（minimax-h3 / -edit / -lift / -lift-edit）：它们跑的是 training-free 的
-# sol-attn，「关掉」就是换回本来会算的致密注意力。FastH3 两支不参与 —— 它的 `vsa` 与
-# 蒸馏权重配对训练，关掉不是「更高画质」而是脱离训练分布；该档只求快，恒定稀疏即最优。
+# sol-attn，「关掉」就是换回本来会算的致密注意力。
 #
 # 1.0 为什么等效「关闭稀疏」：apply_block_sparse_attention 把 start_percent 过
 # percent_to_sigma()，而所有 percent_to_sigma 实现里 `percent >= 1.0` 一律返回 0.0；

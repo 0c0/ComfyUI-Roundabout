@@ -127,7 +127,7 @@ class VideoGenerationRequest(BaseModel):
         description="Turbo LoRA 强度：0=关（默认，零开销）；1.0=8 步蒸馏 Turbo，需配 steps≈8",
     )
 
-    # ---- 注意力档位（仅 base 四支 H3 视频档；FastH3 恒稀疏、无档位）----
+    # ---- 注意力档位（仅 base 四支 H3 视频档）----
     # sol-attn 稀疏更快、显存更省；画质与致密高度一致，差异只在高频细节。
     # dense 档把 BlockSparseAttention.start_percent 顶到 1.0（percent_to_sigma(1.0)=0
     # ⇒ 每一步都判 dense）等效全程关闭稀疏 —— 换回致密画质，耗时回满。
@@ -137,8 +137,7 @@ class VideoGenerationRequest(BaseModel):
             "注意力档位：`sparse`（默认，块稀疏加速，更快、更省显存）/"
             "`dense`（关闭稀疏，画质优先，更慢、更吃显存）。不传则保持工作流模板默认（稀疏）。"
             "仅 base 四支 H3 视频档（minimax-h3 / -edit / -lift / -lift-edit）支持；"
-            "FastH3 两支恒定稀疏（其 vsa 与蒸馏权重配对训练，无 dense 对照，传了报 400），"
-            "其它模型传了同样报 400。"
+            "其它模型传了报 400。"
         ),
     )
     # ---- H3 Lift 确定性放大（minimax-h3-lift 两支）----
@@ -176,11 +175,11 @@ class VideoGenerationRequest(BaseModel):
     # 图生视频输入：base64 / dataURL / http(s) URL
     image: str | list[str] | None = Field(None, description="图生视频输入图")
 
-    # 首尾帧（minimax-h3 / -lift / fasth3）：帧会实际成为输出的第一/最后一帧，
+    # 首尾帧（minimax-h3 / -lift）：帧会实际成为输出的第一/最后一帧，
     # 网关按画布 size 做 cover 等比铺满 + 居中裁剪（纵横比不一致时裁边，不变形）。
     # 只在声明了 frame_params 的模型上生效，其余模型传了报 400。
-    first_frame: str | None = Field(None, description="首帧图（minimax-h3 / -lift / fasth3）：成为输出第 1 帧，按画布 cover 裁剪；支持 base64/http(s)/本地路径")
-    last_frame: str | None = Field(None, description="尾帧图（minimax-h3 / -lift / fasth3）：成为输出最后 1 帧，按画布 cover 裁剪；支持 base64/http(s)/本地路径")
+    first_frame: str | None = Field(None, description="首帧图（minimax-h3 / -lift）：成为输出第 1 帧，按画布 cover 裁剪；支持 base64/http(s)/本地路径")
+    last_frame: str | None = Field(None, description="尾帧图（minimax-h3 / -lift）：成为输出最后 1 帧，按画布 cover 裁剪；支持 base64/http(s)/本地路径")
 
     # 参考资源（OpenAI 风格扩展字段）：每项可为 dataURL / base64 / http(s) URL / 本地路径。
     # 本地路径支持「绝对路径」或「相对 ComfyUI input 目录的相对路径」（匹配原生 loader 约定）；

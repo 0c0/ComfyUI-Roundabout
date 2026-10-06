@@ -297,7 +297,7 @@ _SIZE_FORM = re.compile(r"^\d{2,5}x\d{2,5}$")
 def probe_node_id(workflow: dict[str, Any]) -> str | None:
     """找出工作流里 RoundaboutSizeProbe 节点的 id；模板没装则 None。
 
-    按**类名**发现而不是写死节点号：模板作者可以随意安排 id（H3 六支视频档放在 950，
+    按**类名**发现而不是写死节点号：模板作者可以随意安排 id（H3 视频档放在 950，
     那只是模板的约定，不是这里的契约）。
     """
     for nid, node in (workflow or {}).items():

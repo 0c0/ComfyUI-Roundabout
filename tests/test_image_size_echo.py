@@ -10,7 +10,7 @@
       2. 三条取证路径的**优先级**：工作流自报 > 产物字节 > 画布参数，且都没有时不编造；
       3. 结构护栏：ImageResponse/VideoResponse 的**每一处构造**都带 `size=`，且 _run_once
          把工作流自报值带回调用方 —— 「字段加了但没接上」正是这次事故的形态；
-      4. 视频六支模板都真的插了 RoundaboutSizeProbe 并接在 VAEDecode 上（自报值的来源）。
+      4. 视频四支模板都真的插了 RoundaboutSizeProbe 并接在 VAEDecode 上（自报值的来源）。
 
 不碰正在运行的 ComfyUI、不联网、不落产物：纯逻辑 + AST + JSON 断言。
 
@@ -158,7 +158,7 @@ check("pipeline 落了实测自报值（return ... reported_size(entry, workflow
       "reported_size(entry, workflow)" in (NODE / "gateway" / "pipeline.py").read_text(encoding="utf-8"))
 
 # ================================================================== 4. 视频模板
-print("6. 视频六支模板都带 RoundaboutSizeProbe，且接在 VAEDecode 上")
+print("6. 视频四支模板都带 RoundaboutSizeProbe，且接在 VAEDecode 上")
 nodes_src = (NODE / "nodes.py").read_text(encoding="utf-8")
 check("nodes.py 注册了 probe 类", "RoundaboutSizeProbe" in nodes_src)
 check("probe 是 OUTPUT_NODE（否则不进 /history）",
@@ -166,7 +166,7 @@ check("probe 是 OUTPUT_NODE（否则不进 /history）",
       "probe 类里没有 OUTPUT_NODE = True")
 
 videos = sorted((NODE / "workflows").glob("video_*.json"))
-check("视频模板数量符合预期（6 支）", len(videos) == 6, str([p.name for p in videos]))
+check("视频模板数量符合预期（4 支）", len(videos) == 4, str([p.name for p in videos]))
 for path in videos:
     data = json.loads(path.read_text(encoding="utf-8"))
     probes = {nid: n for nid, n in data.items() if (n or {}).get("class_type") == "RoundaboutSizeProbe"}

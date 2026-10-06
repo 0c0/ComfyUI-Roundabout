@@ -211,7 +211,7 @@ def response_size(
     width/height —— 见 `params.image_dimensions` 的注释）：
 
       1. `reported` —— 工作流里 RoundaboutSizeProbe 自报的尺寸（接在 VAEDecode 后，
-         随 /history 一起回来）。装了它的档位走这条，视频六支即是；
+         随 /history 一起回来）。装了它的档位走这条，视频各支即是；
       2. 产物字节头（`image_dimensions`）—— 图像档产物字节本就在内存里，读头零成本，
          所以图像档不必为此改工作流；
       3. 画布 width/height —— 前两条都取不到（自定义输出节点吐非图片字节等罕见情况）
@@ -518,8 +518,6 @@ def build_video_values(
     # 注意力档位：对外 `attention`（sparse|dense）→ 内部 `sparse_start_percent`（数值）。
     # 不传 = 完全不注入，保持工作流模板默认（模板里就是 0.2 = 稀疏档）。
     # 传了但该模型没有这一档 ⇒ 显式拒绝，别让参数静默无效。
-    # ⛔ FastH3 两支故意不给档位：它的 `vsa` 稀疏与蒸馏权重配对训练，关掉不是「更高画质」
-    #    而是脱离训练分布。该档只有一个诉求（快），恒定稀疏就是它的最优形态。
     if getattr(req, "attention", None):
         if "sparse_start_percent" not in spec.bindings:
             if spec.is_video:
@@ -644,7 +642,7 @@ async def generate_video(
                 hint = (f" `{spec.name}` has no frame slots wired: images go via "
                         f"`reference_images` (up to {ref_slots or len(img_slots)}).")
             else:
-                hint = " Models with first/last frame slots: minimax-h3, minimax-h3-lift, fasth3."
+                hint = " Models with first/last frame slots: minimax-h3, minimax-h3-lift."
             raise APIError(f"Model `{spec.name}` does not take `{p}`.{hint}", param=p)
     if req.reference_images and not ref_slots:
         if frame_params:

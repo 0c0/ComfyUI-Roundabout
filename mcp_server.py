@@ -190,12 +190,12 @@ SERVER_INSTRUCTIONS = (
     "server (model selection, request parameters, troubleshooting, registering/unregistering "
     "workflows).\n"
     "- h3-playbook skill (https://github.com/0c0/h3-playbook-skill): MiniMax "
-    "H3 / FastH3 official playbook (prompt formula, generation modes, duration/resolution limits, "
+    "H3 official playbook (prompt formula, generation modes, duration/resolution limits, "
     "reference-material rules).\n"
     "- qwen-image-prompt-writing skill (https://github.com/0c0/qwen-image2.1-prompt-writing-skill): the Qwen-Image-2.1 prompt contract "
     "(t2i observer report / edit instruction + wh_ratio / ratio_follow) behind this server's "
     "qwen-image-2.1 model.\n"
-    "For MiniMax H3 / FastH3 prompts load h3-playbook (single entry: limits + prompt formulas + "
+    "For MiniMax H3 prompts load h3-playbook (single entry: limits + prompt formulas + "
     "field-level structures for T2VA/I2VA/FL2VA/L2VA/Ref2VA, merged with MiniMax's own "
     "h3-prompt-writing guide); for Qwen-Image-2.1 prompts load qwen-image-prompt-writing; consult "
     "roundabout when unsure which tool or parameter to use."
@@ -442,19 +442,18 @@ async def process_image(
 @mcp.tool(
     name="generate_video",
     description=(
-        "文生视频 / 参考生视频（MiniMax H3 / FastH3 系列）。model 默认 minimax-h3；"
+        "文生视频 / 参考生视频（MiniMax H3 系列）。model 默认 minimax-h3；"
         "lift 两支 = base/edit 骨架 + 尾部确定性放大（scale 指定倍率）；"
-        "fasth3 两支 = 8 步蒸馏档（更快，牺牲动作与音频保真，适合草稿）。"
         "默认同步等待；长任务传 background=\"pending\" 异步，再用 get_task 轮询。"
         "尺寸档位、参考槽数量与各字段生效性查 get_tool_info。"
-        "写 H3 / FastH3 提示词前先调 get_skills 装配套 skill。"
+        "写 H3 提示词前先调 get_skills 装配套 skill。"
     ),
 )
 async def generate_video_tool(
     prompt: str,
     model: str = Field(
         default="minimax-h3",
-        description="模型选择（MiniMax H3 / FastH3 系列）；逐模型能力、尺寸档位与生效字段查 get_tool_info。",
+        description="模型选择（MiniMax H3 系列）；逐模型能力、尺寸档位与生效字段查 get_tool_info。",
     ),
     duration: float | None = None,
     fps: int | None = None,
@@ -463,11 +462,11 @@ async def generate_video_tool(
     negative_prompt: str = "",
     first_frame: str | None = Field(
         None,
-        description="首帧图（仅 minimax-h3 / -lift / fasth3）：成为输出第 1 帧，按画布 cover 裁剪；edit 档传了报 400。",
+        description="首帧图（仅 minimax-h3 / -lift）：成为输出第 1 帧，按画布 cover 裁剪；edit 档传了报 400。",
     ),
     last_frame: str | None = Field(
         None,
-        description="尾帧图（仅 minimax-h3 / -lift / fasth3）：成为输出最后 1 帧，按画布 cover 裁剪；edit 档传了报 400。",
+        description="尾帧图（仅 minimax-h3 / -lift）：成为输出最后 1 帧，按画布 cover 裁剪；edit 档传了报 400。",
     ),
     reference_images: list[str] | None = Field(
         None,

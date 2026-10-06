@@ -78,7 +78,6 @@ def offline_section() -> None:
     check("生成档 first_frame 生效", field_applies("minimax-h3", "first_frame"))
     check("编辑档 reference_videos 生效", field_applies("minimax-h3-edit", "reference_videos"))
     check("编辑档 first_frame 不生效", not field_applies("minimax-h3-edit", "first_frame"))
-    check("fasth3 reference_images 不生效（纯帧槽）", not field_applies("fasth3", "reference_images"))
 
     spec = registry.resolve("minimax-h3")
     req = types.SimpleNamespace(first_frame="F.png", last_frame="L.png",
@@ -118,15 +117,11 @@ async def http_section() -> None:
     async def call(body: dict) -> tuple[int, dict]:
         return await loop.run_in_executor(None, post, body)
 
-    st, js = await call({"model": "fasth3", "prompt": "x", "reference_videos": ["v.mp4"]})
-    check("fasth3 无视频槽传参考视频 → 400", st == 400 and "videos" in json.dumps(js), (st, js))
     st, js = await call({"model": "minimax-h3", "prompt": "x",
                          "reference_images": [f"r{i}.png" for i in range(7)]})
     check("生成档参考图超 6 张 → 400", st == 400 and "at most 6" in json.dumps(js), (st, js))
     st, js = await call({"model": "minimax-h3-edit", "prompt": "x", "first_frame": "f.png"})
     check("编辑档传首帧 → 400", st == 400 and "first_frame" in json.dumps(js), (st, js))
-    st, js = await call({"model": "fasth3", "prompt": "x", "reference_images": ["r.png"]})
-    check("fasth3 纯帧槽传参考图 → 400", st == 400, (st, js))
 
     # ---- route 自动换档（v1.25.0）：生成系带音视频参考 → 对应 -edit 档 ----
     base_spec = registry.resolve("minimax-h3")

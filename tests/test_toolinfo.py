@@ -137,17 +137,12 @@ check("qwen-image-2.1 接受负向提示词（绑定层）",
 # ComfyUI 的 cfg1 优化会整条跳过负向分支（实测同 seed 只改负向：cfg=1 ⇒ MAE 0.0000、
 # cfg=4 ⇒ 23.5）。self-description 目前没有表达这种「绑定有效但本次不参与」的位置。
 
-# 5.4 attention：base 四支生效、fast 两支不生效（vsa 与蒸馏权重配对，无 dense 对照）
+# 5.4 attention：base 四支生效（其它模型传 attention 报 400）
 for name in ("minimax-h3", "minimax-h3-edit", "minimax-h3-lift", "minimax-h3-lift-edit"):
     e = MODELS.get(name)
     if e:
         f = [x for x in e["fields"] if x["name"] == "attention"][0]
         check(f"{name} attention 生效", f["applies"] is True, f)
-for name in ("fasth3", "fasth3-edit"):
-    e = MODELS.get(name)
-    if e:
-        f = [x for x in e["fields"] if x["name"] == "attention"][0]
-        check(f"{name} attention 不生效", f["applies"] is False, f)
 
 # 5.5 scale 只在视频档存在，且只对声明了 scale 绑定的 lift 两支生效
 for name, entry in MODELS.items():

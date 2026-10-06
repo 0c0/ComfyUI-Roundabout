@@ -152,11 +152,6 @@ files:
     repo: lightx2v/Minimax-h3-Turbo
     path: minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors
     size_gb: 1.82
-  - file: fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors
-    dir: diffusion_models
-    repo: Comfy-Org/FastVideo-FastH3
-    path: diffusion_models/fastvideo_fasth3_8step_v2_pruned_int8_convrot.safetensors
-    size_gb: 22.13
   - file: minimax_h3_latent_upscaler_3d_fp16.safetensors
     dir: latent_upscale_models
     repo: LBH-123-AI/Minimax_h3_latent_Upscaler

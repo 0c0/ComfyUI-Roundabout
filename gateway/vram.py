@@ -7,7 +7,7 @@ MiniMax H3 这类大模型（多支视频工作流权重合计 ~65 GiB）在显�
 - ``MiniMaxChunkFeedForward.seq_threshold`` 只有 token 数超过它才分块
 - ``MiniMaxLowVRAMAttention.head_chunks`` 切 56 个注意力头 —— **当前无绑定**：该节点与
   ``BlockSparseAttention`` 硬互斥（前者替换 block.forward，不收后者补传的 ``attention``），
-  6 支视频档已统一走稀疏注意力 + FFN 分块，档位表里的数值暂无人消费
+  视频各支已统一走稀疏注意力 + FFN 分块，档位表里的数值暂无人消费
 - ``SelfLiftH3Sampler.highres_tiling`` 高分辨率阶段按剩余显存**自动**决定切几块 ——
   SelfLiftH3Sampler 随 self-lift 下线，同样无绑定
 

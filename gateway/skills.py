@@ -39,7 +39,7 @@ SKILLS: list[dict[str, Any]] = [
         "purpose": "MiniMax H3 单一入口（官方使用手册口径 + 官方 h3-prompt-writing 契约合并版）："
                    "三段式公式、五类模式判定（T2VA/I2VA/FL2VA/L2VA/Ref2VA）、Ref2VA 六段改写格式、"
                    "素材用途标签、时长/分辨率/宽高比/输入上限、踩坑表。",
-        "when_to_use": "写 MiniMax H3 / FastH3 视频提示词前必查（含字段级结构与 Ref2VA 六段格式），"
+        "when_to_use": "写 MiniMax H3 视频提示词前必查（含字段级结构与 Ref2VA 六段格式），"
                        "或判断某个需求 H3 能不能做、排查口型/切镜/乱码问题时查它。",
         "source": "roundabout",
         "published": True,
