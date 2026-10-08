@@ -138,7 +138,7 @@ check("qwen-image-2.1 接受负向提示词（绑定层）",
 # cfg=4 ⇒ 23.5）。self-description 目前没有表达这种「绑定有效但本次不参与」的位置。
 
 # 5.4 attention：base 四支生效（其它模型传 attention 报 400）
-for name in ("minimax-h3", "minimax-h3-edit", "minimax-h3-lift", "minimax-h3-lift-edit"):
+for name in ("minimax-h3", "minimax-h3-edit", "minimax-h3-teacache", "minimax-h3-lift", "minimax-h3-lift-edit"):
     e = MODELS.get(name)
     if e:
         f = [x for x in e["fields"] if x["name"] == "attention"][0]

@@ -172,9 +172,9 @@ https://github.com/0c0/ComfyUI-Roundabout
 
 3. 配置（可选）：把 `.env.example` 复制成 `.env`，按需修改。**MCP 默认已启用**，不用额外设置；要关掉就把 `MCP_ENABLED` 改成 `false`。
 
-4. **准备模型权重**：仓库不含权重。内置 16 个工作流共引用 26 个权重文件（清单另列 3 个非内置引用的 LoRA，共 29 行 / 约 195 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 103 GB**，可以先只下这一族。
+4. **准备模型权重**：仓库不含权重。内置 17 个工作流共引用 26 个权重文件（清单另列 3 个非内置引用的 LoRA，共 29 行 / 约 195 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 103 GB**，可以先只下这一族。
 
-   > **视频档还需要两个第三方节点包**：KJNodes（`MiniMaxChunkFeedForward`，视频档全用）与 `comfyui-SelfLift`（lift 两支的 latent 上采样节点 `SelfLiftH3LatentLift`）。清单见下方[第三方节点依赖](#第三方节点依赖)。
+   > **视频档还需要三个第三方节点包**：KJNodes（`MiniMaxChunkFeedForward`，视频档全用）、`comfyui-SelfLift`（lift 两支的 latent 上采样节点 `SelfLiftH3LatentLift`）与 `ComfyUI-MiniMaxH3-TeaCache`（teacache 档的步间缓存节点 `MiniMaxH3TeaCache`）。清单见下方[第三方节点依赖](#第三方节点依赖)。
 
 5. 重启 ComfyUI。启动日志出现 `OpenAI gateway routes registered ... models=...` 即成功。
 
@@ -297,6 +297,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 图像编辑 | `boogu-image-edit` / `boogu-image-edit-turbo` | 擅长改写 / 添加**图内文字**，30 步 / 6 步 |
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
 | 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base / edit 均 20 步）：base 收**首尾帧** `first_frame`/`last_frame`（cover 裁剪），edit 收**参考**（6 图 + 3 视频 + 3 音频）；低显存分块按档位自适应（`vram_adaptive`） |
+| 视频 | `minimax-h3-teacache` | **base 骨架 + TeaCache 步间缓存**：能力与 `minimax-h3` 完全一致（首尾帧 / 参考图 / 带参考自动换档到 -edit），相似步复用输出换速度；`teacache_threshold` 控速度-质量（特写/手部 0.08，常规 0.15，含文字 ≤0.15，0.22 勿用）；需第三方节点 `ComfyUI-MiniMaxH3-TeaCache` |
 | 视频 | `minimax-h3-lift` | **base 骨架 + 确定性放大**：20 步原生采样 → 学习式 latent lift（1344x768 × scale 1.875 = 2528x1440），构图零重掷、纹理最强；支持首尾帧（`first_frame`/`last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧，cover 裁剪）；产物落 `video/H3_Lift`；`scale` 是请求参数（默认 1.875 → 2528x1440）；`rho` 精调走 `workflow_overrides`（`910.inputs.rho`） |
 | 视频 | `minimax-h3-lift-edit` | 同上，改用 **edit 骨架**：Ref2VA 权重 + 参考槽全套 6 图 / 3 视频 / 3 音频。⚠️ **未标定**：步数 30（随 edit 统一），放大与参考的组合效果没做过 A/B |
 
@@ -308,7 +309,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 
 ## 权重清单（内置工作流的全部依赖）
 
-**本仓库不包含任何权重文件**（体积与许可原因）。内置的 16 个工作流共引用 **26 个**权重文件，合计约 **188 GB**（图像档约 103 GB / 视频档约 85 GB）；下面两张清单表共 **29 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个 hyperflow LoRA），仅作参考，计入则约 195 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入上列统计。）
+**本仓库不包含任何权重文件**（体积与许可原因）。内置的 17 个工作流共引用 **26 个**权重文件，合计约 **188 GB**（图像档约 103 GB / 视频档约 85 GB）；下面两张清单表共 **29 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个 hyperflow LoRA），仅作参考，计入则约 195 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入上列统计。）
 
 这些文件基本都在 **HuggingFace 的 Comfy-Org 官方仓库**里（少数为模型原厂或社区仓库，已在表中标注）。国区建议把端点换成镜像，repo ID 与 repo 内路径完全一致：
 
@@ -481,11 +482,12 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 
 ### 第三方节点依赖
 
-> 这些工作流用到的节点**除 lift 系列（`minimax-h3-lift*`）、基础两支 `minimax-h3` / `-edit`（它们都接了低显存分块节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。
+> 这些工作流用到的节点**除 lift 系列（`minimax-h3-lift*`）、基础两支 `minimax-h3` / `-edit`（低显存分块节点）、`minimax-h3-teacache`（TeaCache 缓存节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。
 > lift 系列额外依赖一个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3LatentLift` + `latent_upscale_models/` 下的上采样权重）。
-> 需要 KJNodes 的 `MiniMaxChunkFeedForward` 做 FFN 分块：**全部视频档**。低显存都走两级 —— `BlockSparseAttention`（comfy 核心节点，省 attention）→ `MiniMaxChunkFeedForward`：base 四支（`minimax-h3` / `-edit` / `minimax-h3-lift*`）的稀疏档位是 `sol-attn`（training-free，约保留 16% key block）。
+> `minimax-h3-teacache` 额外依赖一个第三方节点包：`ComfyUI-MiniMaxH3-TeaCache`（`MiniMaxH3TeaCache`，挂在 UNet 与 guider 之间做步间输出复用；阈值已绑定为请求参数 `teacache_threshold`，步数双绑定自动跟随）。
+> 需要 KJNodes 的 `MiniMaxChunkFeedForward` 做 FFN 分块：**全部视频档**。低显存都走两级 —— `BlockSparseAttention`（comfy 核心节点，省 attention）→ `MiniMaxChunkFeedForward`：base 五支（`minimax-h3` / `-edit` / `-teacache` / `minimax-h3-lift*`）的稀疏档位是 `sol-attn`（training-free，约保留 16% key block）。
 > ⛔ **不要在视频档里接 KJNodes 的 `MiniMaxLowVRAMAttention`**：它替换 `block.forward`，而 `BlockSparseAttention` 的 block patch 会无条件补传 `attention=` 关键字（`comfy/ldm/minimax/model.py`），签名对不上 ⇒ 实测 `TypeError`。两者**硬互斥**，因此 base 四支原先的 LowVRAM 节点已于 2026-09-21 撤除（`head_chunks` 档位值随之失去消费者，保留在表里仅为复原方便）。
-> 稀疏节点的参数（`tau` / `min_tokens` / `dense_blocks` …）不在可注入白名单；其中 `tau` 的键名是 `selection.tau`（含点号），按 `.` 切分的路径解析寻址不到，要调只能改工作流 JSON 再 `/admin/reload`。**但「更快 ↔ 更高质量」这一档有正式请求参数**：`attention`（`sparse` 默认 / `dense` 关闭稀疏换致密画质）。它内部落到 `BlockSparseAttention.start_percent` —— `1.0` 因 `percent_to_sigma(1.0) = 0` 而等效全程致密。**这一档只给 base 四支**（`minimax-h3` / `-edit` / `-lift` / `-lift-edit`）；其它模型传 `attention` 会报 400。
+> 稀疏节点的参数（`tau` / `min_tokens` / `dense_blocks` …）不在可注入白名单；其中 `tau` 的键名是 `selection.tau`（含点号），按 `.` 切分的路径解析寻址不到，要调只能改工作流 JSON 再 `/admin/reload`。**但「更快 ↔ 更高质量」这一档有正式请求参数**：`attention`（`sparse` 默认 / `dense` 关闭稀疏换致密画质）。它内部落到 `BlockSparseAttention.start_percent` —— `1.0` 因 `percent_to_sigma(1.0) = 0` 而等效全程致密。**这一档只给 base 五支**（`minimax-h3` / `-edit` / `-teacache` / `-lift` / `-lift-edit`）；其它模型传 `attention` 会报 400。
 > 全部视频档的 `ModelAttentionBackend` 统一用 `comfy kitchen attention`（comfy_kitchen 的 INT8 实现，省显存）。要换 `pytorch attention` 得改工作流模板里那个节点的值；它不在 `bindings` 白名单里，但**可以**用 `workflow_overrides` 在运行时点改（`{"156.inputs.attention": "pytorch attention"}`）—— `workflow_overrides` 是任意路径注入，与白名单无关。
 > ⚠️ **comfy_kitchen 版本下限：`>= 0.2.37`**。`0.2.36` 的 w4a8 反量化 kernel 有 stack-overflow 回归 —— 量化权重叠加 LoRA patch（`turbo_lora`）时采样第 2 步直接杀死进程（2026-10-08 实测 2/2 复现，`0.2.37` 修复）；`0.2.35` 及更早则不支持 ref2va 权重里的 `K=8064` 层（采样即报 `ValueError: K=8064 must be divisible by 16…`）。两端都不行的只有 `0.2.36`，钉住 `0.2.37` 或更高。
 > 上述权重多为 `int8_convrot` 量化版，只在你已具备同名权重的机器上开箱即用；换成自己的模型时，同步改工作流 JSON 里的文件名即可。

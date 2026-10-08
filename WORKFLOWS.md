@@ -52,8 +52,9 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 | `fps` | `CreateVideo.fps`、`VideoCombine.frame_rate` |
 | `duration` / `num_frames` | 你自己链路里的时长/帧数节点 |
 | `chunks` / `seq_threshold` | `MiniMaxChunkFeedForward.chunks` / `.seq_threshold`（KJNodes） |
-| `sparse_start_percent` | `BlockSparseAttention.start_percent`（稀疏起始点，`1.0` 因 `percent_to_sigma(1.0)=0` 等效全程关闭稀疏）。**对外的语义参数是 `attention: sparse\|dense`**，由 `params.resolve_attention` 翻译后落到这里；`attention` 只对 base 四支 H3 视频档有效（其它模型传了报错） |
-| `turbo_lora` | `LoraLoaderModelOnly.strength_model`（节点 160，仅 minimax-h3 / minimax-h3-edit 有绑定）。0=关（默认，关时不注入开销）；1.0=8 步蒸馏 Turbo（h3 用 fl2v_turbo_8step_v1.0、h3-edit 用 ref2v_turbo_8step_v1.0_768p），**需配 `steps≈8`**；2026-10-05 实测 0.65@8 步端到端 -47%、画面干净、契合度不降 |
+| `sparse_start_percent` | `BlockSparseAttention.start_percent`（稀疏起始点，`1.0` 因 `percent_to_sigma(1.0)=0` 等效全程关闭稀疏）。**对外的语义参数是 `attention: sparse\|dense`**，由 `params.resolve_attention` 翻译后落到这里；`attention` 只对 base 五支 H3 视频档有效（`minimax-h3` / `-edit` / `-teacache` / `-lift` / `-lift-edit`，其它模型传了报错） |
+| `turbo_lora` | `LoraLoaderModelOnly.strength_model`（节点 160，minimax-h3 / -edit / -teacache 有绑定）。0=关（默认，关时不注入开销）；1.0=8 步蒸馏 Turbo（h3 / -teacache 用 fl2v_turbo_8step_v1.0、h3-edit 用 ref2v_turbo_8step_v1.0_768p），**需配 `steps≈8`**；2026-10-05 实测 0.65@8 步端到端 -47%、画面干净、契合度不降 |
+| `teacache_threshold` | `MiniMaxH3TeaCache.rel_l1_thresh`（节点 185，仅 minimax-h3-teacache 有绑定）：累积相对 L1 输入差低于阈值即复用上一步输出 —— 越大越快、漂移越大。默认 0.15，特写/手部 0.08，含文字画面 ≤0.15，0.22 有已知硬伤。`steps` 双绑定到 `124.inputs.steps` + `185.inputs.total_steps`（换步数缓存窗口自动跟随）；首尾实步 `start_step=2` / `end_step=-2` 走模板字面值，要调用 `workflow_overrides`（`185.inputs.start_step`） |
 | `head_chunks` | **当前无绑定**：唯一消费者 `MiniMaxLowVRAMAttention` 与 `BlockSparseAttention` 硬互斥，已从 6 支视频档撤除。参数名仍在可注入白名单里，把节点挂回去即可复用；档位表里的值不会注入任何工作流 |
 
 ### 写映射的三条铁律
@@ -315,7 +316,7 @@ models:
   minimax-h3-lift:
     vram_adaptive: true
     bindings:
-      chunks: 158.inputs.chunks              # base 四支同构：MiniMaxChunkFeedForward
+      chunks: 158.inputs.chunks              # base 五支同构：MiniMaxChunkFeedForward
       seq_threshold: 158.inputs.seq_threshold
 ```
 

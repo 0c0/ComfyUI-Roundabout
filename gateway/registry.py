@@ -50,6 +50,8 @@ KNOWN_PARAMS = {
     "scale",
     # ---- H3 Turbo LoRA 强度（仅 minimax-h3 / minimax-h3-edit 有绑定；0=关）----
     "turbo_lora",
+    # ---- H3 TeaCache 步间缓存阈值（仅 minimax-h3-teacache 有绑定；越大越快漂移越大）----
+    "teacache_threshold",
     # ---- SeedVR2 图像放大（仅 utility-seedvr2-upscale 有绑定）----
     "multiplier",
     "color_correction",

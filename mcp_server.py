@@ -479,6 +479,10 @@ async def generate_video_tool(
         None,
         description="Turbo LoRA 强度开关（仅 minimax-h3 / minimax-h3-edit）：0=关（默认）；1.0=8 步蒸馏 Turbo，需配 steps≈8。",
     ),
+    teacache_threshold: float | None = Field(
+        None,
+        description="TeaCache 复用阈值（仅 minimax-h3-teacache）：越大越快、漂移越大；特写/手部 0.08，常规 0.15，含文字 ≤0.15，0.22 勿用。",
+    ),
     output_size: str = Field(
         "",
         description="期望输出尺寸（仅 minimax-h3-lift / -lift-edit，如 \"1440p-16:9\"）：网关反推放大倍率，与 scale 互斥；其它模型传了报 400。",
@@ -508,6 +512,7 @@ async def generate_video_tool(
         reference_audios=reference_audios,
         steps=steps,
         turbo_lora=turbo_lora,
+        teacache_threshold=teacache_threshold,
         output_size=output_size or None,
         scale=scale,
         background=background or None,
