@@ -650,6 +650,7 @@ models:
       duration: 5
       fps: 24
       scale: 1.875
+      turbo_lora: 0
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
@@ -666,6 +667,7 @@ models:
       seq_threshold: 158.inputs.seq_threshold
       sparse_start_percent: '159.inputs.start_percent'
       scale: '910.inputs.scale'
+      turbo_lora: '160.inputs.strength_model'
     aliases:
     - minimax_h3_lift
     - h3-lift
@@ -677,7 +679,7 @@ models:
   # ⚠️ 未标定：步数 30（随 edit 统一），放大与参考的组合效果没做过 A/B。
   minimax-h3-lift-edit:
     workflow: video_minimax_h3_lift_edit.json
-    description: MiniMax H3 Lift Ref2VA —— 编辑档骨架（20 步）+ 确定性放大：参考视频编辑 / 动作·运镜迁移 / 音频复用 / 参考图生视频后过一遍学习式 latent lift
+    description: MiniMax H3 Lift Ref2VA —— 编辑档骨架（20 步）+ 确定性放大：参考视频编辑 / 动作·运镜迁移 / 音频复用 / 参考图生视频后过一遍学习式 latent lift；Turbo 快档：`turbo_lora` 强度（0=关默认，1.0=ref2v 8 步蒸馏，配 steps≈8）
     mode: video
     capabilities:
     - text-to-video
@@ -713,6 +715,7 @@ models:
       duration: 5
       fps: 24
       scale: 1.875
+      turbo_lora: 0
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
@@ -729,6 +732,7 @@ models:
       seq_threshold: 158.inputs.seq_threshold
       sparse_start_percent: '159.inputs.start_percent'
       scale: '910.inputs.scale'
+      turbo_lora: '160.inputs.strength_model'
     aliases:
     - minimax_h3_lift_edit
     - minimax-h3-edit-lift
