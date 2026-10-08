@@ -135,7 +135,7 @@
   },
   "127": {
     "inputs": {
-      "unet_name": "minimax_h3_ref2va_int8_convrot.safetensors",
+      "unet_name": "minimax_h3_ref2va_pruned_w6a8.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
@@ -455,7 +455,7 @@
     "inputs": {
       "attention": "comfy kitchen attention",
       "model": [
-        "127",
+        "160",
         0
       ]
     },
@@ -499,6 +499,29 @@
       "title": "块稀疏注意力(sol-attn)"
     }
   },
+  "950": {
+    "inputs": {
+      "images": [
+        "122",
+        0
+      ]
+    },
+    "class_type": "RoundaboutSizeProbe",
+    "_meta": {
+      "title": "尺寸探针（Roundabout）"
+    }
+  },
+  "160": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "lora_name": "minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors",
+      "strength_model": 0.0,
+      "model": [
+        "127",
+        0
+      ]
+    }
+  },
   "900": {
     "class_type": "ImageFromBatch",
     "inputs": {
@@ -536,18 +559,6 @@
         "119",
         0
       ]
-    }
-  },
-  "950": {
-    "inputs": {
-      "images": [
-        "122",
-        0
-      ]
-    },
-    "class_type": "RoundaboutSizeProbe",
-    "_meta": {
-      "title": "尺寸探针（Roundabout）"
     }
   }
 }
