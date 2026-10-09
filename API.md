@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.39.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.40.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -392,14 +392,6 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `GET /roundabout/admin/queue/workflow/{prompt_id}` | 三层查找工作流 JSON：队列 → history → 任务快照。第三层是网关自己的账本，**同步与异步任务的 `task_id` 都能命中**（ComfyUI history 被清也查得到） |
 | `GET /roundabout/admin/weights` | **权重体检**：内置工作流引用的权重里当前缺哪些，每条的下载命令与目标目录（`?unreferenced=1` 附带当前无工作流引用的条目，`?mirror=modelscope` 换下载源） |
 | `GET /roundabout/admin/tool-info` | **调用结构自描述**：逐模型的字段生效性（类型 / 区间 / 枚举 / 默认值 / 是否生效 + 不生效原因）、参考槽数量、别名、生效默认值，加全局限制（张数上限、尺寸档位表、种子上限）。`?view=compact` 取裁剪版，`&model=<名>` 限定单模型，`&fields=0` 省掉字段清单 |
-| `GET /roundabout/admin/workflows` | 列出工作流文件（含校验状态、被哪些模型引用） |
-| `POST /roundabout/admin/workflows/upload` | 上传工作流 JSON（multipart；可选 `create_model` 自动建模型条目） |
-| `DELETE /roundabout/admin/workflows/{name}` | 删除工作流（被模型引用时 409） |
-| `GET /roundabout/admin/models` | 读取 `models.yaml` 原始内容 |
-| `PUT /roundabout/admin/models` | 覆写 `models.yaml`（先校验后落盘，坏配置返回 422 不覆盖） |
-| `GET /roundabout/admin/models/structured` | 结构化模型配置（替代原始 YAML 编辑） |
-| `PUT /roundabout/admin/models/structured` | 写结构化模型配置 |
-| `DELETE /roundabout/admin/models/{name}` | 删除模型 |
 
 #### 队列监控响应（`/roundabout/admin/queue`）
 

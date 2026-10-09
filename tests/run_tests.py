@@ -1,10 +1,10 @@
 """冒烟连通性测试统一入口。
 
 仓库只留连通性冒烟：每支都是独立 aiohttp 实例（临时端口）或纯逻辑断言，
-不需要正在跑的 ComfyUI、不占 GPU、不落产物。两支轻量守卫例外地留在集里——
-`test_admin_structured_merge.py` 锁 /admin/models/structured PUT 的合并语义、
+不需要正在跑的 ComfyUI、不占 GPU、不落产物。一支轻量守卫例外地留在集里——
 `test_weights_index.py` 锁 weights.yaml ↔ README ↔ workflows 的一致性，
-都是历史上真踩过坑、靠机械断言兜底的规则。
+历史上真踩过坑、靠机械断言兜底的规则。（v1.40.0 起设置面板退役，
+原 `test_admin_structured_merge.py` 随结构化 PUT 端点一并删除。）
 
     python tests/run_tests.py                 # 全部用例
     python tests/run_tests.py --list          # 只列不跑

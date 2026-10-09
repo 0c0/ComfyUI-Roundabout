@@ -595,7 +595,7 @@ ComfyUI-Roundabout/
 │   ├── vram.py            # 显存探测 + 低显存分块档位选取（vram_adaptive）
 │   ├── log_filters.py     # 把 aiohttp「客户端断开」的 ERROR 降级为 DEBUG
 │   └── ...
-├── web/                   # 前端（可视化页面 + 设置面板）
+├── web/                   # 前端（可视化看板页面）
 ├── workflows/             # API 格式工作流（example_txt2img.json 为接入样本）
 ├── models.yaml            # 模型注册表
 ├── weights.yaml           # 权重 → 下载来源索引（报错里的下载指引与体检的数据源）
@@ -611,7 +611,7 @@ ComfyUI-Roundabout/
 ## 测试
 
 仓库只保留**冒烟连通性**用例：服务起得来、MCP 工具注册齐、端点在、参数覆盖对，外加两支
-踩过坑的轻量守卫（`test_admin_structured_merge` 锁 PUT 合并语义、`test_weights_index` 锁
+踩过坑的轻量守卫（`test_weights_index` 锁
 权重表一致性）。全部离线、用临时端口，不需要 ComfyUI 在跑。
 
 ```bash
