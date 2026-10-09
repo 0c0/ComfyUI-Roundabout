@@ -99,11 +99,11 @@ files:
     size_gb: 0.44
 
   # ---------- 视频档 ----------
-  - file: minimax_h3_fl2va_int8_convrot.safetensors
+  - file: minimax_h3_fl2va_pruned_w6a8.safetensors
     dir: diffusion_models
     repo: Comfy-Org/MiniMax-H3
-    path: diffusion_models/minimax_h3_fl2va_int8_convrot.safetensors
-    size_gb: 34.04
+    path: diffusion_models/minimax_h3_fl2va_pruned_w6a8.safetensors
+    size_gb: 15.98
   - file: minimax_h3_ref2va_pruned_w6a8.safetensors
     dir: diffusion_models
     repo: Comfy-Org/MiniMax-H3

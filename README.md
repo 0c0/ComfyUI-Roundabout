@@ -172,7 +172,7 @@ https://github.com/0c0/ComfyUI-Roundabout
 
 3. 配置（可选）：把 `.env.example` 复制成 `.env`，按需修改。**MCP 默认已启用**，不用额外设置；要关掉就把 `MCP_ENABLED` 改成 `false`。
 
-4. **准备模型权重**：仓库不含权重。内置 17 个工作流共引用 26 个权重文件（清单另列 3 个非内置引用的 LoRA，共 29 行 / 约 195 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 103 GB**，可以先只下这一族。
+4. **准备模型权重**：仓库不含权重。内置 17 个工作流共引用 26 个权重文件（清单另列 3 个非内置引用的 LoRA，共 29 行 / 约 177 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 103 GB**，可以先只下这一族。
 
    > **视频档还需要三个第三方节点包**：KJNodes（`MiniMaxChunkFeedForward`，视频档全用）、`comfyui-SelfLift`（lift 两支的 latent 上采样节点 `SelfLiftH3LatentLift`）与 `ComfyUI-MiniMaxH3-TeaCache`（teacache 档的步间缓存节点 `MiniMaxH3TeaCache`）。清单见下方[第三方节点依赖](#第三方节点依赖)。
 
@@ -309,7 +309,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 
 ## 权重清单（内置工作流的全部依赖）
 
-**本仓库不包含任何权重文件**（体积与许可原因）。内置的 17 个工作流共引用 **26 个**权重文件，合计约 **188 GB**（图像档约 103 GB / 视频档约 85 GB）；下面两张清单表共 **29 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个 hyperflow LoRA），仅作参考，计入则约 195 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入上列统计。）
+**本仓库不包含任何权重文件**（体积与许可原因）。内置的 17 个工作流共引用 **26 个**权重文件，合计约 **170 GB**（图像档约 103 GB / 视频档约 67 GB）；下面两张清单表共 **29 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个 hyperflow LoRA），仅作参考，计入则约 177 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入上列统计。）
 
 这些文件基本都在 **HuggingFace 的 Comfy-Org 官方仓库**里（少数为模型原厂或社区仓库，已在表中标注）。国区建议把端点换成镜像，repo ID 与 repo 内路径完全一致：
 
@@ -375,7 +375,7 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 
 | 文件 | 目标目录 | 体积 | 下载源（HF repo） | repo 内路径 |
 |---|---|---|---|---|
-| `minimax_h3_fl2va_int8_convrot.safetensors` | `diffusion_models/` | 34.04 GB | `Comfy-Org/MiniMax-H3` | `diffusion_models/` |
+| `minimax_h3_fl2va_pruned_w6a8.safetensors` | `diffusion_models/` | 15.98 GB | `Comfy-Org/MiniMax-H3` | `diffusion_models/` |
 | `minimax_h3_ref2va_pruned_w6a8.safetensors` | `diffusion_models/` | 15.98 GB | `Comfy-Org/MiniMax-H3` | `diffusion_models/` |
 | `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` | `text_encoders/` | 27.14 GB | `Comfy-Org/MiniMax-H3` | `text_encoders/` |
 | `minimax_h3_video_vae_int8_convrot.safetensors` | `vae/` | 2.81 GB | `Comfy-Org/MiniMax-H3` | `vae/` |
@@ -438,8 +438,8 @@ curl -L -o models/vae/qwen_image_2.1_vae_bf16.safetensors \
   $B/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors
 
 # ---------- MiniMax H3 共用主干（H3 全系都要，约 81 GB）----------
-curl -L -o models/diffusion_models/minimax_h3_fl2va_int8_convrot.safetensors \
-  $B/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_int8_convrot.safetensors
+curl -L -o models/diffusion_models/minimax_h3_fl2va_pruned_w6a8.safetensors \
+  $B/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_fl2va_pruned_w6a8.safetensors
 curl -L -o models/diffusion_models/minimax_h3_ref2va_pruned_w6a8.safetensors \
   $B/Comfy-Org/MiniMax-H3/resolve/main/diffusion_models/minimax_h3_ref2va_pruned_w6a8.safetensors
 curl -L -o models/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors \
@@ -462,7 +462,7 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 
 > 嫌 `curl` 麻烦也可以用 HuggingFace CLI（`pip install -U huggingface_hub`）：
 > ```bash
-> hf download Comfy-Org/MiniMax-H3 diffusion_models/minimax_h3_fl2va_int8_convrot.safetensors \
+> hf download Comfy-Org/MiniMax-H3 diffusion_models/minimax_h3_fl2va_pruned_w6a8.safetensors \
 >   --local-dir models
 > ```
 > 注意它**会保留仓库内的目录结构**（Comfy-Org 的 `split_files/` 前缀不是 ComfyUI 的目录），下完还得手动挪到上表的目标位置 —— 所以这里默认给 `curl`。
@@ -477,7 +477,7 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 | `flux2-klein-image-edit-turbo` | `diffusion_models/` `flux-2-klein-9b-kv-fp8.safetensors` · `text_encoders/` `qwen3vl_8b_fp8_scaled.safetensors` · `vae/` `flux2-vae.safetensors` |
 | `qwen-image-2.1` | `diffusion_models/` `qwen_image_2.1_int8_convrot.safetensors` · `text_encoders/` `qwen3vl_8b_int8_convrot.safetensors` · `vae/` `qwen_image_2.1_vae_bf16.safetensors` |
 | `utility-birefnet-remove-background` | `background_removal/` `birefnet.safetensors` |
-| `minimax-h3` / `minimax-h3-edit` | `diffusion_models/` `minimax_h3_fl2va_int8_convrot.safetensors`、`minimax_h3_ref2va_pruned_w6a8.safetensors` · `text_encoders/` `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` · `vae/` `minimax_h3_video_vae_int8_convrot.safetensors`、`minimax_h3_audio_vae_fp32.safetensors` |
+| `minimax-h3` / `minimax-h3-edit` | `diffusion_models/` `minimax_h3_fl2va_pruned_w6a8.safetensors`、`minimax_h3_ref2va_pruned_w6a8.safetensors` · `text_encoders/` `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` · `vae/` `minimax_h3_video_vae_int8_convrot.safetensors`、`minimax_h3_audio_vae_fp32.safetensors` |
 | `minimax-h3-lift` / `-lift-edit` | 同 `minimax-h3` / `minimax-h3-edit`，另需 `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors`（**不需要** `loras/`） |
 
 ### 第三方节点依赖
