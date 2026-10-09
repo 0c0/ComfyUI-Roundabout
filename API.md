@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.40.1` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.40.2` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -274,7 +274,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `fps` | int? | 帧率 |
 | `num_frames` | int? | 总帧数（部分工作流用帧数而非时长） |
 | `attention` | `"sparse"`\|`"dense"`? | **注意力档位**（更快 ↔ 更高质量，仅 base 五支 H3 视频档）：`sparse`（默认，块稀疏加速，更快、更省显存；画质与致密高度一致、差异只在高频细节）/ `dense`（关闭稀疏，画质优先，耗时回满）。不传 = 保持模板默认（稀疏）。传了报 400（其它模型同样报 400）|
-| `teacache_threshold` | float? | **TeaCache 复用阈值**（仅 `minimax-h3` / `minimax-h3-edit`）：累积相对 L1 输入差低于它就复用上一步输出 —— 越大越快、漂移越大；**默认 0=关闭**；特写/手部镜头 0.08，常规 0.15，含文字/字幕画面用 0（E41 实测 0.08/0.15 均致标牌乱码）；0.22 有已知硬伤。其它模型传了报 400 |
+| `teacache_threshold` | float? | **TeaCache 复用阈值**（仅 `minimax-h3` / `minimax-h3-edit`）：累积相对 L1 输入差低于它就复用上一步输出 —— 越大越快、漂移越大；**默认 0=关闭**；特写/手部与简单场景 0.08（生效时背景元素身份漂移风险），慢速全身/风景 0.15；含文字、大色块渐变背景、重约束 prompt（元素锁/契约版）、双锚长链用 0（这些场景 0.08 静默失效或背景崩坏）；0.22 有已知硬伤。其它模型传了报 400 |
 | `output_size` | string? | **期望输出尺寸**（仅 `minimax-h3-lift` / `-lift-edit`）：格式同 `size`，网关反推放大倍率 `scale = 输出短边 / 画布短边`（输出保持画布宽高比，比例偏差 >5% 报 400 —— 那是换构图不是放大）。与 `scale` 互斥；其它模型传了报 400（输出尺寸就是 `size`）。实际输出尺寸见响应 `size` 回显 |
 | `scale` | float? | **放大倍率**（仅 `minimax-h3-lift` / `-lift-edit`）：输出 = 画布 × scale，默认 1.875 → 2520x1440。与 `output_size` 互斥；其它模型传了报 400 |
 | `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"910.inputs.rho": 0.3}`。`minimax-h3-lift` 的可调项：`910.inputs.rho`（SelfLift-zero 像素锚阻尼，默认 0=纯学习 lift 纹理最强；调高会压高频细节）、`910.inputs.w_min`/`w_max`（阻尼强度上下限，默认 0.5/1.0）。放大倍率 `scale` 已是正式请求参数，不必走透传 |

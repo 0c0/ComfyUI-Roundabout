@@ -470,7 +470,7 @@ models:
   #     含点号、路径按 `.` 切分无法寻址 ⇒ 调它们只能改工作流 JSON + `/admin/reload`。
   minimax-h3:
     workflow: video_minimax_h3.json
-    description: MiniMax H3 (FL2VA) —— 生成档：文生视频 / 首尾帧 / 参考图（留在本档，不换档）/ 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-edit（09-25 实测 FL2VA 不迁移音色/动作，参考内容只有 Ref2VA 消费）；TeaCache 同 h3（`teacache_threshold`，默认 0=关），20 步，低显存分块按档位自适应；Turbo 快档：`turbo_lora` 强度（0=关默认，1.0=8 步蒸馏，配 steps≈8）；TeaCache 步间缓存：`teacache_threshold`（默认 0=关；0.08 特写/手部、0.15 常规、含文字/字幕用 0（0.08/0.15 实测均致标牌乱码）、0.22 勿用）
+    description: MiniMax H3 (FL2VA) —— 生成档：文生视频 / 首尾帧 / 参考图（留在本档，不换档）/ 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-edit（09-25 实测 FL2VA 不迁移音色/动作，参考内容只有 Ref2VA 消费）；TeaCache 同 h3（`teacache_threshold`，默认 0=关），20 步，低显存分块按档位自适应；Turbo 快档：`turbo_lora` 强度（0=关默认，1.0=8 步蒸馏，配 steps≈8）；TeaCache 步间缓存：`teacache_threshold`（默认 0=关；0.08 特写/手部与简单场景+人物主体、0.15 慢速全身/风景、含文字/大色块渐变背景/重约束 prompt/双锚长链用 0、0.22 勿用）
     mode: video
     capabilities:
     - text-to-video
