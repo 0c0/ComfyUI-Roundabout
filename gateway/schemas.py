@@ -126,10 +126,10 @@ class VideoGenerationRequest(BaseModel):
         None,
         description="Turbo LoRA 强度：0=关（默认，零开销）；1.0=8 步蒸馏 Turbo，需配 steps≈8",
     )
-    # ---- H3 TeaCache 步间缓存阈值（仅 minimax-h3-teacache 有绑定）----
+    # ---- H3 TeaCache 步间缓存阈值（仅 minimax-h3 / minimax-h3-edit 有绑定）----
     teacache_threshold: float | None = Field(
         None,
-        description="TeaCache 复用阈值：越大越快、漂移越大（特写/手部镜头 0.08，常规 0.15，含文字画面 ≤0.15；0.22 有已知硬伤）。仅 minimax-h3-teacache 支持。",
+        description="TeaCache 复用阈值：越大越快、漂移越大（特写/手部镜头 0.08，常规 0.15，含文字画面 ≤0.15；0.22 有已知硬伤）。仅 minimax-h3 / minimax-h3-edit 支持，默认 0=关闭。",
     )
 
     # ---- 注意力档位（仅 base 四支 H3 视频档）----
@@ -141,7 +141,7 @@ class VideoGenerationRequest(BaseModel):
         description=(
             "注意力档位：`sparse`（默认，块稀疏加速，更快、更省显存）/"
             "`dense`（关闭稀疏，画质优先，更慢、更吃显存）。不传则保持工作流模板默认（稀疏）。"
-            "仅 base 五支 H3 视频档（minimax-h3 / -edit / -lift / -lift-edit / -teacache）支持；"
+            "仅 base 四支 H3 视频档（minimax-h3 / -edit / -lift / -lift-edit）支持；"
             "其它模型传了报 400。"
         ),
     )

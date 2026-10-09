@@ -481,7 +481,7 @@ async def generate_video_tool(
     ),
     teacache_threshold: float | None = Field(
         None,
-        description="TeaCache 复用阈值（仅 minimax-h3-teacache）：越大越快、漂移越大；特写/手部 0.08，常规 0.15，含文字 ≤0.15，0.22 勿用。",
+        description="TeaCache 复用阈值（仅 minimax-h3 / minimax-h3-edit）：越大越快、漂移越大；默认 0=关；特写/手部 0.08，常规 0.15，含文字 ≤0.15，0.22 勿用。",
     ),
     output_size: str = Field(
         "",

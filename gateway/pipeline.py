@@ -511,14 +511,13 @@ def build_video_values(
     turbo_val = getattr(req, "turbo_lora", None)
     if turbo_val is not None:
         values["turbo_lora"] = float(turbo_val)
-    # H3 TeaCache 阈值：仅 minimax-h3-teacache 有绑定；其它模型显式拒绝，别静默无效。
-    # 未传 → 走 defaults 的 0.15（经 build_workflow 的 defaults 地基注入）。
+    # H3 TeaCache 阈值：h3 / edit 有绑定（常驻节点 185，默认 0=关）；其它模型显式拒绝。
     teacache_val = getattr(req, "teacache_threshold", None)
     if teacache_val is not None:
         if "teacache_threshold" not in spec.bindings:
             raise APIError(
                 f"Model `{spec.name}` has no TeaCache stage: `teacache_threshold` only "
-                "applies to minimax-h3-teacache.",
+                "applies to minimax-h3 / minimax-h3-edit.",
                 param="teacache_threshold",
             )
         values["teacache_threshold"] = float(teacache_val)
@@ -536,7 +535,7 @@ def build_video_values(
                     f"Model `{spec.name}` always runs sparse attention: its weights are "
                     "trained for that sparse pattern, so there is no dense counterpart to "
                     "switch to. `attention` applies to the non-distilled H3 video models "
-                    "(minimax-h3, minimax-h3-edit, minimax-h3-teacache, minimax-h3-lift, minimax-h3-lift-edit).",
+                    "(minimax-h3, minimax-h3-edit, minimax-h3-lift, minimax-h3-lift-edit).",
                     param="attention",
                 )
             raise APIError(

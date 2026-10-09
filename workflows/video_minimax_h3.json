@@ -80,7 +80,7 @@
       "steps": 30,
       "denoise": 1,
       "model": [
-        "158",
+        "185",
         0
       ]
     },
@@ -120,7 +120,7 @@
   "126": {
     "inputs": {
       "model": [
-        "158",
+        "185",
         0
       ],
       "conditioning": [
@@ -319,6 +319,22 @@
     "class_type": "MiniMaxChunkFeedForward",
     "_meta": {
       "title": "FFN 分块"
+    }
+  },
+  "185": {
+    "inputs": {
+      "model": [
+        "158",
+        0
+      ],
+      "rel_l1_thresh": 0,
+      "start_step": 2,
+      "end_step": -2,
+      "total_steps": 20
+    },
+    "class_type": "MiniMaxH3TeaCache",
+    "_meta": {
+      "title": "TeaCache 步间缓存（默认关，teacache_threshold>0 启用）"
     }
   },
   "159": {

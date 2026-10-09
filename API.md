@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.37.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.38.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -274,7 +274,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `fps` | int? | 帧率 |
 | `num_frames` | int? | 总帧数（部分工作流用帧数而非时长） |
 | `attention` | `"sparse"`\|`"dense"`? | **注意力档位**（更快 ↔ 更高质量，仅 base 五支 H3 视频档）：`sparse`（默认，块稀疏加速，更快、更省显存；画质与致密高度一致、差异只在高频细节）/ `dense`（关闭稀疏，画质优先，耗时回满）。不传 = 保持模板默认（稀疏）。传了报 400（其它模型同样报 400）|
-| `teacache_threshold` | float? | **TeaCache 复用阈值**（仅 `minimax-h3-teacache`）：累积相对 L1 输入差低于它就复用上一步输出 —— 越大越快、漂移越大；默认 0.15，特写/手部镜头 0.08，含文字画面 ≤0.15；0.22 有已知硬伤。其它模型传了报 400 |
+| `teacache_threshold` | float? | **TeaCache 复用阈值**（仅 `minimax-h3` / `minimax-h3-edit`）：累积相对 L1 输入差低于它就复用上一步输出 —— 越大越快、漂移越大；**默认 0=关闭**；特写/手部镜头 0.08，常规 0.15，含文字画面 ≤0.15；0.22 有已知硬伤。其它模型传了报 400 |
 | `output_size` | string? | **期望输出尺寸**（仅 `minimax-h3-lift` / `-lift-edit`）：格式同 `size`，网关反推放大倍率 `scale = 输出短边 / 画布短边`（输出保持画布宽高比，比例偏差 >5% 报 400 —— 那是换构图不是放大）。与 `scale` 互斥；其它模型传了报 400（输出尺寸就是 `size`）。实际输出尺寸见响应 `size` 回显 |
 | `scale` | float? | **放大倍率**（仅 `minimax-h3-lift` / `-lift-edit`）：输出 = 画布 × scale，默认 1.875 → 2520x1440。与 `output_size` 互斥；其它模型传了报 400 |
 | `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"910.inputs.rho": 0.3}`。`minimax-h3-lift` 的可调项：`910.inputs.rho`（SelfLift-zero 像素锚阻尼，默认 0=纯学习 lift 纹理最强；调高会压高频细节）、`910.inputs.w_min`/`w_max`（阻尼强度上下限，默认 0.5/1.0）。放大倍率 `scale` 已是正式请求参数，不必走透传 |
@@ -356,7 +356,6 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | **`utility-birefnet-remove-background`** | image | **image-to-image**（promptless） | 去背景独立工具，无 prompt，透明 PNG；专属端点 `/v1/images/remove-background` |
 | `minimax-h3` | video | text-to-video / first-last-frame | H3 首尾帧生视频（base 20 步）：`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@20（网关无 `quality` 分档 —— 它只能表达 size + steps，与直接传参等价） |
 | `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，20 步（支持图/视频/音频参考） |
-| `minimax-h3-teacache` | video | text-to-video / first-last-frame | H3 + TeaCache 步间缓存（与 `minimax-h3` 同能力同槽位，带参考自动换档到 -edit）：相似步复用输出换速度；`teacache_threshold` 控速度-质量（特写/手部 0.08，常规 0.15，含文字 ≤0.15，0.22 勿用） |
 | `minimax-h3-lift` | video | text-to-video / first-last-frame | base 骨架 + 确定性放大：`size` = 768p 第一采画布（默认 1344x768），latent lift × `scale`（默认 1.875 → 输出 2520x1440）；`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）；分块参数按本机显存自动分档 |
 | `minimax-h3-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 edit 骨架（Ref2VA 权重，20 步）；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
 
@@ -448,7 +447,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `list_models` | 列出可用模型及其能力 / 模式 / 默认参数 / 别名 |
 | `generate_image` | 文生图；支持 `negative_prompt`/`seed`/`size`/`steps`/`cfg`/`workflow_overrides`(JSON 字符串)/`filename_prefix`/`mode`；返回 OpenAI 风格响应（含 `seed` 回显，url 已绝对化）；视频模型自动转视频链路。**编辑图片不要用本工具**（用 `edit_image` / `remove_background`） |
 | `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写），改图内文字传 `boogu-image-edit-turbo` / `boogu-image-edit`；**多图参考**传 `reference_images`（klein 4 槽 / qwen 6 槽）；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
-| `generate_video` | 文生视频 / 首尾帧生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`first_frame`/`last_frame`/`reference_images|videos|audios`（按模型槽位生效，帧与参考可同传）/`steps`/`attention`/`teacache_threshold`（仅 -teacache）/`output_size`/`scale`（仅 lift，互斥）/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
+| `generate_video` | 文生视频 / 首尾帧生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`first_frame`/`last_frame`/`reference_images|videos|audios`（按模型槽位生效，帧与参考可同传）/`steps`/`attention`/`teacache_threshold`（仅 h3/edit）/`output_size`/`scale`（仅 lift，互斥）/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
 | `remove_background` | 图片去背景（BiRefNet，独立工具，无需提示词）；参数 `image`(本地路径/URL/dataURL/base64)、`response_format`(默认 url)、`filename_prefix`。**推荐改用 `process_image(action="remove_background")`** |
 | `process_image` | 图像处理统一入口，按 `action` 分发：`upscale`=SeedVR2 7B Int8 放大（`multiplier` 1-8 默认 4，`color_correction` none/lab/wavelet/adain）；`remove_background`=BiRefNet 去背景；`segment`=SAM3 文本提示抠图（需 `prompt`=目标描述，`threshold` 默认 0.5）；通用参数 `image` / `response_format` / `filename_prefix` |
 | `get_task` | 查询异步任务状态与产物（含 `prompt_id`、是否有工作流快照、`output`、`error`）；同步回执里的 `task_id` 同样能查 |

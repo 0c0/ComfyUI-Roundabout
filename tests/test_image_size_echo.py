@@ -166,7 +166,7 @@ check("probe 是 OUTPUT_NODE（否则不进 /history）",
       "probe 类里没有 OUTPUT_NODE = True")
 
 videos = sorted((NODE / "workflows").glob("video_*.json"))
-check("视频模板数量符合预期（5 支）", len(videos) == 5, str([p.name for p in videos]))
+check("视频模板数量符合预期（4 支）", len(videos) == 4, str([p.name for p in videos]))
 for path in videos:
     data = json.loads(path.read_text(encoding="utf-8"))
     probes = {nid: n for nid, n in data.items() if (n or {}).get("class_type") == "RoundaboutSizeProbe"}
