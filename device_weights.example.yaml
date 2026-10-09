@@ -1,0 +1,24 @@
+# 机器本地权重覆盖（模板）
+# ============================================================
+# 用法：把本文件复制为 device_weights.yaml（该文件 gitignored，
+# 只存在于本机），按本机硬件声明要替换的工作流输入。
+#
+# 适用场景：同一份仓库跑在不同显存的机器上——量化权重（如 w6a8）
+# 在免 offload 的大显存机器上有 dequant 每步税，反而比全量慢；
+# 低显存机器则必须用量化版。各机器各自维护自己的 device_weights.yaml。
+#
+# 规则：
+#   - workflow 用文件名匹配 models.yaml 里的 workflow 字段
+#   - node 是工作流 API JSON 里的节点 id（字符串即可）
+#   - set 是要覆盖的 inputs 键值对；值以 .safetensors 结尾时网关会
+#     在 ComfyUI 模型目录里查存在性，缺失会启动告警（不阻断装载，
+#     但提交时 ComfyUI 会报错）
+#   - device_weights.yaml 在网关装载时读取，改完走
+#     /roundabout/admin/reload 或重启生效
+#
+# 示例（4090 侧：全量 bf16 更快）：
+# overrides:
+#   - workflow: video_minimax_h3.json
+#     node: "127"
+#     set:
+#       unet_name: minimax_h3_fl2va_bf16.safetensors

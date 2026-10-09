@@ -233,6 +233,7 @@ class Registry:
         """
         if not isinstance(raw, dict):
             raise RuntimeError("models.yaml top-level must be a mapping")
+        device_overrides = _load_device_overrides(models_file.parent)
         shared_defaults: dict[str, Any] = raw.get("defaults") or {}
         # 低显存分块档位表（按本机显存挑一档，见 gateway/vram.py）
         vram_tiers = vram.normalize_tiers(shared_defaults.get("vram_tiers"))
@@ -265,6 +266,27 @@ class Registry:
                     f"model `{name}`: {wf_path.name} looks like a UI workflow. "
                     "Export it with 'Workflow -> Export (API)' instead."
                 )
+
+            # 机器本地权重覆盖：device_weights.yaml 按本机硬件替换权重文件名。
+            for ov in device_overrides.get(wf_name, []):
+                nid = ov["node"]
+                if nid not in template:
+                    raise RuntimeError(
+                        f"device override: node `{nid}` not found in {wf_path.name} "
+                        "(declared in device_weights.yaml)"
+                    )
+                node_inputs = template[nid].setdefault("inputs", {})
+                for key, value in ov["set"].items():
+                    if isinstance(value, str) and value.endswith(".safetensors"):
+                        why = _weight_not_found(value)
+                        if why:
+                            log.warning(
+                                "device override: weight `%s` %s —— 提交时 ComfyUI 会报错，"
+                                "请先下载或修正 device_weights.yaml",
+                                value, why,
+                            )
+                    node_inputs[key] = value
+                    log.info("device override: %s node %s.inputs.%s = %s", wf_path.name, nid, key, value)
 
             bindings = _normalize_bindings(name, cfg.get("bindings") or {})
             # 显存分档：档位值作为默认值的地基，模型自己写的 defaults 覆盖它。
@@ -371,6 +393,60 @@ class Registry:
             ", ".join(state["order"]),
             self.default_model,
         )
+
+
+def _load_device_overrides(base_dir: Path) -> dict[str, list[dict[str, Any]]]:
+    """读取机器本地权重覆盖表 device_weights.yaml（可选、gitignored）。
+
+    用途：同一份仓库跑在不同硬件上时，按本机情况替换工作流里的权重文件名
+    （如显存充裕的机器挂全量 bf16、低显存机器挂 w6a8 量化版——量化在免 offload
+    的机器上反而有 dequant 每步税）。文件不存在 = 无覆盖，行为与历史版本一致。
+    """
+    path = base_dir / "device_weights.yaml"
+    if not path.exists():
+        return {}
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    entries = raw.get("overrides") or []
+    if not isinstance(entries, list):
+        raise RuntimeError(f"{path.name}: `overrides` must be a list")
+    out: dict[str, list[dict[str, Any]]] = {}
+    for i, entry in enumerate(entries):
+        where = f"{path.name}.overrides[{i}]"
+        if not isinstance(entry, dict):
+            raise RuntimeError(f"{where}: must be a mapping")
+        wf = str(entry.get("workflow") or "")
+        if not wf:
+            raise RuntimeError(f"{where}: missing `workflow`")
+        if entry.get("node") is None:
+            raise RuntimeError(f"{where}: missing `node`")
+        setmap = entry.get("set")
+        if not isinstance(setmap, dict) or not setmap:
+            raise RuntimeError(f"{where}: `set` must be a non-empty mapping of inputs")
+        out.setdefault(wf, []).append({
+            "node": str(entry["node"]),
+            "set": {str(k): v for k, v in setmap.items()},
+        })
+    if out:
+        log.info(
+            "device weights: %d override(s) loaded from %s",
+            sum(len(v) for v in out.values()), path.name,
+        )
+    return out
+
+
+def _weight_not_found(name: str) -> str | None:
+    """在 ComfyUI 模型目录里找权重；找不到返回原因，环境不可测（离线测试）时返回 None。"""
+    try:
+        import folder_paths  # ComfyUI 运行环境才有
+    except ImportError:
+        return None
+    for folder in folder_paths.folder_names_and_paths:
+        try:
+            if folder_paths.get_full_path(folder, name):
+                return None
+        except Exception:
+            continue
+    return "not found in any ComfyUI model dir"
 
 
 def _normalize_bindings(model: str, raw: dict[str, Any]) -> dict[str, list[str]]:

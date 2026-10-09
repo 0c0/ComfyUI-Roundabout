@@ -16,6 +16,9 @@ tests/test_outputs/
 *.bak
 models.tmp.yaml
 
+# ---- 机器本地权重覆盖（device_weights.example.yaml 是模板，本文件不进仓库）----
+device_weights.yaml
+
 # ---- 编辑器 / 系统 ----
 .vscode/
 .idea/

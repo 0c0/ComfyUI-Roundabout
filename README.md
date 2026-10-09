@@ -21,7 +21,7 @@ ComfyUI 已经有模型、显存和队列，缺的只是一层 agent 能听懂�
 - 随 ComfyUI 启动自动加载、随 ComfyUI 退出而结束，**没有独立进程**
 - MCP 端点挂在 ComfyUI 自己的端口（`/mcp`），**不额外占端口**
 - 复用 ComfyUI 的 Python 解释器与依赖（纯 REST 场景零新增依赖）
-- 配置只有 `models.yaml`（模型）与 `.env`（可选）两个文件，改完热加载
+- 配置只有 `models.yaml`（模型）与 `.env`（可选）两个文件，改完热加载；另有一个可选的 `device_weights.yaml`（机器本地权重覆盖，gitignored，见下方[多机部署](#多机部署权重覆盖)）
 
 没有 docker、没有守护进程、没有第二份 registry 要同步。
 
@@ -513,6 +513,17 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 ## 配置
 
 完整环境变量清单见 **[API.md §2.3](API.md)**，常用项：
+
+### 多机部署：权重覆盖
+
+同一份仓库跑在不同硬件上时，量化权重（w6a8 等）在**免 offload 的大显存机器上有 dequant 每步税，反而比全量慢**；低显存机器却必须用量化版。解法是把「选哪个权重文件」从仓库剥离到机器本地：
+
+1. 复制 `device_weights.example.yaml` 为 `device_weights.yaml`（gitignored，不进仓库、不随 push 同步）；
+2. 按本机硬件声明覆盖（如 4090 侧把 `video_minimax_h3.json` 节点 127 的 `unet_name` 换回全量 bf16）；
+3. 重启或 `/roundabout/admin/reload` 生效，启动日志逐条回显 `device override: ...`。
+
+`.safetensors` 结尾的值会在 ComfyUI 模型目录里做存在性校验，缺失打启动告警（提交时 ComfyUI 侧仍会硬报错兜底）。不建这个文件 = 零覆盖，行为与单机部署完全一致。
+
 
 | 环境变量 | 默认 | 说明 |
 |---|---|---|
