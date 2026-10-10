@@ -743,3 +743,45 @@ models:
     - h3-lift-edit
     - h3lift-edit
     - ref2va-lift
+
+  # ===================== Qwen3-TTS · VoiceDesign（音频档）=====================
+  # 第三类 mode：audio。产物是音频文件（SaveAudioMP3 落盘 mp3），端点 POST /v1/audio/speech。
+  # 工作流三节点：引擎配置(2) -> 音色设计(6) -> 保存(8)。
+  #   · `prompt` 落在 6.inputs.reference_text —— 音频档的「提示词」就是**要朗读的文本**；
+  #   · `voice_instruction` 落在 6.inputs.voice_instruction —— 音色设计描述（年龄/性别/
+  #     语速/气质…）；请求侧 OpenAI 同名概念是 `instructions`，二者等价、二选一。
+  # VoiceDesign 档位不消费 voice_preset（引擎里写明 Ignored by VoiceDesign），绑定留着
+  # 是为了用 workflow_overrides 换成 CustomVoice 档时仍能选预设音色。
+  qwen3-tts-voice-design:
+    workflow: audio_qwen3_tts_voice_design.json
+    description: "Qwen3-TTS 1.7B VoiceDesign —— 文本转语音 + 音色设计：`input`（或 `prompt`）= 要朗读的文本，`instructions` = 音色描述（年龄/性别/音高/语速/气质等，不给则用模板内置描述）；`voice_instruction` 是 `instructions` 的同义字段。依赖 custom node TTS-Audio-Suite（Qwen3TTSEngineNode / UnifiedVoiceDesignerNode）；产物 mp3 落 ComfyUI output 目录，默认 `response_format=url`"
+    mode: audio
+    capabilities:
+    - text-to-speech
+    output_node: '8'
+    timeout: 900
+    defaults:
+      language: Auto
+      temperature: 0.9
+      top_p: 1.0
+      top_k: 50
+      repetition_penalty: 1.05
+      max_new_tokens: 2048
+    bindings:
+      filename_prefix: 8.inputs.filename_prefix
+      prompt: 6.inputs.reference_text
+      voice_instruction: 6.inputs.voice_instruction
+      seed: 6.inputs.seed
+      language: 2.inputs.language
+      voice: 2.inputs.voice_preset
+      temperature: 2.inputs.temperature
+      top_p: 2.inputs.top_p
+      top_k: 2.inputs.top_k
+      repetition_penalty: 2.inputs.repetition_penalty
+      max_new_tokens: 2.inputs.max_new_tokens
+    aliases:
+    - qwen3_tts_voice_design
+    - qwen3-tts
+    - qwen3tts
+    - voice-design
+    - tts-voice-design

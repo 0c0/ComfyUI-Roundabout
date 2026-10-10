@@ -267,17 +267,22 @@ class ComfyClient:
 
 # ---------------------------------------------------------------------- helpers
 def collect_images(entry: dict[str, Any], output_node: str | None = None) -> list[dict[str, Any]]:
-    """从 history 条目里抽出图片引用；output_node 为空则收集全部输出节点。"""
+    """从 history 条目里抽出媒体引用；output_node 为空则收集全部输出节点。
+
+    三类产物共用一套引用结构（``{filename, subfolder, type}``），只是挂在 history 里
+    的键名不同：图片 ``images`` / 动图 ``gifs`` / 音频 ``audio``（SaveAudio* 系的
+    ``SavedAudios.as_dict()``）。
+    """
     outputs: dict[str, Any] = entry.get("outputs") or {}
     refs: list[dict[str, Any]] = []
     nodes = [output_node] if output_node and output_node in outputs else list(outputs.keys())
     # 只数**真的产出媒体**的节点：「多节点 ⇒ 忽略 temp 预览图」这条判据的口径是「本次有多个
-    # 产物节点」，而装饰性输出节点（RoundaboutSizeProbe 只报尺寸、不带 images/gifs）不该把它
+    # 产物节点」，而装饰性输出节点（RoundaboutSizeProbe 只报尺寸、不带 images/gifs/audio）不该把它
     # 顶起来 —— 否则正常产物会被误判成预览图跳过。
-    nodes = [n for n in nodes if any((outputs.get(n) or {}).get(k) for k in ("images", "gifs"))]
+    nodes = [n for n in nodes if any((outputs.get(n) or {}).get(k) for k in ("images", "gifs", "audio"))]
     for node_id in nodes:
         node_out = outputs.get(node_id) or {}
-        for key in ("images", "gifs"):
+        for key in ("images", "gifs", "audio"):
             for item in node_out.get(key, []) or []:
                 if item.get("type") == "temp" and len(nodes) > 1:
                     continue  # 多节点时忽略预览图，只要正式产物

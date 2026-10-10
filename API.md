@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.40.2` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.41.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -20,7 +20,7 @@
                           │        ▼                                     │
                           │   内部 uvicorn (127.0.0.1, streamable-http)   │
                           │        端口由系统分配或按映射表指定          │
-                          │        = MCP Server (17 tools)               │
+                          │        = MCP Server (18 tools)               │
                           └───────────────┬──────────────────────────────┘
                                           │ 复用
                           ┌───────────────▼──────────────────────────────┐
@@ -302,11 +302,49 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 > 视频模型也可打到 `/v1/images/generations` 自动转视频链路。
 
-### 5.3 异步任务查询与取消
+### 5.3 音频生成（TTS / 音色设计）
 
-#### `GET /v1/videos/tasks/{id}`  /  `GET /v1/images/tasks/{id}`
+#### `POST /v1/audio/speech`
 
-查询任务状态与产物（两命名空间等价）。
+文本转语音。**第三类 mode（audio）**：产物是音频文件，由工作流里的 `SaveAudio*` 节点落盘（当前档位 mp3）。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `input` | string | **要朗读的文本**（OpenAI TTS 的同名字段） |
+| `prompt` | string? | `input` 的别名（`input` 优先）；与图像/视频档保持同一命名习惯 |
+| `instructions` | string? | **音色设计描述**：年龄 / 性别 / 音高 / 质感 / 口音 / 语速 / 情绪 / 说话风格（如「成熟中年男性，低沉醇厚，语速平缓从容」）。不给则用工作流模板内置描述 |
+| `voice_instruction` | string? | `instructions` 的同义字段（节点输入同名）；二者同传以 `instructions` 为准 |
+| `model` | string? | 默认 `qwen3-tts-voice-design` |
+| `voice` | string? | 引擎预设音色（`Vivian` / `Serena` / `Uncle_Fu` …）；**VoiceDesign 档位忽略它**，音色由 `instructions` 决定 |
+| `language` | string? | `Auto`（默认，自动判别）/ `Chinese` / `English` / `Japanese` / `Korean` … |
+| `seed` | int? | 0 与正整数固定；不传随机（回显实际值） |
+| `temperature` / `top_p` / `top_k` / `repetition_penalty` / `max_new_tokens` | 各类型? | 采样精调，默认 0.9 / 1.0 / 50 / 1.05 / 2048（长文本调大 `max_new_tokens`） |
+| `response_format` | enum? | `url`（默认）/ `b64_json` / `file` / `path`。⚠️ 这是**交付形态不是音频编码** —— 编码由工作流的 SaveAudio 节点决定（当前 mp3）；填 `mp3` / `wav` 会报 400 并说明 |
+| `filename_prefix` | string? | 落盘前缀；不传用模板自带前缀（`audio/Qwen3TTS_VoiceDesign`） |
+| `workflow_overrides` | object? | 通用透传，如 `{"2.inputs.model_variant": "TTS - CustomVoice 1.7B (Presets + Instruction)"}` 换档、`{"2.inputs.device": "cuda"}` |
+| `background` | `"pending"`? | **异步**触发：POST 立即返回 task 对象 |
+| `async` | bool? | 兼容别名，`true` 等价于 `background:"pending"` |
+
+**同步响应**（200）：`{ "created", "data":[{ "url" }], "seed", "task_id" }`。
+
+```json
+{
+  "created": 1700000000,
+  "data": [ { "url": "http://host:8188/view?filename=Qwen3TTS_VoiceDesign_00001.mp3&subfolder=audio&type=output" } ],
+  "seed": 1,
+  "task_id": "3f2a1c9e8b7d"
+}
+```
+
+> 音频模型也可打到 `/v1/images/generations`（自动转音频链路）；反过来把图像/视频模型打到本端点会报 400 并指路。
+> 依赖 custom node **TTS-Audio-Suite**（`Qwen3TTSEngineNode` / `UnifiedVoiceDesignerNode`）；引擎默认跑在
+> **Shared Runtime**（隔离的 Transformers 4 栈），首次调用会准备运行时、耗时明显偏长。
+
+### 5.4 异步任务查询与取消
+
+#### `GET /v1/videos/tasks/{id}`  /  `GET /v1/audio/tasks/{id}`  /  `GET /v1/images/tasks/{id}`
+
+查询任务状态与产物（三命名空间等价）。
 
 - `queued→pending`、`processing→in_progress`、`succeeded→completed`、`failed→failed`、`cancelled→cancelled`（原样透出）。
 - `completed` 时附 `output:{ "data":[...] }`（url 已绝对化）与顶层 `size`（实际输出尺寸 "WxH"，与同步响应同位 —— 不必再去 ffprobe 产物）；`failed` 时附 `error:{ "message", "code" }`。未终态两者都没有。
@@ -320,7 +358,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 }
 ```
 
-#### `DELETE /v1/videos/tasks/{id}`  /  `DELETE /v1/images/tasks/{id}`
+#### `DELETE /v1/videos/tasks/{id}`  /  `DELETE /v1/audio/tasks/{id}`  /  `DELETE /v1/images/tasks/{id}`
 
 取消异步任务。
 
@@ -337,7 +375,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 `detail` 取值：`removed_from_queue`（pending 已从队列移除）/ `interrupted_running_task`（running 已中断）/ `not_in_comfy_queue`（已离队）/ `task_already_finished`（已终态，未取消）/ `cancelled_local_only`（本地标记取消但无 prompt_id）/ `comfy_cancel_failed: <err>`（尽力而为失败，本地取消仍生效）。任务不存在返回 404 `task_not_found`。
 
-### 5.4 模型列表
+### 5.5 模型列表
 
 #### `GET /v1/models`  /  `GET /v1/models/{model_id}`
 
@@ -358,16 +396,17 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，20 步（支持图/视频/音频参考） |
 | `minimax-h3-lift` | video | text-to-video / first-last-frame | base 骨架 + 确定性放大：`size` = 768p 第一采画布（默认 1344x768），latent lift × `scale`（默认 1.875 → 输出 2520x1440）；`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）；分块参数按本机显存自动分档 |
 | `minimax-h3-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 edit 骨架（Ref2VA 权重，20 步）；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
+| **`qwen3-tts-voice-design`** | audio | text-to-speech | Qwen3-TTS 1.7B VoiceDesign：文本转语音 + 音色设计（见 [5.3 音频生成](#53-音频生成tts--音色设计)）。端点 `POST /v1/audio/speech`；依赖 custom node TTS-Audio-Suite |
 
 > 完整别名与绑定关系见 `models.yaml`；模型清单与用途对照也见 [README.md](README.md#内置模型)。
 
-### 5.5 产物文件下载
+### 5.6 产物文件下载
 
-#### `GET /v1/images/files/{name}`  /  `GET /v1/videos/files/{name}`
+#### `GET /v1/images/files/{name}`  /  `GET /v1/videos/files/{name}`  /  `GET /v1/audio/files/{name}`
 
 按文件名取回生成产物（受 `OUTPUT_TTL` 控制，过期 404）。
 
-### 5.6 运维 / 健康
+### 5.7 运维 / 健康
 
 #### `GET /health`
 
@@ -381,7 +420,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 可视化页面（详见 [§7.1 可视化页面](#71-可视化页面viewhtml)）：`GET /roundabout/view`（页面）、`GET /roundabout/view/files`（列目录）、`GET /roundabout/view/tasks`（任务进度）。
 
-### 5.7 管理端点（工作流 / 模型配置）
+### 5.8 管理端点（工作流 / 模型配置）
 
 > 均受鉴权约束（除非已放行）。
 
@@ -414,19 +453,20 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 ## 6. 响应模型（schemas）
 
 - **ImageResponse / VideoResponse**：`created`(int) + `data`(list, 每项 `url`/`b64_json`/`path`/`revised_prompt`) + `seed`(int|int[]|null) + `usage`(null) + `task_id`(同步链路在任务表的 id，供钉卡反查) + `references`(视频参考图回显) + `size`(实际输出尺寸 "WxH"；**实测** —— 图像读产物字节头、视频由工作流内的尺寸探针自报，都不是请求参数的回读)。
+- **AudioResponse**：`created` + `data` + `seed` + `task_id`。与图像/视频同构，但没有 `size`（音频没有分辨率概念）。
 - **异步 task 对象**：`id` / `object:"image_generation.task"` / `status` / `created_at` / `model` / (`output`|`error`) / `size`（仅 `completed` 且该次生成有尺寸回显时出现，取值同同步响应的 `size`）。
 - **错误**：`{ "error": { "message": "...", "code": "...", "param": "..." } }`，HTTP 状态对应 4xx/5xx（如 `400` 参数错误、`404` task_not_found、`422` 配置校验失败、`500` 内部错误）。
 - **权重缺失会被改写成下载指引**：ComfyUI 的 combo 校验拒掉提交时（`value_not_in_list`，报错形态 `Value not in list (unet_name: 'x.safetensors' not in [...])`），网关把该 400 的 `message` 补成「文件名 + 目标目录 + `curl` 命令」。数据来自仓库根的 `weights.yaml`；索引里没有的文件（如 `LoadImage` 的输入图）**保持原报错不变**，不会给出错的下载地址。
 
 ---
 
-## 7. MCP 网关（17 个工具）
+## 7. MCP 网关（18 个工具）
 
 **默认启用**（`MCP_ENABLED` 默认 `true`）：装好 `mcp` / `uvicorn`、重启 ComfyUI 即可用，不需要任何配置。
 
 传输：`streamable-http`，端点 `/mcp`（共享端口挂在 ComfyUI 端口，或 `MCP_HOST:<MCP_PORT>` 独立，端口由 `MCP_PORT` / `MCP_PORT_MAP` 决定）。与 REST 完全互通。
 
-工具分四类：**生成**（`generate_image` / `edit_image` / `remove_background` / `process_image` / `generate_video`）、**查询与控制**（`get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`）、**运维**（`reload` / `get_view_url` / `get_skills`）、**看板**（`view_board`，单入口按 `action` 分发：pin / remove / clear / get / history / load）。
+工具分四类：**生成**（`generate_image` / `edit_image` / `remove_background` / `process_image` / `generate_speech` / `generate_video`）、**查询与控制**（`get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`）、**运维**（`reload` / `get_view_url` / `get_skills`）、**看板**（`view_board`，单入口按 `action` 分发：pin / remove / clear / get / history / load）。
 
 > 工具的 `description` **只保留一句话定位**；参数细节（逐模型生效性、区间、枚举、默认值、参考槽
 > 数量、尺寸档位）一律查 `get_tool_info`。该工具与 REST 的 `/roundabout/admin/tool-info` 同源，
@@ -439,6 +479,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `list_models` | 列出可用模型及其能力 / 模式 / 默认参数 / 别名 |
 | `generate_image` | 文生图；支持 `negative_prompt`/`seed`/`size`/`steps`/`cfg`/`workflow_overrides`(JSON 字符串)/`filename_prefix`/`mode`；返回 OpenAI 风格响应（含 `seed` 回显，url 已绝对化）；视频模型自动转视频链路。**编辑图片不要用本工具**（用 `edit_image` / `remove_background`） |
 | `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写），改图内文字传 `boogu-image-edit-turbo` / `boogu-image-edit`；**多图参考**传 `reference_images`（klein 4 槽 / qwen 6 槽）；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
+| `generate_speech` | 文本转语音 / 音色设计：`input`（要朗读的文本）+ `instructions`（音色描述，不给用模板内置描述）；参数 `model`(默认 `qwen3-tts-voice-design`)/`voice`/`language`/`seed`/`response_format`(交付形态，非编码)/`filename_prefix`/`background`；返回 `{created, data:[{url}], seed, task_id}` |
 | `generate_video` | 文生视频 / 首尾帧生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`first_frame`/`last_frame`/`reference_images|videos|audios`（按模型槽位生效，帧与参考可同传）/`steps`/`attention`/`teacache_threshold`（仅 h3/edit）/`output_size`/`scale`（仅 lift，互斥）/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
 | `remove_background` | 图片去背景（BiRefNet，独立工具，无需提示词）；参数 `image`(本地路径/URL/dataURL/base64)、`response_format`(默认 url)、`filename_prefix`。**推荐改用 `process_image(action="remove_background")`** |
 | `process_image` | 图像处理统一入口，按 `action` 分发：`upscale`=SeedVR2 7B Int8 放大（`multiplier` 1-8 默认 4，`color_correction` none/lab/wavelet/adain）；`remove_background`=BiRefNet 去背景；`segment`=SAM3 文本提示抠图（需 `prompt`=目标描述，`threshold` 默认 0.5）；通用参数 `image` / `response_format` / `filename_prefix` |
@@ -538,7 +579,21 @@ curl -X POST http://127.0.0.1:8188/v1/images/generations \
   -d '{"model":"z-image-turbo","prompt":"a red fox in snow","size":"1024x1024","seed":42}'
 ```
 
-### 8.2 REST 视频生成（异步 + 轮询/推送）
+### 8.2 REST 语音合成（音色设计，同步）
+
+```bash
+curl -X POST http://127.0.0.1:8188/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model":"qwen3-tts-voice-design",
+        "input":"肿瘤早期有哪些常见的警示症状？了解并关注持续性症状，对早期发现具有重要意义。",
+        "instructions":"成熟中年男性声线，低沉醇厚，语速平缓从容，吐字清晰标准，语调稳定克制",
+        "language":"Chinese",
+        "seed":1
+      }'
+```
+
+### 8.3 REST 视频生成（异步 + 轮询/推送）
 
 ```bash
 # 提交（异步）
@@ -554,7 +609,7 @@ curl -s http://127.0.0.1:8188/v1/videos/tasks/$TASK
 curl -X DELETE http://127.0.0.1:8188/v1/videos/tasks/$TASK
 ```
 
-### 8.3 MCP 客户端（伪代码）
+### 8.4 MCP 客户端（伪代码）
 
 ```
 call generate_video(prompt="a cat walking in rain", model="minimax-h3", size="576p-16:9",
