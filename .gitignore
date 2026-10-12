@@ -19,6 +19,9 @@ models.tmp.yaml
 # ---- 机器本地权重覆盖（device_weights.example.yaml 是模板，本文件不进仓库）----
 device_weights.yaml
 
+# ---- 本机工作流实例层（从 workflows/ 模板部署后自己维护，不进仓库、更新不覆盖）----
+workflows.local/
+
 # ---- 编辑器 / 系统 ----
 .vscode/
 .idea/

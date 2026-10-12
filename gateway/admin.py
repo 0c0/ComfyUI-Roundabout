@@ -1,7 +1,8 @@
-"""ComfyUI-Roundabout 管理端点（只读 + reload）。
+"""ComfyUI-Roundabout 管理端点（只读 + reload + 工作流实例管理）。
 
-v1.40.0 起设置面板退役：工作流/models.yaml 的写端点已删（配置一律走
-git 管理 + 测试护栏），这里只剩状态、队列监控、权重体检与调用面查询。
+v1.40.0 起设置面板退役：models.yaml 的写端点已删（配置一律走 git 管理 +
+测试护栏）。v1.42.0 起新增工作流实例层管理（wfdeploy）：部署 = 从模板拷贝到
+gitignored 的 workflows.local/，不碰仓库跟踪的模板层，与「配置走 git」不冲突。
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import yaml
 from aiohttp import web
 from pydantic import ValidationError
 
-from . import toolinfo, weights
+from . import toolinfo, weights, wfdeploy
 from .analyze import workflow_seed
 from .auth import verify
 from .comfy_client import ComfyClient
@@ -73,10 +74,40 @@ async def admin_state(request: web.Request) -> web.Response:
     return web.json_response({
         "models_file": str(settings.models_file),
         "workflows_dir": str(settings.workflows_dir),
+        "workflows_local_dir": str(settings.workflows_local_dir),
         "auth_enabled": settings.auth_enabled,
         "models": registry.names(),
         "default_model": registry.default_model,
     })
+
+
+# ------------------------------------------------------------------ 工作流实例层（模板 / 实例双层）
+@gateway_handler
+async def workflows_status(request: web.Request) -> web.Response:
+    """每档工作流的来源（template|local）与同步状态（实例 hash vs 模板 hash）。"""
+    verify(request)
+    return web.json_response({
+        "workflows_dir": str(settings.workflows_dir),
+        "workflows_local_dir": str(settings.workflows_local_dir),
+        "workflows": wfdeploy.snapshot(),
+    })
+
+
+@gateway_handler
+async def workflows_deploy(request: web.Request) -> web.Response:
+    """从模板部署实例到 workflows.local/：body {workflow, as_name?, force?}。"""
+    verify(request)
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001
+        raise APIError("request body must be JSON", status_code=400, param="body")  # noqa: B904
+    if not isinstance(body, dict):
+        raise APIError("request body must be a JSON object", status_code=400, param="body")
+    return web.json_response(wfdeploy.deploy(
+        str(body.get("workflow") or ""),
+        as_name=str(body.get("as_name") or ""),
+        force=bool(body.get("force")),
+    ))
 
 
 # ------------------------------------------------------------------ 队列监控

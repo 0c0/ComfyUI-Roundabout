@@ -4,7 +4,18 @@ Roundabout 不自带任何"工作流导入"功能。它做的只有一件事：
 
 > 读一份 **API 格式**的工作流 JSON，按 `models.yaml` 里声明的映射，把接口参数注进对应节点的 input，然后提交给 ComfyUI。
 
-所以接入自己的流程 = **导出一个 JSON + 写一段映射**。`workflows/` 下的 16 个 JSON 只是可用样本（15 支已注册 + 1 个接入样本 `example_txt2img.json`），随时可以删。
+所以接入自己的流程 = **导出一个 JSON + 写一段映射**。`workflows/` 下的 JSON 只是**模板**（随仓库更新会被覆盖），随时可以删。
+
+### 模板 / 实例双层（v1.42.0 起）
+
+| 层 | 目录 | 归属 | 更新行为 |
+|---|---|---|---|
+| 模板 | `workflows/` | 仓库跟踪 | 上游更新会覆盖 —— 只放从 ComfyUI 导出的原始 API JSON，不做本机定制 |
+| 实例 | `workflows.local/` | 本机（gitignored） | 从模板部署后自由改造（换节点、改固定参数），**永不被更新触碰** |
+
+- 解析规则：`models.yaml` 的 `workflow: xxx.json` 先查 `workflows.local/`，没有回落 `workflows/`；实例层为空 = 行为与历史版本完全一致。
+- 部署：`POST /roundabout/admin/workflows/deploy`（body `{workflow, as_name?, force?}`）或 MCP `manage_workflows(action="deploy")`，写完热加载立即生效。
+- 感知：`GET /roundabout/admin/workflows` 或 MCP `manage_workflows(action="list")` 列每档 `{source, template_hash, instance_hash, synced}` —— 模板更新后 `synced=false` 的实例就是待合并项（自动合并不做，人工对比重部署）。
 
 ---
 
@@ -27,11 +38,11 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 
 ### 可绑定的参数名（白名单）
 
-`prompt` `negative_prompt` `width` `height` `seed` `steps` `cfg` `sampler_name` `scheduler` `denoise` `batch_size` `image` `mask` `filename_prefix` `duration` `fps` `num_frames` `mode` `chunks` `head_chunks` `seq_threshold` `highres_tiling` `sparse_start_percent` `turbo_lora` `use_custom_size`
+`prompt` `negative_prompt` `width` `height` `seed` `steps` `cfg` `sampler_name` `scheduler` `denoise` `batch_size` `image` `mask` `filename_prefix` `duration` `fps` `num_frames` `mode` `chunks` `head_chunks` `seq_threshold` `highres_tiling` `sparse_start_percent` `spark_enabled` `turbo_lora` `use_custom_size`
 
 **白名单以外的键会被静默忽略**（只在启动日志里留一条 warning）。厂商特有参数用 `workflow_overrides` 传，不要在 `bindings` 里造名字。
 
-少数白名单键的值**不是请求参数，而是网关按本次请求推导出来的**：`sparse_start_percent`（由 `attention` 档位翻译）与 `use_custom_size`（有没有参考素材）。它们出现在白名单里只是为了让 `bindings` 放行 —— 调用方无需、也不该直接传。
+少数白名单键的值**不是请求参数，而是网关按本次请求推导出来的**：`sparse_start_percent` / `spark_enabled`（都由 `attention` 档位翻译，落点按模型分，见下表）与 `use_custom_size`（有没有参考素材）。它们出现在白名单里只是为了让 `bindings` 放行 —— 调用方无需、也不该直接传。
 
 ### 常见落点
 
@@ -52,7 +63,7 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 | `fps` | `CreateVideo.fps`、`VideoCombine.frame_rate` |
 | `duration` / `num_frames` | 你自己链路里的时长/帧数节点 |
 | `chunks` / `seq_threshold` | `MiniMaxChunkFeedForward.chunks` / `.seq_threshold`（KJNodes） |
-| `sparse_start_percent` | `BlockSparseAttention.start_percent`（稀疏起始点，`1.0` 因 `percent_to_sigma(1.0)=0` 等效全程关闭稀疏）。**对外的语义参数是 `attention: sparse\|dense`**，由 `params.resolve_attention` 翻译后落到这里；`attention` 只对 base 四支 H3 视频档有效（`minimax-h3` / `-edit` / `-lift` / `-lift-edit`，其它模型传了报错） |
+| `sparse_start_percent` / `spark_enabled` | 对外同一个 `attention: sparse\|dense` 的两个落点，按模型分：`sparse_start_percent` → `BlockSparseAttention.start_percent`（其余三支；`1.0` 因 `percent_to_sigma(1.0)=0` 等效全程关闭稀疏）；`spark_enabled` → Spark 节点 `enabled`（`minimax-h3`；`dense` = 节点原样透传模型）。翻译在 `params.resolve_attention`；`attention` 只对 base 四支 H3 视频档有效（`minimax-h3` / `-edit` / `-lift` / `-lift-edit`，其它模型传了报错） |
 | `turbo_lora` | `LoraLoaderModelOnly.strength_model`（节点 160，minimax-h3 / -edit 有绑定）。0=关（默认，关时不注入开销）；1.0=8 步蒸馏 Turbo（h3 用 fl2v_turbo_8step_v1.0、h3-edit 用 ref2v_turbo_8step_v1.0_768p），**需配 `steps≈8`**；2026-10-05 实测 0.65@8 步端到端 -47%、画面干净、契合度不降 |
 | `teacache_threshold` | `MiniMaxH3TeaCache.rel_l1_thresh`（节点 185，**常驻于 minimax-h3 / -edit 工作流**，lift 两支不含）：累积相对 L1 输入差低于阈值即复用上一步输出 —— 越大越快、漂移越大。**默认 0=关**；0.08 特写/手部与简单场景+人物主体（生效时背景元素身份漂移风险）、0.15 慢速全身/风景，含文字/大色块渐变背景/重约束 prompt/双锚长链用 0（E41+S3R），0.22 有已知硬伤。`steps` 双绑定到 `124.inputs.steps` + `185.inputs.total_steps`（换步数缓存窗口自动跟随）；首尾实步 `start_step=2` / `end_step=-2` 走模板字面值，要调用 `workflow_overrides`（`185.inputs.start_step`） |
 | `head_chunks` | **当前无绑定**：唯一消费者 `MiniMaxLowVRAMAttention` 与 `BlockSparseAttention` 硬互斥，已从 6 支视频档撤除。参数名仍在可注入白名单里，把节点挂回去即可复用；档位表里的值不会注入任何工作流 |
@@ -130,17 +141,18 @@ models:
 
 ## 让用户跑起来的三种方式
 
-### A. 面板点选（推荐）
+### A. 面板上传（已退役）
 
-ComfyUI 菜单 **Roundabout → 工作流管理** → 选择 API 格式 JSON → 勾选 **「同时创建模型条目」** → 上传。
+v1.40.0 起设置面板退役，`POST /roundabout/admin/workflows/upload` 已删 —— 接入走下面 B / C。
 
-网关会自动分析工作流并生成 `models.yaml` 条目（`POST /roundabout/admin/workflows/upload`，`create_model=1`），然后：
+### B. 手工接入
 
-1. 到 **「模型配置」** 标签核对生成的绑定，按第二步的铁律改掉错的那几条
-2. **重新加载**（或重启 ComfyUI）
-3. 直接调接口验证
+1. API 格式 JSON 放进 `workflows/`（模板）—— 或先 deploy 一份实例再改（见上节）
+2. 在 `models.yaml` 追加条目（第二步的映射规则）
+3. `POST /admin/reload`（MCP 工具 `reload`）热加载
+4. 直接调接口验证
 
-自动分析是启发式的，**图像类工作流基本能一次到位**；这几处它必然识别不了，要手工补：
+自动分析是启发式的（v1.40 前的遗留经验），这几处必然识别不了，要手工补：
 
 | 场景 | 自动漏掉什么 | 补法 |
 |---|---|---|
@@ -148,32 +160,11 @@ ComfyUI 菜单 **Roundabout → 工作流管理** → 选择 API 格式 JSON →
 | 参考资源（图/视频/音频槽位） | 整个 `references` 段 | 见下节 |
 | 你自己造的节点 | 认不出字段名 | 看 JSON 手写路径 |
 
-### B. REST
-
-```bash
-curl -X POST http://127.0.0.1:8188/roundabout/admin/workflows/upload \
-  -F file=@my_workflow.json \
-  -F name=my_workflow.json \
-  -F create_model=1 \
-  -F model_name=my-model \
-  -F 'model_desc=我的工作流'
-```
-
-改完映射后热加载，不用重启：
-
-```bash
-curl -X POST http://127.0.0.1:8188/admin/reload
-```
-
 ### C. Agent / 脚本
 
 1. 把 API 格式 JSON 写进 `custom_nodes/ComfyUI-Roundabout/workflows/`
 2. 在 `models.yaml` 追加条目
 3. `POST /admin/reload`（MCP 工具 `reload`）
-4. 用 MCP `generate_image` / `generate_video` 打一发验证；失败就用 `get_workflow` 看渲染后的实际图
-5. 用 `list_models` 确认新模型已注册
-
----
 
 ## 参考资源：`references` 段
 

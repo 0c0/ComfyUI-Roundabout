@@ -63,10 +63,12 @@ KNOWN_PARAMS = {
     "seq_threshold",
     "highres_tiling",
     # ---- 注意力档位 ----
-    # 对外是 `attention: sparse|dense`（见 schemas.VideoGenerationRequest），由
-    # params.resolve_attention 翻译成「稀疏起始点」后落到 BlockSparseAttention.start_percent。
-    # 内部名与对外枚举分开，是为了让 defaults / 档位表里存的始终是数值，不混入枚举语义。
+    # 对外统一是 `attention: sparse|dense`（见 schemas.VideoGenerationRequest），由
+    # params.resolve_attention 翻译后落到对应节点：minimax-h3 落 Spark.enabled（键 `spark_enabled`，
+    # 布尔）；其余 base 三支落 BlockSparseAttention.start_percent（键 `sparse_start_percent`，数值）。
+    # 内部名与对外枚举分开，是为了让 defaults / 档位表里存的始终是落点原生类型，不混入枚举语义。
     "sparse_start_percent",
+    "spark_enabled",
     # ---- 尺寸来源开关（Qwen 2.1 合并档）----
     # 落到 ComfySwitchNode.switch：latent 要么跟参考图（聚合节点的 latent 输出），
     # 要么用 width/height 直传的空 latent。值由 pipeline 按「有没有参考素材」推导，
@@ -76,6 +78,26 @@ KNOWN_PARAMS = {
 
 CAP_TXT2IMG = "text-to-image"
 CAP_IMG2IMG = "image-to-image"
+
+
+def resolve_workflow_path(workflows_dir: Path, wf_name: str, local_dir: Path | None = None) -> Path:
+    """workflow 文件的有效解析（模板 / 实例双层）。
+
+    - 绝对路径原样返回（历史行为不变）；
+    - 相对名先查本机实例层 `local_dir`（workflows.local/，gitignored，部署端自己维护，
+      永不被仓库更新触碰），命中即用；
+    - 未命中回落模板层 `workflows_dir`（仓库跟踪，更新会被覆盖）。
+
+    实例层不存在或为空时行为与历史版本完全一致。
+    """
+    p = Path(wf_name)
+    if p.is_absolute():
+        return p
+    if local_dir is not None:
+        candidate = local_dir / wf_name
+        if candidate.exists():
+            return candidate
+    return workflows_dir / wf_name
 
 
 @dataclass
@@ -106,6 +128,9 @@ class ModelSpec:
     # highres_tiling）。档位表来自 `defaults.vram_tiers`，本机命中哪一档记在 vram_tier。
     vram_adaptive: bool = False
     vram_tier: dict[str, Any] = field(default_factory=dict)
+    # workflow 文件来源：template=仓库模板（workflows/，更新会被覆盖）| local=本机实例
+    # （workflows.local/，gitignored，永不被更新触碰）。见 resolve_workflow_path。
+    wf_source: str = "template"
 
     @property
     def supports_batch(self) -> bool:
@@ -226,6 +251,7 @@ class Registry:
         models_file: Path,
         workflows_dir: Path,
         default_model: str,
+        workflows_local_dir: Path | None = None,
     ) -> dict[str, Any]:
         """解析并校验一份 models.yaml 的内容，返回待生效的状态 dict。
 
@@ -249,9 +275,7 @@ class Registry:
             wf_name = cfg.get("workflow")
             if not wf_name:
                 raise RuntimeError(f"model `{name}`: missing `workflow`")
-            wf_path = Path(wf_name)
-            if not wf_path.is_absolute():
-                wf_path = workflows_dir / wf_name
+            wf_path = resolve_workflow_path(workflows_dir, wf_name, workflows_local_dir)
             if not wf_path.exists():
                 raise RuntimeError(f"model `{name}`: workflow file not found: {wf_path}")
 
@@ -345,6 +369,11 @@ class Registry:
                 vram_adaptive=bool(cfg.get("vram_adaptive")),
                 vram_tier=tier,
             )
+            spec.wf_source = (
+                "local"
+                if workflows_local_dir is not None and wf_path.parent == workflows_local_dir
+                else "template"
+            )
             _validate_bindings(spec)
             _validate_references(spec)
 
@@ -364,10 +393,11 @@ class Registry:
         text: str,
         workflows_dir: Path,
         default_model: str = "",
+        workflows_local_dir: Path | None = None,
     ) -> bool:
         """仅校验一份 YAML 文本能否被正常加载（不改内存状态、不写磁盘）。"""
         raw = yaml.safe_load(text)
-        self._build(raw, self._models_file or Path("models.yaml"), workflows_dir, default_model)
+        self._build(raw, self._models_file or Path("models.yaml"), workflows_dir, default_model, workflows_local_dir)
         return True
 
     def load(
@@ -375,12 +405,13 @@ class Registry:
         models_file: Path,
         workflows_dir: Path,
         default_model: str = "",
+        workflows_local_dir: Path | None = None,
     ) -> None:
         if not models_file.exists():
             raise RuntimeError(f"models file not found: {models_file}")
         self._models_file = models_file
         raw = yaml.safe_load(models_file.read_text(encoding="utf-8")) or {}
-        state = self._build(raw, models_file, workflows_dir, default_model)
+        state = self._build(raw, models_file, workflows_dir, default_model, workflows_local_dir)
 
         with self._lock:
             self._models = state["models"]

@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.40.2` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.42.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -20,7 +20,7 @@
                           │        ▼                                     │
                           │   内部 uvicorn (127.0.0.1, streamable-http)   │
                           │        端口由系统分配或按映射表指定          │
-                          │        = MCP Server (17 tools)               │
+                          │        = MCP Server (18 tools)               │
                           └───────────────┬──────────────────────────────┘
                                           │ 复用
                           ┌───────────────▼──────────────────────────────┐
@@ -391,6 +391,8 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `GET /roundabout/admin/queue` | **队列监控合并视图**：ComfyUI running/pending + 网关 tasks，**每个条目含 `seed`** |
 | `GET /roundabout/admin/queue/workflow/{prompt_id}` | 三层查找工作流 JSON：队列 → history → 任务快照。第三层是网关自己的账本，**同步与异步任务的 `task_id` 都能命中**（ComfyUI history 被清也查得到） |
 | `GET /roundabout/admin/weights` | **权重体检**：内置工作流引用的权重里当前缺哪些，每条的下载命令与目标目录（`?unreferenced=1` 附带当前无工作流引用的条目，`?mirror=modelscope` 换下载源） |
+| `GET /roundabout/admin/workflows` | 工作流实例层清单：每档 `{source, template_hash, instance_hash, synced}`，模板更新后一眼看出哪些实例落后 |
+| `POST /roundabout/admin/workflows/deploy` | 从模板部署实例到 `workflows.local/` 并热加载：body `{workflow, as_name?, force?}`；目标已存在未传 `force` 回 409 |
 | `GET /roundabout/admin/tool-info` | **调用结构自描述**：逐模型的字段生效性（类型 / 区间 / 枚举 / 默认值 / 是否生效 + 不生效原因）、参考槽数量、别名、生效默认值，加全局限制（张数上限、尺寸档位表、种子上限）。`?view=compact` 取裁剪版，`&model=<名>` 限定单模型，`&fields=0` 省掉字段清单 |
 
 #### 队列监控响应（`/roundabout/admin/queue`）
@@ -420,13 +422,13 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 ---
 
-## 7. MCP 网关（17 个工具）
+## 7. MCP 网关（18 个工具）
 
 **默认启用**（`MCP_ENABLED` 默认 `true`）：装好 `mcp` / `uvicorn`、重启 ComfyUI 即可用，不需要任何配置。
 
 传输：`streamable-http`，端点 `/mcp`（共享端口挂在 ComfyUI 端口，或 `MCP_HOST:<MCP_PORT>` 独立，端口由 `MCP_PORT` / `MCP_PORT_MAP` 决定）。与 REST 完全互通。
 
-工具分四类：**生成**（`generate_image` / `edit_image` / `remove_background` / `process_image` / `generate_video`）、**查询与控制**（`get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`）、**运维**（`reload` / `get_view_url` / `get_skills`）、**看板**（`view_board`，单入口按 `action` 分发：pin / remove / clear / get / history / load）。
+工具分四类：**生成**（`generate_image` / `edit_image` / `remove_background` / `process_image` / `generate_video`）、**查询与控制**（`get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights` / `manage_workflows`）、**运维**（`reload` / `get_view_url` / `get_skills`）、**看板**（`view_board`，单入口按 `action` 分发：pin / remove / clear / get / history / load）。
 
 > 工具的 `description` **只保留一句话定位**；参数细节（逐模型生效性、区间、枚举、默认值、参考槽
 > 数量、尺寸档位）一律查 `get_tool_info`。该工具与 REST 的 `/roundabout/admin/tool-info` 同源，
@@ -450,6 +452,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `health` | 网关与 ComfyUI 后端健康状态 |
 | `get_view_url` | 返回可视化页面地址（`{url}`，浏览器直接打开）：浏览 input/output 资源 + 实时任务进度。用户问「生成的东西在哪看」「给我查看页面」时调用，把 `url` 原样给用户 |
 | `check_weights` | **权重体检**（只读、不占 GPU）：列出内置工作流当前缺失的权重文件与每条的下载命令，避免等到 `generate*` 报 400 才发现权重没下 |
+| `manage_workflows` | 工作流**模板/实例双层**管理，按 `action` 分发：`list` 列每档来源（`template`=仓库模板，更新会被覆盖；`local`=workflows.local/ 本机实例，永不被更新触碰）与同步状态（`synced=false` = 模板已更新、实例落后）；`deploy` 从模板部署实例并热加载生效（`workflow`=模板文件名，`as_name=` 另存名，`force=true` 覆盖）。要长期定制某档工作流时先 deploy 再改实例文件 |
 | `get_skills` | 返回配套 agent-skills 的清单与安装地址（`roundabout` / `h3-playbook` / `qwen-image-prompt-writing`），每条带 `source`（本网关维护 / 模型官方维护）与 `skill_version`（该 skill 当前应有的内容版本）。本地已装 skill 的 frontmatter `skill_version` 低于此值 ⇒ 副本过期，按 `install_url` 重装 |
 | `view_board` | 看板**唯一操作入口**，按 `action` 分发（顶部无限画布）：<br>**`pin`** — 钉卡：产物来源 `url` / `path` / `task_id` 三选一（优先级依次降低），`x`/`y` 给坐标（不给则自动排到空位，**自动排布永不遮挡**；显式坐标压到已有卡时回执带 `covered`），`w`/`h` 定尺寸（**px 单位**，40–2000，超界压回且回 `size_adjusted:true`），`note` 可写说明；`path` 在 input/output 内的目录 → **目录卡**，input/output **之外**的真实路径 → **外部卡**（`ext:{path,is_dir}`）。**批量传 `items: [{...}, ...]`**（一次落盘、按数组顺序排布；批量时同传单卡字段返回 400）。返回 `view_url`；**要不要把页面地址给用户由 agent 自行判断**<br>**`remove`** — 删**一张**卡（`id` 必填；删单张不必清整板重钉），id 不存在回 `{ok:false, code:"board_item_not_found"}`<br>**`clear`** — 清空看板并**归档进历史**（`label` 命名；不给则按内容自动命名，如「7 张 · image/text · 10:24」）<br>**`get`** — 读**当前看板**卡片清单 + **内联最近 3 份归档摘要**（`history_limit` 可调、0 = 不要），钉东西前先看一眼免得钉重<br>**`history`** — 列历史归档（摘要带指纹 `kinds` / `preview` / `models`）；传 `archive_id` 返回该份完整卡片<br>**`load`** — 把归档**载回**当前看板（**替换**语义，当前非空先自动归档、回 `auto_archived`）；`archive_id` **优先用用户从页面「历史」复制的 12 位十六进制**，留空 = 载回最近一份；id 不存在回 `archive_not_found`（两者都不是工具异常） |
 

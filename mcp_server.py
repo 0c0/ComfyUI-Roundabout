@@ -65,7 +65,7 @@ import sys  # noqa: E402
 #   - 嵌入 ComfyUI 进程：本模块属于节点包（__package__ 非空），走相对导入，与 __init__.py 共用同一份；
 #   - 直接运行脚本：没有包上下文，把节点根目录挂到 sys.path 后按顶层包导入。
 if __package__:
-    from .gateway import board, toolinfo, weights  # noqa: E402
+    from .gateway import board, toolinfo, weights, wfdeploy  # noqa: E402
     from .gateway.comfy_client import ComfyClient  # noqa: E402
     from .gateway.config import settings  # noqa: E402
     from .gateway.errors import APIError  # noqa: E402
@@ -84,7 +84,7 @@ if __package__:
 else:
     if str(_ROOT) not in sys.path:
         sys.path.insert(0, str(_ROOT))
-    from gateway import board, toolinfo, weights  # noqa: E402
+    from gateway import board, toolinfo, weights, wfdeploy  # noqa: E402
     from gateway.comfy_client import ComfyClient  # noqa: E402
     from gateway.config import settings  # noqa: E402
     from gateway.errors import APIError  # noqa: E402
@@ -624,7 +624,7 @@ async def get_workflow(prompt_id: str) -> dict[str, Any]:
 # ---- 工具 10：reload --------------------------------------------------------
 @mcp.tool(name="reload", description="热加载 models.yaml 模型配置（无需重启 ComfyUI）。")
 async def reload() -> dict[str, Any]:
-    registry.load(settings.models_file, settings.workflows_dir, settings.default_model)
+    registry.load(settings.models_file, settings.workflows_dir, settings.default_model, settings.workflows_local_dir)
     return {"ok": True, "models": [s.name for s in registry.all()]}
 
 
@@ -952,6 +952,32 @@ async def get_skills() -> dict[str, Any]:
 )
 async def check_weights(include_unreferenced: bool = False) -> dict[str, Any]:
     return weights.check(include_unreferenced=include_unreferenced)
+
+
+# ---- 工具 15：manage_workflows ---------------------------------------------
+@mcp.tool(
+    name="manage_workflows",
+    description=(
+        "工作流模板/实例双层管理（action 分派）。"
+        "action=list：列出每档工作流的来源与同步状态 —— source=template 是仓库模板"
+        "（更新会被覆盖），source=local 是 workflows.local/ 本机实例（永不被更新触碰）；"
+        "synced=false 表示模板已更新、本机实例落后，需重部署或手动合并。"
+        "action=deploy：从模板部署实例到 workflows.local/ 并热加载生效，"
+        "workflow=模板文件名（如 video_minimax_h3.json），as_name=可选另存名，"
+        "force=true 覆盖已有实例。要长期定制某档工作流（换节点、改固定参数）时先 deploy 再改实例文件。"
+    ),
+)
+async def manage_workflows(
+    action: str,
+    workflow: str = "",
+    as_name: str = "",
+    force: bool = False,
+) -> dict[str, Any]:
+    if action == "list":
+        return {"workflows": wfdeploy.snapshot()}
+    if action == "deploy":
+        return wfdeploy.deploy(workflow, as_name=as_name, force=force)
+    raise APIError(f"unknown action: {action!r} (expected list|deploy)", status_code=400, param="action")
 
 
 # ------------------------------------------------------------------ 内部辅助

@@ -51,6 +51,9 @@ def register_routes(app) -> None:
         ("GET", "/roundabout/admin/queue", admin.queue_status),
         ("GET", "/roundabout/admin/queue/workflow/{prompt_id}", admin.queue_workflow),
         ("GET", "/roundabout/admin/weights", admin.weights_status),
+        # ---- 工作流模板/实例双层：清单（来源+同步状态）与部署（模板 -> workflows.local/）----
+        ("GET", "/roundabout/admin/workflows", admin.workflows_status),
+        ("POST", "/roundabout/admin/workflows/deploy", admin.workflows_deploy),
         # ---- 调用结构自描述：模型 × 字段生效性 + 全局限制（前端渲染表单 / agent 选型）----
         ("GET", "/roundabout/admin/tool-info", admin.get_tool_info),
         # ---- 可视化页面：浏览器直接浏览 input/output 资源 + 任务进度（MCP get_view_url 给出地址）----

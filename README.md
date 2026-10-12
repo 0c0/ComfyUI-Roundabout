@@ -61,7 +61,7 @@ agent 全程**看不到也用不着**工作流 JSON。它只传语义参数，�
 |---|---|---|---|
 | `vram_adaptive` | 显卡显存 | 启动时探测显存，取「`min_gb` 不超过本机显存」的最大一档，覆盖分块参数 | `models.yaml` 的 `defaults.vram_tiers` |
 | 分辨率档位 | 请求里的 `size` | 把 `576p-16:9` 这类档位名解析成具体宽高（六档 × 五种比例） | `gateway/params.py` 的 `VIDEO_RES_PRESETS`（**代码常量**） |
-| 注意力档位 | 请求里的 `attention` | `sparse` / `dense` → `BlockSparseAttention.start_percent` | `gateway/params.py` 的 `ATTENTION_SPARSE_START`（**代码常量**） |
+| 注意力档位 | 请求里的 `attention` | `sparse` / `dense` → `minimax-h3` 落 Spark 节点 `enabled`（布尔）；其余三支落 `BlockSparseAttention.start_percent` | `gateway/params.py` 的 `ATTENTION_SPARSE_START` / `ATTENTION_SPARK_ENABLED`（**代码常量**） |
 
 第一行改 YAML、热加载即生效；后两行是代码常量，改了要重启 ComfyUI。三者都不进工作流 JSON—— 工作流永远只有一份模板。细节见[按显卡自动调参](#按显卡自动调参vram_adaptive)。
 
@@ -117,7 +117,7 @@ git clone https://github.com/0c0/qwen-image2.1-prompt-writing-skill.git <agent �
 **两套接入层，共享同一个引擎**
 
 - **OpenAI 兼容 REST**：`/v1/images/generations`（文生图 / 图生图）、`/v1/images/edits`（multipart 标准编辑）、`/v1/images/remove-background`（去背景）、`/v1/videos/generations`（视频，支持异步）。返回格式可选 `b64_json` / `url` / `file` / `path`，可直接替换 OpenAI 官方地址使用。
-- **MCP 服务（17 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `process_image` / `generate_video`，查询类 `get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills`，看板类 `view_board`（单入口按 action 分发：pin / remove / clear / get / history / load）。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 钉到看板」全流程。
+- **MCP 服务（18 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `process_image` / `generate_video`，查询类 `get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills` / `manage_workflows`，看板类 `view_board`（单入口按 action 分发：pin / remove / clear / get / history / load）。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 钉到看板」全流程。
 - **共享端口**：MCP 端点 `/mcp` 直接挂在 ComfyUI 同一端口（`http://<comfyui>:8188/mcp`），不用额外开端口、不用另起进程；REST 与 MCP 共用同一份注册表、生成链路与任务表。
 
 **声明式模型注册**
@@ -484,9 +484,9 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 > 这些工作流用到的节点**除 lift 系列（`minimax-h3-lift*`）、基础两支 `minimax-h3` / `-edit`（低显存分块 + TeaCache 缓存节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。
 > lift 系列额外依赖一个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3LatentLift` + `latent_upscale_models/` 下的上采样权重）。
 > 基础两支 `minimax-h3` / `-edit` 额外依赖一个第三方节点包：`ComfyUI-MiniMaxH3-TeaCache`（`MiniMaxH3TeaCache`，常驻挂在 UNet 与 guider 之间做步间输出复用；阈值即请求参数 `teacache_threshold`，默认 0=关，步数双绑定自动跟随；lift 两支不含该节点）。
-> 需要 KJNodes 的 `MiniMaxChunkFeedForward` 做 FFN 分块：**全部视频档**。低显存都走两级 —— `BlockSparseAttention`（comfy 核心节点，省 attention）→ `MiniMaxChunkFeedForward`：base 四支（`minimax-h3` / `-edit` / `minimax-h3-lift*`）的稀疏档位是 `sol-attn`（training-free，约保留 16% key block）。
+> 需要 KJNodes 的 `MiniMaxChunkFeedForward` 做 FFN 分块：**全部视频档**。低显存都走两级 —— 注意力档 → `MiniMaxChunkFeedForward`：`minimax-h3` 的注意力档是 **`Spark-H3`（本机自编 SM86 轮子，依赖 `custom_nodes/ComfyUI-Spark-H3` + 打了 Spark 补丁的 comfy-kitchen）**，其余三支（`-edit` / `-lift` / `-lift-edit`）仍是 `BlockSparseAttention` 的 `sol-attn`（training-free，约保留 16% key block）。
 > ⛔ **不要在视频档里接 KJNodes 的 `MiniMaxLowVRAMAttention`**：它替换 `block.forward`，而 `BlockSparseAttention` 的 block patch 会无条件补传 `attention=` 关键字（`comfy/ldm/minimax/model.py`），签名对不上 ⇒ 实测 `TypeError`。两者**硬互斥**，因此 base 四支原先的 LowVRAM 节点已于 2026-09-21 撤除（`head_chunks` 档位值随之失去消费者，保留在表里仅为复原方便）。
-> 稀疏节点的参数（`tau` / `min_tokens` / `dense_blocks` …）不在可注入白名单；其中 `tau` 的键名是 `selection.tau`（含点号），按 `.` 切分的路径解析寻址不到，要调只能改工作流 JSON 再 `/admin/reload`。**但「更快 ↔ 更高质量」这一档有正式请求参数**：`attention`（`sparse` 默认 / `dense` 关闭稀疏换致密画质）。它内部落到 `BlockSparseAttention.start_percent` —— `1.0` 因 `percent_to_sigma(1.0) = 0` 而等效全程致密。**这一档只给 base 四支**（`minimax-h3` / `-edit` / `-lift` / `-lift-edit`）；其它模型传 `attention` 会报 400。
+> 稀疏节点的参数（`tau` / `min_tokens` / `dense_blocks` …）不在可注入白名单；其中 `tau` 的键名是 `selection.tau`（含点号），按 `.` 切分的路径解析寻址不到，要调只能改工作流 JSON 再 `/admin/reload`。**但「更快 ↔ 更高质量」这一档有正式请求参数**：`attention`（`sparse` 默认 / `dense` 关闭稀疏换致密画质）。落点按模型分：`minimax-h3` 落到 Spark 节点的 `enabled`（`dense` = 节点原样透传模型），其余三支落到 `BlockSparseAttention.start_percent`（`1.0` 因 `percent_to_sigma(1.0) = 0` 而等效全程致密）。**这一档只给 base 四支**（`minimax-h3` / `-edit` / `-lift` / `-lift-edit`）；其它模型传 `attention` 会报 400。
 > 全部视频档的 `ModelAttentionBackend` 统一用 `comfy kitchen attention`（comfy_kitchen 的 INT8 实现，省显存）。要换 `pytorch attention` 得改工作流模板里那个节点的值；它不在 `bindings` 白名单里，但**可以**用 `workflow_overrides` 在运行时点改（`{"156.inputs.attention": "pytorch attention"}`）—— `workflow_overrides` 是任意路径注入，与白名单无关。
 > ⚠️ **comfy_kitchen 版本下限：`>= 0.2.37`**。`0.2.36` 的 w4a8 反量化 kernel 有 stack-overflow 回归 —— 量化权重叠加 LoRA patch（`turbo_lora`）时采样第 2 步直接杀死进程（2026-10-08 实测 2/2 复现，`0.2.37` 修复）；`0.2.35` 及更早则不支持 ref2va 权重里的 `K=8064` 层（采样即报 `ValueError: K=8064 must be divisible by 16…`）。两端都不行的只有 `0.2.36`，钉住 `0.2.37` 或更高。
 > 上述权重多为 `int8_convrot` 量化版，只在你已具备同名权重的机器上开箱即用；换成自己的模型时，同步改工作流 JSON 里的文件名即可。

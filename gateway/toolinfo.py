@@ -115,8 +115,9 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
 
     判定一律走 `ModelSpec` 的派生属性（`binds` / `supports_batch` / `is_video` /
     `references`），不重新解析 yaml —— 这些属性本身就是 pipeline 的判据，两处各写一遍
-    必然漂移。特别地，`attention` 的落点是 `sparse_start_percent` 绑定（公开枚举 →
-    内部数值的翻译在 `params.resolve_attention`），不存在名为 `attention` 的 binding。
+    必然漂移。特别地，`attention` 的落点按模型分两种内部键（`spark_enabled` 布尔 /
+    `sparse_start_percent` 数值，公开枚举的翻译在 `params.resolve_attention`），
+    不存在名为 `attention` 的 binding。
 
     契约：返回 `(True, None)` 或 `(False, 原因)` —— 生效的字段绝不带原因，否则前端
     会显示一个与「可用」自相矛盾的解释。
@@ -166,7 +167,7 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
     if name == "attention":
         if not spec.is_video:
             return False, "video-only"
-        if spec.binds("sparse_start_percent"):
+        if spec.binds("sparse_start_percent") or spec.binds("spark_enabled"):
             return True, None
         return False, "model has no attention tier (weights are always sparse if sparse at all)"
     if name == "scale":
@@ -241,6 +242,7 @@ def _model_entry(spec) -> dict[str, Any]:
         "defaults": dict(spec.defaults or {}),
         "bindings": sorted(spec.bindings),
         "workflow": spec.workflow_path.name,
+        "workflow_source": spec.wf_source,
         "reference_slots": _slot_counts(spec),
         "timeout": spec.timeout,
         "fields": fields,
@@ -270,6 +272,8 @@ def _endpoints() -> dict[str, list[str]]:
             "GET /v1/videos/tasks/{id}",
             "DELETE /v1/images/tasks/{id}",
             "GET /roundabout/admin/tool-info",
+            "GET /roundabout/admin/workflows",
+            "POST /roundabout/admin/workflows/deploy",
             "GET /roundabout/view",
             "GET /roundabout/view/board",
             "POST /roundabout/view/board/items",
@@ -287,6 +291,7 @@ def _endpoints() -> dict[str, list[str]]:
             "generate_video", "get_task", "cancel_task", "queue_status",
             "get_workflow", "reload", "health", "get_view_url", "get_skills",
             "check_weights", "get_tool_info",
+            "manage_workflows",
             "view_board",
         ],
     }
@@ -324,8 +329,9 @@ def _surface() -> dict[str, Any]:
             },
         },
         "attention": {
-            "choices": {k: v for k, v in ATTENTION_SPARSE_START.items()},
-            "note": "sparse 更快更省显存，dense 换回致密画质；未声明 binding 的模型传了报 400",
+            "choices": sorted(ATTENTION_SPARSE_START),
+            "note": "sparse 更快更省显存，dense 换回致密画质；落点按模型分（minimax-h3 → Spark 节点 `enabled` 布尔；其余三支 → "
+                    "BlockSparseAttention.start_percent 数值），未声明 binding 的模型传了报 400",
         },
         "response_format": ["b64_json", "url", "file", "path"],
     }

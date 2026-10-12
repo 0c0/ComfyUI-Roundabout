@@ -229,18 +229,26 @@ def _installed(filename: str, folder: str) -> bool | None:
     return False
 
 
-def scan_workflow_refs(workflows_dir: Path | None = None) -> dict[str, list[str]]:
-    """扫 `workflows/*.json`，返回 {权重文件名: [引用它的工作流名]}。
+def scan_workflow_refs(
+    workflows_dir: Path | None = None, local_dir: Path | None = None
+) -> dict[str, list[str]]:
+    """扫工作流文件，返回 {权重文件名: [引用它的工作流名]}。
 
+    模板 / 实例双层：同名文件以实例层（workflows.local/）为准 —— 部署端改掉模板里
+    的权重引用后，扫描结果必须跟着实例走，否则缺权重指引会指错文件。
     `example_*` 是接入样本（用使用者自己的 checkpoint），不计入。
     """
     root = Path(workflows_dir or settings.workflows_dir)
+    local = local_dir if local_dir is not None else settings.workflows_local_dir
     refs: dict[str, list[str]] = {}
     try:
-        files = sorted(root.glob("*.json"))
+        files: dict[str, Path] = {p.name: p for p in root.glob("*.json")}
+        if local and local.is_dir():
+            for p in local.glob("*.json"):
+                files[p.name] = p  # 同名覆盖：实例优先
     except OSError:
         return refs
-    for p in files:
+    for p in sorted(files.values()):
         if p.name.startswith("example"):
             continue
         try:
@@ -253,14 +261,18 @@ def scan_workflow_refs(workflows_dir: Path | None = None) -> dict[str, list[str]
 
 
 def check(
-    workflows_dir: Path | None = None, *, include_unreferenced: bool = False, mirror: str = "hf"
+    workflows_dir: Path | None = None,
+    local_dir: Path | None = None,
+    *,
+    include_unreferenced: bool = False,
+    mirror: str = "hf",
 ) -> dict[str, Any]:
     """体检：工作流引用的权重里，当前缺哪些 + 每条怎么下。
 
     返回结构直接可序列化（REST / MCP 共用）。
     """
     _ensure()
-    refs = scan_workflow_refs(workflows_dir)
+    refs = scan_workflow_refs(workflows_dir, local_dir)
 
     missing: list[dict[str, Any]] = []
     unknown: list[str] = []

@@ -487,5 +487,5 @@ async def health(request: web.Request) -> web.Response:
 @gateway_handler
 async def reload_registry(request: web.Request) -> web.Response:
     """改完 models.yaml / workflow JSON 后热加载，不用重启进程。"""
-    registry.load(settings.models_file, settings.workflows_dir, settings.default_model)
+    registry.load(settings.models_file, settings.workflows_dir, settings.default_model, settings.workflows_local_dir)
     return web.json_response({"reloaded": True, "models": registry.names()})

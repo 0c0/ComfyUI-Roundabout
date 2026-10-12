@@ -258,6 +258,9 @@ class Settings:
     # ---- 模型 / 工作流（默认指向节点自带的 models.yaml 与 workflows/）----
     models_file: Path = field(default_factory=lambda: _resolve(_env("MODELS_FILE", "models.yaml")))
     workflows_dir: Path = field(default_factory=lambda: _resolve(_env("WORKFLOWS_DIR", "workflows")))
+    # 本机工作流实例层：从模板部署后的自有副本（gitignored），registry 按「实例优先、
+    # 模板回落」解析；不存在或为空 = 全走模板，行为与历史版本一致。
+    workflows_local_dir: Path = field(default_factory=lambda: _resolve(_env("WORKFLOWS_LOCAL_DIR", "workflows.local")))
     default_model: str = field(default_factory=lambda: _env("DEFAULT_MODEL", ""))
 
     # ---- url 模式的产物落盘 ----
