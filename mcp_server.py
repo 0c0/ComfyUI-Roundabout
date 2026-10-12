@@ -965,6 +965,8 @@ async def check_weights(include_unreferenced: bool = False) -> dict[str, Any]:
         "action=deploy：从模板部署实例到 workflows.local/ 并热加载生效，"
         "workflow=模板文件名（如 video_minimax_h3.json），as_name=可选另存名，"
         "force=true 覆盖已有实例。要长期定制某档工作流（换节点、改固定参数）时先 deploy 再改实例文件。"
+        "list 与 deploy 的返回带 hints：模板按其他 GPU 算力命名（如 SM86 节点部署到 4090）时"
+        "提示部署端自行调整（文本替换 SM 后缀），本机匹配则不出现。"
     ),
 )
 async def manage_workflows(

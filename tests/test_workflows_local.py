@@ -139,6 +139,22 @@ def main() -> int:
         # 还原全局 registry（其他测试依赖真实配置）
         registry.load(settings.models_file, settings.workflows_dir, settings.default_model, settings.workflows_local_dir)
 
+    # ---- hints：跨卡算力命名提醒（v1.42.1）----
+    from gateway import wfdeploy as _wfd
+
+    check("ARCH 正则命中 SM86", _wfd._ARCH_RE.findall("MiniMaxH3SparkAttentionSM86") == ["SM86"], "")
+    check("ARCH 正则不咬长串", _wfd._ARCH_RE.findall("SM862 SM89") == ["SM89"], "")
+    _old_arch = _wfd._local_arch
+    try:
+        _wfd._local_arch = lambda: "89"
+        hints = _wfd.arch_hints("class_type: XxxSM86")
+        check("不匹配 → 出提醒且含目标后缀", bool(hints) and "SM89" in hints[0], str(hints)[:120])
+        _wfd._local_arch = lambda: "86"
+        check("匹配 → 无提醒", _wfd.arch_hints("class_type: XxxSM86") == [], "")
+        check("无算力命名 → 无提醒", _wfd.arch_hints("no arch here") == [], "")
+    finally:
+        _wfd._local_arch = _old_arch
+
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0
 

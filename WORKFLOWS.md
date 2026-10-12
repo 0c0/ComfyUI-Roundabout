@@ -16,6 +16,7 @@ Roundabout 不自带任何"工作流导入"功能。它做的只有一件事：
 - 解析规则：`models.yaml` 的 `workflow: xxx.json` 先查 `workflows.local/`，没有回落 `workflows/`；实例层为空 = 行为与历史版本完全一致。
 - 部署：`POST /roundabout/admin/workflows/deploy`（body `{workflow, as_name?, force?}`）或 MCP `manage_workflows(action="deploy")`，写完热加载立即生效。
 - 感知：`GET /roundabout/admin/workflows` 或 MCP `manage_workflows(action="list")` 列每档 `{source, template_hash, instance_hash, synced}` —— 模板更新后 `synced=false` 的实例就是待合并项（自动合并不做，人工对比重部署）。
+- 跨卡部署提醒：list/deploy 返回带 `hints` —— 模板含按算力命名的节点（Spark 家族 SM86/SM89/SM120，运行时硬校验 capability）而本机 GPU 不同时，提示部署端自行做文本替换调整后缀；本机匹配则不出现。
 
 ---
 
