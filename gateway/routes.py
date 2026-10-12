@@ -33,6 +33,11 @@ def register_routes(app) -> None:
         ("POST", "/v1/images/edits", handlers.images_edits),
         # 独立去背景端点：无 prompt，模型固定 utility-birefnet-remove-background
         ("POST", "/v1/images/remove-background", handlers.images_remove_background),
+        # 音频（TTS / 音色设计）：OpenAI /v1/audio/speech 形态
+        ("POST", "/v1/audio/speech", handlers.audio_speech),
+        ("GET", "/v1/audio/tasks/{id}", handlers.video_task),
+        ("DELETE", "/v1/audio/tasks/{id}", handlers.cancel_video_task),
+        ("GET", "/v1/audio/files/{name}", handlers.get_audio_file),
         ("POST", "/v1/videos/generations", handlers.videos_generations),
         ("GET", "/v1/videos/tasks/{id}", handlers.video_task),
         # OpenAI 标准异步命名空间：GET /v1/images/tasks/{id} 同样可查（复用 video_task）

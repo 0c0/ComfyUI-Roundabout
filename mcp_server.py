@@ -26,6 +26,7 @@ task_store 异步任务表、ComfyClient 后端客户端），本文件只做协
     edit_image        提示词驱动的图像编辑（含多图参考）
     remove_background 图片去背景（BiRefNet，无需提示词）
     process_image     图像处理统一入口（action: upscale=SeedVR2 放大 / remove_background=去背景 / segment=SAM3 文本抠图）
+    generate_speech   文本转语音 / 音色设计（Qwen3-TTS VoiceDesign，同步或异步）
     generate_video    文生视频 / 参考生视频（同步或异步，异步返回 task 对象）
     get_task          查询异步任务状态与产物（含 prompt_id / 工作流快照）
     cancel_task       取消 ComfyUI 中运行的任务
@@ -70,14 +71,20 @@ if __package__:
     from .gateway.config import settings  # noqa: E402
     from .gateway.errors import APIError  # noqa: E402
     from .gateway.handlers import (  # noqa: E402
+        _run_audio_task,
         _run_video_task,
         cancel_task as _cancel_task,
+        generate_audio_tracked,
         generate_tracked,
         generate_video_tracked,
     )
     from .gateway.log_filters import client_gone, exception_chain_names  # noqa: E402
     from .gateway.registry import registry  # noqa: E402
-    from .gateway.schemas import ImageGenerationRequest, VideoGenerationRequest  # noqa: E402
+    from .gateway.schemas import (  # noqa: E402
+        AudioSpeechRequest,
+        ImageGenerationRequest,
+        VideoGenerationRequest,
+    )
     from .gateway.skills import build_skills_payload  # noqa: E402
     from .gateway.tasks import task_store  # noqa: E402
     from .gateway.viewer import view_url  # noqa: E402
@@ -89,15 +96,21 @@ else:
     from gateway.config import settings  # noqa: E402
     from gateway.errors import APIError  # noqa: E402
     from gateway.handlers import (  # noqa: E402
+        _run_audio_task,
         _run_video_task,
         cancel_task as _cancel_task,
+        generate_audio_tracked,
         generate_tracked,
         generate_video_tracked,
     )
     from gateway.log_filters import client_gone, exception_chain_names  # noqa: E402
     from gateway.registry import registry  # noqa: E402
     from gateway.skills import build_skills_payload  # noqa: E402
-    from gateway.schemas import ImageGenerationRequest, VideoGenerationRequest  # noqa: E402
+    from gateway.schemas import (  # noqa: E402
+        AudioSpeechRequest,
+        ImageGenerationRequest,
+        VideoGenerationRequest,
+    )
     from gateway.tasks import task_store  # noqa: E402
     from gateway.viewer import view_url  # noqa: E402
 
@@ -435,6 +448,61 @@ async def process_image(
         **extra,
     )
     result = await generate_tracked(req)
+    return _absolutize_urls(result.model_dump(exclude_none=True))
+
+
+# ---- 工具 5c：generate_speech ---------------------------------------------
+@mcp.tool(
+    name="generate_speech",
+    description=(
+        "文本转语音 / 音色设计（Qwen3-TTS VoiceDesign）：`input` = 要朗读的文本，"
+        "`instructions` = 音色描述（年龄/性别/音高/语速/气质…；不给则用模板内置描述）。"
+        "默认同步返回 url；长文本可传 background=\"pending\" 异步再查 get_task。"
+        "各字段生效性查 get_tool_info。"
+    ),
+)
+async def generate_speech(
+    input: str = Field(
+        "",
+        description="要朗读的文本（`prompt` 是同义字段，二者二选一）。",
+    ),
+    instructions: str = Field(
+        "",
+        description="音色设计描述：年龄/性别/音高/质感/口音/语速/情绪/说话风格（如「成熟中年男性，低沉醇厚，语速平缓」）。留空则用工作流模板内置描述。",
+    ),
+    model: str = Field(
+        default="qwen3-tts-voice-design",
+        description="音频模型（不传=默认 qwen3-tts-voice-design）；逐模型生效字段查 get_tool_info。",
+    ),
+    voice: str = Field("", description="引擎预设音色（如 Vivian / Serena / Uncle_Fu）；VoiceDesign 档位忽略它。"),
+    language: str = Field("", description="语言：Auto（默认，自动判别）/ Chinese / English / Japanese / Korean …"),
+    seed: int | None = None,
+    response_format: str = Field(
+        "",
+        description='产物形态："url"（默认）/ "file"|"path"（磁盘绝对路径）/ "b64_json"。⚠️ 不是音频编码 —— 编码由工作流 SaveAudio 节点决定（mp3）。',
+    ),
+    filename_prefix: str = "",
+    background: str = "",  # "pending" 触发异步
+    ctx: Context = None,  # type: ignore[assignment]  # MCP SDK 按注解自动注入
+) -> dict[str, Any]:
+    req = AudioSpeechRequest(
+        input=input or None,
+        instructions=instructions or None,
+        model=model or None,
+        voice=voice or None,
+        language=language or None,
+        seed=seed,
+        response_format=response_format or None,
+        filename_prefix=filename_prefix or None,
+        background=background or None,
+    )
+    if req.is_async:
+        task_id = uuid.uuid4().hex
+        request_id = _new_request_id()
+        task_store.create(task_id, model=req.model, request_id=request_id)
+        asyncio.create_task(_run_audio_task(task_id, req, request_id))
+        return _task_payload(task_id, req.model, "pending")
+    result = await generate_audio_tracked(req)
     return _absolutize_urls(result.model_dump(exclude_none=True))
 
 

@@ -68,7 +68,21 @@ KNOWN_PARAMS = {
     # 布尔）；其余 base 三支落 BlockSparseAttention.start_percent（键 `sparse_start_percent`，数值）。
     # 内部名与对外枚举分开，是为了让 defaults / 档位表里存的始终是落点原生类型，不混入枚举语义。
     "sparse_start_percent",
+<<<<<<< HEAD
     "spark_enabled",
+=======
+    # ---- 音频档（Qwen3-TTS VoiceDesign）----
+    # `prompt` 落在「要朗读的文本」（audio 请求的 `input` / `prompt`），复用图像档那条校验：
+    # 音频模型同样必须有文本落点，否则整支工作流没有输入。
+    "voice_instruction",  # 音色设计描述（age/gender/timbre/pace…），OpenAI 同名概念 instructions
+    "language",  # 引擎语言（Auto / Chinese / English …）
+    "voice",  # 引擎预设音色（CustomVoice 档生效；VoiceDesign 档忽略）
+    "temperature",
+    "top_p",
+    "top_k",
+    "repetition_penalty",
+    "max_new_tokens",
+>>>>>>> d5a48d4f8465dd170a8a140be8c341c21704f420
     # ---- 尺寸来源开关（Qwen 2.1 合并档）----
     # 落到 ComfySwitchNode.switch：latent 要么跟参考图（聚合节点的 latent 输出），
     # 要么用 width/height 直传的空 latent。值由 pipeline 按「有没有参考素材」推导，
@@ -110,7 +124,9 @@ class ModelSpec:
     capabilities: set[str] = field(default_factory=lambda: {CAP_TXT2IMG})
     output_node: str | None = None
     description: str = ""
-    mode: str = "image"  # "image" | "video"
+    # "image" | "video" | "audio"：决定走哪条 pipeline（generate / generate_video / generate_audio）
+    # 与产物收集口径（images / gifs / audio）。
+    mode: str = "image"
     style_presets: dict[str, dict[str, Any]] = field(default_factory=dict)
     size_choices: list[str] = field(default_factory=list)
     aliases: list[str] = field(default_factory=list)
@@ -146,6 +162,10 @@ class ModelSpec:
     @property
     def is_video(self) -> bool:
         return self.mode == "video"
+
+    @property
+    def is_audio(self) -> bool:
+        return self.mode == "audio"
 
     def binds(self, key: str) -> bool:
         return key in self.bindings
@@ -341,8 +361,8 @@ class Registry:
                 caps.add(CAP_IMG2IMG)
 
             mode = str(cfg.get("mode") or "image").lower()
-            if mode not in {"image", "video"}:
-                raise RuntimeError(f"model `{name}`: invalid `mode` {mode!r} (expected image|video)")
+            if mode not in {"image", "video", "audio"}:
+                raise RuntimeError(f"model `{name}`: invalid `mode` {mode!r} (expected image|video|audio)")
 
             ref = cfg.get("references")
             if ref:

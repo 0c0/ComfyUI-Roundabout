@@ -20,10 +20,11 @@ from .auth import verify
 from .comfy_client import ComfyClient
 from .config import settings
 from .errors import APIError, error_response
-from .pipeline import generate, generate_video, new_request_id
+from .pipeline import generate, generate_audio, generate_video, new_request_id
 from .registry import registry
 from .tasks import task_store
 from .schemas import (
+    AudioSpeechRequest,
     ImageGenerationRequest,
     ModelCard,
     ModelList,
@@ -147,6 +148,24 @@ async def generate_tracked(
     return result
 
 
+async def generate_audio_tracked(req: AudioSpeechRequest):
+    """同步生成音频，同时在任务表留一条记录（同 generate_tracked 的理由）。"""
+    task_id, request_id = _new_task(req.model)
+    try:
+        result = await generate_audio(
+            req,
+            comfy,
+            request_id=request_id,
+            on_submit=lambda pid, wf: task_store.attach_prompt(task_id, pid, wf),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _record_failure(task_id, exc)
+        raise
+    task_store.complete(task_id, result.model_dump(exclude_none=True))
+    result.task_id = task_id
+    return result
+
+
 async def generate_video_tracked(req: VideoGenerationRequest):
     """同步生视频，同时在任务表留一条记录（异步链路自带记录，见 _run_video_task）。"""
     task_id, request_id = _new_task(req.model)
@@ -179,6 +198,10 @@ async def images_generations(request: web.Request) -> web.Response:
     if spec.is_video:
         vreq = VideoGenerationRequest.model_validate(body)
         result = await generate_video_tracked(vreq)
+        return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))
+    if spec.is_audio:
+        areq = AudioSpeechRequest.model_validate(body)
+        result = await generate_audio_tracked(areq)
         return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))
     result = await generate_tracked(req)
     return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))
@@ -268,6 +291,56 @@ async def images_remove_background(request: web.Request) -> web.Response:
     )
     result = await generate_tracked(req, image_inputs=images or None)
     return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))
+
+
+@gateway_handler
+async def audio_speech(request: web.Request) -> web.Response:
+    """文本转语音 / 音色设计（OpenAI `/v1/audio/speech` 兼容形态）。
+
+    `input`（或 `prompt`）= 要朗读的文本；`instructions`（或 `voice_instruction`）
+    = 音色设计描述。产物形态 `response_format` 与图像/视频档同一套取值
+    （url / file / path / b64_json）—— 音频编码由工作流的 SaveAudio 节点决定。
+
+    支持异步模式：与视频档同契约（`background:"pending"` 或 `async:true`），
+    立即返回 task 对象，客户端轮询 GET /v1/audio/tasks/{id}。
+    """
+    verify(request)
+    body = await _parse_json(request)
+    req = AudioSpeechRequest.model_validate(body)
+
+    if req.is_async:
+        task_id = uuid.uuid4().hex
+        request_id = new_request_id()
+        task_store.create(task_id, model=req.model, request_id=request_id)
+        log.info("req=%s async audio task=%s model=%s queued", request_id, task_id, req.model)
+        asyncio.create_task(_run_audio_task(task_id, req, request_id))
+        return web.json_response({
+            "id": task_id,
+            "object": "image_generation.task",
+            "status": "pending",
+            "created_at": int(time.time()),
+        })
+
+    result = await generate_audio_tracked(req)
+    return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))
+
+
+async def _run_audio_task(task_id: str, req: AudioSpeechRequest, request_id: str) -> None:
+    """异步音频任务执行体（与 _run_video_task 同构）：结果写入 task_store。"""
+    task_store.mark_processing(task_id)
+    try:
+        result = await generate_audio(
+            req,
+            comfy,
+            request_id=request_id,
+            on_submit=lambda pid, wf: task_store.attach_prompt(task_id, pid, wf),
+        )
+        task_store.complete(task_id, result.model_dump(exclude_none=True))
+    except APIError as exc:
+        task_store.fail(task_id, exc.message, exc.status_code)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("async audio task %s failed: %s", task_id, exc)
+        task_store.fail(task_id, "Internal server error during generation.", 500)
 
 
 @gateway_handler
@@ -454,6 +527,16 @@ async def get_file(request: web.Request) -> web.Response:
 @gateway_handler
 async def get_video_file(request: web.Request) -> web.Response:
     """视频产物的 url 落盘代理（response_format=url 时返回的就是这个地址）。"""
+    name = request.match_info["name"]
+    path = store.path(name)
+    if path is None:
+        return error_response(APIError("File not found or expired.", status_code=404, code="file_not_found"))
+    return web.FileResponse(path)
+
+
+@gateway_handler
+async def get_audio_file(request: web.Request) -> web.Response:
+    """音频产物的 url 落盘代理（同 get_video_file；产物通常直接走 ComfyUI /view）。"""
     name = request.match_info["name"]
     path = store.path(name)
     if path is None:

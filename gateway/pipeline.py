@@ -38,10 +38,22 @@ from .registry import (
     ref_key,
     registry,
 )
-from .schemas import ImageGenerationRequest, ImageResponse, VideoGenerationRequest, VideoResponse
+from .schemas import (
+    AudioSpeechRequest,
+    AudioResponse,
+    ImageGenerationRequest,
+    ImageResponse,
+    VideoGenerationRequest,
+    VideoResponse,
+)
 from .store import store
 
 log = logging.getLogger("roundabout.pipeline")
+
+# 音频端点的 `response_format` 是**交付形态**（与图像/视频档同一套取值），不是音频编码 ——
+# 编码由工作流里的 SaveAudio* 节点决定（当前档位是 mp3）。OpenAI 的 TTS 客户端习惯在这里
+# 填 "mp3" / "wav"，与其静默忽略，不如显式拒掉并说清楚该填什么。
+AUDIO_DELIVERY_FORMATS = ("b64_json", "url", "file", "path")
 
 
 def _trunc(text: Any, limit: int = 200) -> str:
@@ -269,6 +281,12 @@ async def generate(
     if spec.is_video:
         raise APIError(
             f"Model `{spec.name}` is a video model. Use POST /v1/videos/generations.",
+            param="model",
+        )
+    # 音频模型走 generate_audio（产物是 mp3，收集口径是 history 的 audio 键）。
+    if spec.is_audio:
+        raise APIError(
+            f"Model `{spec.name}` is an audio model. Use POST /v1/audio/speech.",
             param="model",
         )
     n = _validate_n(req.n)
@@ -762,6 +780,139 @@ async def generate_video(
     # 实际输出尺寸：优先用工作流自报的实测值（probe 节点），没有才回落「画布 × scale」换算。
     return VideoResponse(created=int(time.time()), data=data, seed=seed_field, references=references,
                          size=reported or estimated_video_size(values))  # type: ignore[arg-type]
+
+
+def build_audio_values(
+    req: AudioSpeechRequest,
+    spec: ModelSpec,
+    text: str,
+    instruction: str | None,
+) -> dict[str, Any]:
+    """组装音频请求的语义参数：显式入参 → 模型默认（与视频档同一优先级）。
+
+    抽成纯函数（无 IO）与 build_video_values 同理：让回归测试能直接打真实组装路径。
+
+    `voice_instruction` 特意**不参与**「None 回落 defaults」：它是自由文本，模板里
+    写着一段可用的默认音色描述，用 None 覆盖掉反而让「不给描述」退化成空描述。
+    """
+    values: dict[str, Any] = {
+        "prompt": text,
+        "language": req.language,
+        "voice": req.voice,
+        "temperature": req.temperature,
+        "top_p": req.top_p,
+        "top_k": req.top_k,
+        "repetition_penalty": req.repetition_penalty,
+        "max_new_tokens": req.max_new_tokens,
+        "filename_prefix": req.filename_prefix,  # 透传：None 时回落模板默认前缀
+    }
+    for key in ("language", "voice", "temperature", "top_p", "top_k",
+                "repetition_penalty", "max_new_tokens"):
+        if values.get(key) is None:
+            values[key] = spec.defaults.get(key)
+    if instruction:
+        values["voice_instruction"] = instruction
+    return values
+
+
+async def generate_audio(
+    req: AudioSpeechRequest,
+    client: ComfyClient,
+    *,
+    request_id: str,
+    on_submit: Any | None = None,
+) -> AudioResponse:
+    """文本转语音（含音色设计）。
+
+    与 generate / generate_video 同构：工作流注入 → 提交 → 收集产物 → 按
+    response_format 组装响应。差别只有两处：产物从 history 的 `audio` 键取
+    （SaveAudio* 节点），以及没有尺寸概念（故不回显 `size`）。
+
+    ``on_submit(prompt_id, workflow)`` 在提交给 ComfyUI 成功后调用（异步任务回填
+    prompt_id 与工作流快照）。
+    """
+    spec = registry.resolve(req.model)
+    if not spec.is_audio:
+        raise APIError(
+            f"Model `{spec.name}` is not an audio model (mode={spec.mode}). "
+            "Use /v1/audio/speech with an audio model.",
+            param="model",
+        )
+    n = _validate_n(req.n)
+    response_format = (req.response_format or "url").lower()
+    if response_format not in AUDIO_DELIVERY_FORMATS:
+        raise APIError(
+            f"Invalid `response_format` {req.response_format!r}: expected one of "
+            f"{', '.join(AUDIO_DELIVERY_FORMATS)}. It selects how the audio is **delivered**, "
+            "not the codec — the codec is fixed by the workflow's SaveAudio node (mp3 here).",
+            param="response_format",
+        )
+
+    text = req.text
+    if not text:
+        raise APIError("`input` (the text to speak) is required.", param="input")
+    instruction = req.style_instruction
+
+    log.info(
+        "req=%s | AUDIO gen | model=%s n=%d fmt=%s lang=%s voice=%s desc=%s text=%s",
+        request_id, spec.name, n, response_format,
+        req.language or "-", req.voice or "-",
+        "yes" if instruction else "no(template default)", _trunc(text),
+    )
+
+    values = build_audio_values(req, spec, text, instruction)
+
+    # JOB_TIMEOUT=0（或不传正 timeout）→ 无限等待，由 ComfyUI 任务状态判定健康。
+    timeout = 0.0 if (settings.job_timeout and settings.job_timeout <= 0) else (spec.timeout or settings.job_timeout)
+
+    t0 = time.monotonic()
+    rendered: list[RenderedImage] = []
+    used_seeds: list[int] = []
+    for i in range(n):
+        values["seed"] = resolve_seed(req.seed, i)
+        used_seeds.append(values["seed"])
+        rendered_part, _, _ = await _run_once(
+            spec, values, req.workflow_overrides, client, timeout,
+            f"{request_id}-{i}", req_refs=None, on_submit=on_submit,
+        )
+        rendered += rendered_part
+
+    if not rendered:
+        raise APIError(
+            f"Audio workflow `{spec.name}` finished but produced no audio. "
+            "Check that the workflow contains a SaveAudio node (or set `output_node` in models.yaml).",
+            status_code=502,
+            err_type="api_error",
+            code="no_output",
+        )
+
+    rendered = rendered[:n]
+    log.info(
+        "req=%s model=%s n=%d audios=%d elapsed=%.1fs",
+        request_id, spec.name, n, len(rendered), time.monotonic() - t0,
+    )
+
+    data = []
+    for au in rendered:
+        if response_format in ("file", "path"):
+            native = _native_abs_path(au.ref) if au.ref else None
+            if native:
+                data.append({"path": native})
+            else:
+                name = store.save(au.data, au.ext)
+                abs_path = store.path(name)
+                data.append({"path": str(abs_path) if abs_path else f"/v1/audio/files/{name}"})
+        elif response_format == "b64_json":
+            data.append({"b64_json": base64.b64encode(au.data).decode("ascii")})
+        else:
+            if au.ref:
+                data.append({"url": _native_view_url(au.ref)})
+            else:
+                name = store.save(au.data, au.ext)
+                data.append({"url": f"/v1/audio/files/{name}"})
+
+    seed_field: int | list[int] | None = used_seeds[0] if len(used_seeds) == 1 else used_seeds
+    return AudioResponse(created=int(time.time()), data=data, seed=seed_field)  # type: ignore[arg-type]
 
 
 async def _run_once(

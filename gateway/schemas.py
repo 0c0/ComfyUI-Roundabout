@@ -239,6 +239,89 @@ class VideoResponse(BaseModel):
     task_id: str | None = None
 
 
+# ============================================================================
+#  音频生成：字段对齐 OpenAI POST /v1/audio/speech（model / input / voice /
+#  instructions / response_format），其余走扩展字段。
+# ============================================================================
+class AudioSpeechRequest(BaseModel):
+    """文本转语音（含音色设计）。
+
+    OpenAI 的 TTS 端点用 `input` 装文本；音色在这个网关里由**音色设计描述**决定
+    （Qwen3-TTS VoiceDesign），对应 OpenAI 同名的 `instructions` 字段（gpt-4o-mini-tts
+    的语义就是「额外音色/语气指令」）。`voice` 是引擎预设音色名，只在换到 CustomVoice
+    档位时才被消费。
+    """
+
+    model_config = ConfigDict(extra="allow", protected_namespaces=())
+
+    # ---------- OpenAI 标准字段 ----------
+    model: str | None = Field(None, description="映射到某个 ComfyUI 音频 workflow 模板")
+    input: str | None = Field(None, description="要朗读的文本（OpenAI TTS 的同名字段）")
+    voice: str | None = Field(
+        None,
+        description="引擎预设音色（如 Vivian / Serena / Uncle_Fu）；VoiceDesign 档位忽略它，音色由 `instructions` 决定",
+    )
+    instructions: str | None = Field(
+        None,
+        description="音色设计描述（年龄/性别/音高/质感/口音/语速/情绪/说话风格）；不给则用工作流模板内置描述",
+    )
+    response_format: str | None = Field(
+        None,
+        description='产物形态："url"（默认，可打开的地址）/ "file" | "path"（磁盘绝对路径）/ "b64_json"（内联字节）。'
+                    "⚠️ 这里不是音频编码 —— 编码由工作流的 SaveAudio 节点决定（当前档位为 mp3）",
+    )
+    user: str | None = None
+
+    # ---------- 扩展字段 ----------
+    # `prompt` 是网关一贯的「文本落点」命名：与 `input` 等价、互为兜底（二选一即可）。
+    prompt: str | None = Field(None, description="`input` 的别名：要朗读的文本")
+    # `voice_instruction` 直连节点输入名，与 `instructions` 同义（二传时以 `instructions` 为准）
+    voice_instruction: str | None = Field(None, description="`instructions` 的同义字段：音色设计描述")
+    language: str | None = Field(None, description="引擎语言：Auto / Chinese / English / Japanese / Korean …（默认 Auto 自动判别）")
+    seed: int | None = Field(None, description="随机种子；0 = 交给引擎自己的随机行为，正整数 = 固定")
+    temperature: float | None = Field(None, ge=0.1, le=2.0, description="采样温度：默认 0.9")
+    top_p: float | None = Field(None, ge=0.0, le=1.0, description="核采样：默认 1.0")
+    top_k: int | None = Field(None, ge=1, le=100, description="Top-K 采样：默认 50")
+    repetition_penalty: float | None = Field(None, ge=1.0, le=2.0, description="重复惩罚：默认 1.05")
+    max_new_tokens: int | None = Field(None, ge=64, le=8192, description="最大生成 token：默认 2048（长文本要调大）")
+    n: int = Field(1, ge=1, description="生成条数（串行多次提交，种子递增）")
+
+    # 直接改写工作流节点，形如 {"2.inputs.language": "Chinese"}
+    workflow_overrides: dict[str, Any] | None = None
+    filename_prefix: str | None = Field(None, description="保存文件名前缀；不传则用工作流模板自带的前缀（audio/Qwen3TTS_VoiceDesign）")
+
+    # ---- 异步任务模式（与视频档同契约）----
+    background: str | None = Field(
+        None,
+        description='OpenAI 标准异步开关："pending" 异步立即返回 task 对象；缺省同步',
+    )
+    async_mode: bool = Field(False, alias="async", description="异步任务模式兼容别名：true 等价于 background=pending")
+
+    @property
+    def is_async(self) -> bool:
+        return self.background == "pending" or bool(self.async_mode)
+
+    @property
+    def text(self) -> str:
+        """要朗读的文本：`input` 优先，回落 `prompt`（两者语义等价）。"""
+        return (self.input or self.prompt or "").strip()
+
+    @property
+    def style_instruction(self) -> str | None:
+        """音色描述：`instructions` 优先，回落 `voice_instruction`。"""
+        return self.instructions or self.voice_instruction or None
+
+
+class AudioResponse(BaseModel):
+    created: int
+    data: list[ImageDatum]  # 复用：url / b64_json / path
+    usage: dict[str, Any] | None = None
+    # 回显本次实际使用的种子：n=1 时为整数；n>1 时为整数列表（每项对应一段音频）。
+    seed: int | list[int] | None = None
+    # 同 ImageResponse.task_id：同步请求在网关任务表里的 id，可交给 pin_view_item 反查产物。
+    task_id: str | None = None
+
+
 class ModelCard(BaseModel):
     id: str
     object: str = "model"

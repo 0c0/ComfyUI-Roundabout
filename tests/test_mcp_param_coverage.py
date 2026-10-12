@@ -23,10 +23,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from gateway.schemas import ImageGenerationRequest, VideoGenerationRequest  # noqa: E402
+from gateway.schemas import (  # noqa: E402
+    AudioSpeechRequest,
+    ImageGenerationRequest,
+    VideoGenerationRequest,
+)
 
 MCP_SRC = ROOT / "mcp_server.py"
-REQUEST_MODELS = (ImageGenerationRequest, VideoGenerationRequest)
+REQUEST_MODELS = (ImageGenerationRequest, VideoGenerationRequest, AudioSpeechRequest)
 
 # MCP SDK 按注解注入、不属于请求字段的形参
 SDK_PARAMS = {"ctx"}
@@ -36,6 +40,7 @@ TOOL_MODEL = {
     "generate_image": ImageGenerationRequest,
     "edit_image": ImageGenerationRequest,
     "remove_background": ImageGenerationRequest,
+    "generate_speech": AudioSpeechRequest,
     "generate_video": VideoGenerationRequest,
 }
 
@@ -45,6 +50,8 @@ REQUIRED = {
                        "negative_prompt", "workflow_overrides", "filename_prefix"},
     "edit_image": {"prompt", "image", "model", "filename_prefix"},
     "remove_background": {"image", "filename_prefix"},
+    "generate_speech": {"input", "instructions", "model", "voice", "language",
+                        "seed", "response_format", "filename_prefix", "background"},
     "generate_video": {"prompt", "model", "duration", "fps", "size", "seed",
                        "negative_prompt", "reference_images", "reference_videos",
                        "reference_audios", "background", "filename_prefix", "attention",
@@ -67,6 +74,10 @@ ALLOWED_MISSING = {
                           # 去背景是 promptless 单图工具，多图参考对它没有意义
                           "reference_images",
                           "denoise", "mode", "mask", "workflow_overrides"},
+    # 音频档省略：同义别名（prompt / voice_instruction）与采样精调（top_* / temperature …）
+    "generate_speech": {"prompt", "voice_instruction", "n", "user", "temperature",
+                        "top_p", "top_k", "repetition_penalty", "max_new_tokens",
+                        "workflow_overrides", "async_mode"},
     "generate_video": {"n", "style", "user", "num_frames", "cfg",
                        "sampler_name", "scheduler", "denoise", "image",
                        "workflow_overrides", "async_mode"},
