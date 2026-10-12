@@ -31,9 +31,9 @@ classifiers = [
 ]
 
 [project.urls]
-Repository = "https://github.com/0c0/ComfyUI-Roundabout"
-Documentation = "https://github.com/0c0/ComfyUI-Roundabout/blob/main/README.md"
-"Bug Tracker" = "https://github.com/0c0/ComfyUI-Roundabout/issues"
+Repository = "https://github.com/HJH-AILab/ComfyUI-Roundabout"
+Documentation = "https://github.com/HJH-AILab/ComfyUI-Roundabout/blob/main/README.md"
+"Bug Tracker" = "https://github.com/HJH-AILab/ComfyUI-Roundabout/issues"
 
 [tool.comfy]
 # 仅发布到 Comfy Registry 时才用得上（需先在 https://registry.comfy.org 注册

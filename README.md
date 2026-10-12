@@ -83,24 +83,24 @@ agent 全程**看不到也用不着**工作流 JSON。它只传语义参数，�
 
 | skill | 内容 | 什么时候用 |
 |---|---|---|
-| [`roundabout-skill`](https://github.com/0c0/roundabout-skill) | 本插件的**总入口**：选模型、走 REST / MCP 生成、把工作流接进网关或下线、权重下载、排障运维、核对「文档与实现是否一致」 | agent 要驱动本机 ComfyUI 出图出视频，或要改 `models.yaml` / 加工作流时 |
-| [`h3-playbook-skill`](https://github.com/0c0/h3-playbook-skill) | MiniMax H3 的**单一入口**（官方使用手册口径 + 官方 h3-prompt-writing 契约合并版）：三段式公式、五类模式判定（T2VA / I2VA / FL2VA / L2VA / Ref2VA）、Ref2VA 六段改写格式、素材用途标签、时长与宽高比边界、踩坑表 | 写 / 改 H3 提示词，或判断某个需求 H3 能不能做、排查口型 / 切镜 / 乱码时 |
-| [`qwen-image2.1-prompt-writing-skill`](https://github.com/0c0/qwen-image2.1-prompt-writing-skill) | Qwen-Image-2.1 官方 Prompt Enhancer 契约的手写替身：t2i 观察者报告与 edit 改写指令，产出 `rewritten_prompt` + `wh_ratio` / `ratio_follow` 结构 | 用网关 `qwen-image-2.1` 档出图 / 改图，或要把一句粗糙需求扩写成该模型能吃的描述前必查 |
+| [`roundabout-skill`](https://github.com/HJH-AILab/roundabout-skill) | 本插件的**总入口**：选模型、走 REST / MCP 生成、把工作流接进网关或下线、权重下载、排障运维、核对「文档与实现是否一致」 | agent 要驱动本机 ComfyUI 出图出视频，或要改 `models.yaml` / 加工作流时 |
+| [`h3-playbook-skill`](https://github.com/HJH-AILab/h3-playbook-skill) | MiniMax H3 的**单一入口**（官方使用手册口径 + 官方 h3-prompt-writing 契约合并版）：三段式公式、五类模式判定（T2VA / I2VA / FL2VA / L2VA / Ref2VA）、Ref2VA 六段改写格式、素材用途标签、时长与宽高比边界、踩坑表 | 写 / 改 H3 提示词，或判断某个需求 H3 能不能做、排查口型 / 切镜 / 乱码时 |
+| [`qwen-image2.1-prompt-writing-skill`](https://github.com/HJH-AILab/qwen-image2.1-prompt-writing-skill) | Qwen-Image-2.1 官方 Prompt Enhancer 契约的手写替身：t2i 观察者报告与 edit 改写指令，产出 `rewritten_prompt` + `wh_ratio` / `ratio_follow` 结构 | 用网关 `qwen-image-2.1` 档出图 / 改图，或要把一句粗糙需求扩写成该模型能吃的描述前必查 |
 
 装法就是把这个目录放进 agent 的 skills 目录（目录名与 skill 的 `name` 保持一致）：
 
 ```bash
-git clone https://github.com/0c0/roundabout-skill.git <agent 的 skills 目录>/roundabout
-git clone https://github.com/0c0/h3-playbook-skill.git <agent 的 skills 目录>/h3-playbook
-git clone https://github.com/0c0/qwen-image2.1-prompt-writing-skill.git <agent 的 skills 目录>/qwen-image-prompt-writing
+git clone https://github.com/HJH-AILab/roundabout-skill.git <agent 的 skills 目录>/roundabout
+git clone https://github.com/HJH-AILab/h3-playbook-skill.git <agent 的 skills 目录>/h3-playbook
+git clone https://github.com/HJH-AILab/qwen-image2.1-prompt-writing-skill.git <agent 的 skills 目录>/qwen-image-prompt-writing
 ```
 
 **一句话安装**（把这句丢给 agent 即可，装在哪、怎么落位由它按自家约定处理）：
 
 ```text
-安装这个skill https://github.com/0c0/roundabout-skill
-安装这个skill https://github.com/0c0/h3-playbook-skill
-安装这个skill https://github.com/0c0/qwen-image2.1-prompt-writing-skill
+安装这个skill https://github.com/HJH-AILab/roundabout-skill
+安装这个skill https://github.com/HJH-AILab/h3-playbook-skill
+安装这个skill https://github.com/HJH-AILab/qwen-image2.1-prompt-writing-skill
 ```
 
 > 三份都由本仓库维护（`MCP get_skills` 里标 `source="roundabout"`）。
@@ -145,7 +145,7 @@ git clone https://github.com/0c0/qwen-image2.1-prompt-writing-skill.git <agent �
 **方式一 · 用 ComfyUI-Manager 从 Git URL 安装**（推荐）——装好 [ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager) 后，打开 **Custom Nodes Manager**，右上角菜单选 **Install via Git URL**，填入：
 
 ```
-https://github.com/0c0/ComfyUI-Roundabout
+https://github.com/HJH-AILab/ComfyUI-Roundabout
 ```
 
 装完点 **Restart**。节点包已按 Comfy Registry 规范声明元数据（`pyproject.toml`），ComfyUI-Manager 能从中识别名称与版本；因为是 git 仓库，之后也可以直接在 Manager 里检查/拉取更新。
@@ -158,7 +158,7 @@ https://github.com/0c0/ComfyUI-Roundabout
 
    ```bash
    cd ComfyUI/custom_nodes
-   git clone https://github.com/0c0/ComfyUI-Roundabout.git
+   git clone https://github.com/HJH-AILab/ComfyUI-Roundabout.git
    ```
 
 2. 安装依赖 —— **MCP 网关默认开启，所以默认需要这一步**：

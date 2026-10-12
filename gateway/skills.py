@@ -26,7 +26,7 @@ from typing import Any
 SKILLS: list[dict[str, Any]] = [
     {
         "name": "roundabout",
-        "install_url": "https://github.com/0c0/roundabout-skill",
+        "install_url": "https://github.com/HJH-AILab/roundabout-skill",
         "purpose": "本 MCP 服务器的总入口用法：模型选择、请求参数、排障、注册/下线工作流。",
         "when_to_use": "拿不准用哪个工具/参数、要注册或排查工作流、或想看某模型能力边界时查它。",
         "source": "roundabout",
@@ -35,7 +35,7 @@ SKILLS: list[dict[str, Any]] = [
     },
     {
         "name": "h3-playbook",
-        "install_url": "https://github.com/0c0/h3-playbook-skill",
+        "install_url": "https://github.com/HJH-AILab/h3-playbook-skill",
         "purpose": "MiniMax H3 单一入口（官方使用手册口径 + 官方 h3-prompt-writing 契约合并版）："
                    "三段式公式、五类模式判定（T2VA/I2VA/FL2VA/L2VA/Ref2VA）、Ref2VA 六段改写格式、"
                    "素材用途标签、时长/分辨率/宽高比/输入上限、踩坑表。",
@@ -47,7 +47,7 @@ SKILLS: list[dict[str, Any]] = [
     },
     {
         "name": "qwen-image-prompt-writing",
-        "install_url": "https://github.com/0c0/qwen-image2.1-prompt-writing-skill",
+        "install_url": "https://github.com/HJH-AILab/qwen-image2.1-prompt-writing-skill",
         "purpose": "Qwen-Image-2.1 官方 Prompt Enhancer 契约的手写替身：t2i 观察者报告与 edit 改写指令，"
                    "产出 rewritten_prompt + wh_ratio / ratio_follow 结构。",
         "when_to_use": "用网关 qwen-image-2.1 档出图/改图，或要把一句粗糙需求扩写成该模型能吃的描述前必查。",
