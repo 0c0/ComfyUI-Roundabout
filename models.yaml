@@ -459,18 +459,22 @@ models:
   #   - width/height 在 aggregator(136)；fps 在 CreateVideo(130)
   #   - 未上传的资源由网关在发送前动态删除对应节点（删 LoadVideo 会级联删其 GetVideoComponents，
   #     见 references 段与 gateway/pipeline.py 的 _prune_unused_references）。
-  #   - 低显存统一两级：BlockSparseAttention(159) → MiniMaxChunkFeedForward(158)。
-  #     稀疏档位按权重分：base / edit / lift / lift-edit 用 **`sol-attn`**（training-free，
-  #     tau 1.3 自适应阈值，约保留 16% key block）。
+  #   - 低显存统一两级：注意力档(159) → MiniMaxChunkFeedForward(158)。
+  #     159 按模型分档：**minimax-h3 用 Spark-H3 (SM86)**（本机自编 sm86 轮子，comfy-kitchen Sol 栈
+  #     上的 Spark 稀疏内核，2026-10-12 落地）；**edit / lift / lift-edit 三支仍是 BlockSparseAttention
+  #     的 `sol-attn`**（training-free，tau 1.3 自适应阈值，约保留 16% key block）。
   #     ⛔ **不能再接** KJNodes 的 MiniMaxLowVRAMAttention：它替换 `block.forward`，而稀疏的 block
   #     patch 会无条件补传 `attention=` 关键字（comfy/ldm/minimax/model.py:753），签名对不上
   #     ⇒ 实测 TypeError。base 四支原先的 LowVRAM 节点已按此撤除（09-21）。
-  #     ⚠️ 稀疏参数里只有 `start_percent` 进了可注入白名单（内部名 `sparse_start_percent`，
-  #     对外即请求参数 `attention`）；`tau` / `min_tokens` 等未注册，且 `selection.tau` 键名
-  #     含点号、路径按 `.` 切分无法寻址 ⇒ 调它们只能改工作流 JSON + `/admin/reload`。
+  #     ⚠️ 承载对外 `attention` 的可注入键按模型分：minimax-h3 / minimax-h3-edit 是 `spark_enabled`
+  #     （→ Spark.enabled，sparse→True / dense→False）；lift 两支是 `sparse_start_percent`
+  #     （→ BlockSparseAttention.start_percent，sparse→0.2 / dense→1.0）。Spark 的 warmup_ratio /
+  #     topk_ratio / strict 与 sol 的 `tau` / `min_tokens` 均未注册（后者键名 `selection.tau`
+  #     含点号、路径按 `.` 切分无法寻址）
+  #     ⇒ 只能改工作流 JSON。
   minimax-h3:
     workflow: video_minimax_h3.json
-    description: MiniMax H3 (FL2VA) —— 生成档：文生视频 / 首尾帧 / 参考图（留在本档，不换档）/ 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-edit（09-25 实测 FL2VA 不迁移音色/动作，参考内容只有 Ref2VA 消费）；TeaCache 同 h3（`teacache_threshold`，默认 0=关），20 步，低显存分块按档位自适应；Turbo 快档：`turbo_lora` 强度（0=关默认，1.0=8 步蒸馏，配 steps≈8）；TeaCache 步间缓存：`teacache_threshold`（默认 0=关；0.08 特写/手部与简单场景+人物主体、0.15 慢速全身/风景、含文字/大色块渐变背景/重约束 prompt/双锚长链用 0、0.22 勿用）
+    description: MiniMax H3 (FL2VA) —— 生成档：文生视频 / 首尾帧 / 参考图（留在本档，不换档）/ 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-edit（09-25 实测 FL2VA 不迁移音色/动作，参考内容只有 Ref2VA 消费）；**注意力档 = Spark-H3 (SM86)**：`attention` 取 `sparse`（默认，Spark 稀疏）或 `dense`（关闭，Spark 节点原样透传模型）；TeaCache 同 h3（`teacache_threshold`，默认 0=关），20 步，低显存分块按档位自适应；Turbo 快档：`turbo_lora` 强度（0=关默认，1.0=8 步蒸馏，配 steps≈8）；TeaCache 步间缓存：`teacache_threshold`（默认 0=关；0.08 特写/手部与简单场景+人物主体、0.15 慢速全身/风景、含文字/大色块渐变背景/重约束 prompt/双锚长链用 0、0.22 勿用）
     mode: video
     capabilities:
     - text-to-video
@@ -518,7 +522,7 @@ models:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
       seed: 129.inputs.noise_seed
-      steps: [124.inputs.steps, 185.inputs.total_steps]
+      steps: [124.inputs.steps, 185.inputs.total_steps, 159.inputs.steps]
       sampler_name: 123.inputs.sampler_name
       scheduler: 124.inputs.scheduler
       denoise: 124.inputs.denoise
@@ -528,7 +532,7 @@ models:
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
       seq_threshold: 158.inputs.seq_threshold
-      sparse_start_percent: '159.inputs.start_percent'
+      spark_enabled: '159.inputs.enabled'
       turbo_lora: '160.inputs.strength_model'
       teacache_threshold: '185.inputs.rel_l1_thresh'
     aliases:
@@ -537,7 +541,7 @@ models:
     - h3
   minimax-h3-edit:
     workflow: video_minimax_h3_edit.json
-    description: MiniMax H3 Edit (Ref2VA) —— 编辑档：参考视频编辑 / 动作·运镜迁移 / 音频复用 / 参考图，20 步，低显存分块按档位自适应；Turbo 快档：`turbo_lora` 强度（0=关默认，1.0=ref2v 8 步蒸馏，配 steps≈8）
+    description: MiniMax H3 Edit (Ref2VA) —— 编辑档：参考视频编辑 / 动作·运镜迁移 / 音频复用 / 参考图；**注意力档 = Spark-H3 (SM86)**：`attention` 取 `sparse`（默认，Spark 稀疏）或 `dense`（关闭，Spark 节点原样透传模型）；20 步，低显存分块按档位自适应；Turbo 快档：`turbo_lora` 强度（0=关默认，1.0=ref2v 8 步蒸馏，配 steps≈8）
     mode: video
     capabilities:
     - text-to-video
@@ -577,7 +581,7 @@ models:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
       seed: 129.inputs.noise_seed
-      steps: [124.inputs.steps, 185.inputs.total_steps]
+      steps: [124.inputs.steps, 185.inputs.total_steps, 159.inputs.steps]
       sampler_name: 123.inputs.sampler_name
       scheduler: 124.inputs.scheduler
       denoise: 124.inputs.denoise
@@ -587,7 +591,7 @@ models:
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
       seq_threshold: 158.inputs.seq_threshold
-      sparse_start_percent: '159.inputs.start_percent'
+      spark_enabled: '159.inputs.enabled'
       turbo_lora: '160.inputs.strength_model'
       teacache_threshold: '185.inputs.rel_l1_thresh'
     aliases:

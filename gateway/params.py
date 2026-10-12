@@ -290,33 +290,36 @@ def resolve_output_scale(output_size: str, in_w: int, in_h: int, spec: ModelSpec
 
 
 # ------------------------------------------------------------------ 注意力档位
-# 稀疏注意力（sol-attn）与致密画质高度一致、差异只在高频细节（同 seed MAE 20.2 / SSIM 0.615，
+# 稀疏注意力与致密画质高度一致、差异只在高频细节（同 seed MAE 20.2 / SSIM 0.615，
 # 约为「换种子内容噪声」的 1/3），代价端是耗时（8 步 768p 实测 0.76~0.79x）。所以把它做成
-# 用户可选的「更快 ↔ 更高质量」档：
-#   sparse（默认）= 保留 BlockSparseAttention 模板默认起始点 0.2（8 步档吃头 2 步走致密）
-#   dense         = 把 start_percent 顶到 1.0
-# 只给 base 四支（minimax-h3 / -edit / -lift / -lift-edit）：它们跑的是 training-free 的
-# sol-attn，「关掉」就是换回本来会算的致密注意力。
+# 用户可选的「更快 ↔ 更高质量」档。对外同一个 `attention: sparse|dense`，落点按模型分两种：
+#
+#   * minimax-h3（159 = Spark-H3 SM86）：翻译成 Spark 节点的 `enabled`（sparse→True /
+#     dense→False）。dense 档 = 节点原样透传模型，走工作流里本来的致密注意力。
+#   * edit / lift / lift-edit（159 = BlockSparseAttention）：翻译成 `start_percent`
+#     （sparse→0.2 / dense→1.0）。
 #
 # 1.0 为什么等效「关闭稀疏」：apply_block_sparse_attention 把 start_percent 过
 # percent_to_sigma()，而所有 percent_to_sigma 实现里 `percent >= 1.0` 一律返回 0.0；
 # SparseAttnPatch.dense_reason() 判 `sigma > sigma_start` 即走 dense ⇒ 每个采样步
 # （sigma 恒 > 0）都落在窗外 ⇒ 全程致密。
 ATTENTION_SPARSE_START: dict[str, float] = {"sparse": 0.2, "dense": 1.0}
+ATTENTION_SPARK_ENABLED: dict[str, bool] = {"sparse": True, "dense": False}
 
 
-def resolve_attention(attention: str) -> float:
-    """把注意力档位翻译成 `BlockSparseAttention.start_percent` 的值。
+def resolve_attention(attention: str, *, spark: bool = False) -> float | bool:
+    """把对外 `attention` 档位翻译成落点值（`spark=True` 时返回 Spark 的 enabled 布尔）。
 
     非法值直接报 400，不回落 —— 静默回落会让「参数看起来支持、实际无效」难以定位。
     """
+    table = ATTENTION_SPARK_ENABLED if spark else ATTENTION_SPARSE_START
     key = attention.strip().lower()
     try:
-        return ATTENTION_SPARSE_START[key]
+        return table[key]
     except KeyError:
         raise APIError(
             f"Invalid `attention`: {attention!r}. Expected one of: "
-            f"{', '.join(sorted(ATTENTION_SPARSE_START))}.",
+            f"{', '.join(sorted(table))}.",
             param="attention",
         ) from None
 

@@ -133,9 +133,10 @@ class VideoGenerationRequest(BaseModel):
     )
 
     # ---- 注意力档位（仅 base 四支 H3 视频档）----
-    # sol-attn 稀疏更快、显存更省；画质与致密高度一致，差异只在高频细节。
-    # dense 档把 BlockSparseAttention.start_percent 顶到 1.0（percent_to_sigma(1.0)=0
-    # ⇒ 每一步都判 dense）等效全程关闭稀疏 —— 换回致密画质，耗时回满。
+    # 稀疏更快、显存更省；画质与致密高度一致，差异只在高频细节。
+    # dense 档：minimax-h3 关掉 Spark 节点（原样透传模型）；其余三支把
+    # BlockSparseAttention.start_percent 顶到 1.0（percent_to_sigma(1.0)=0
+    # ⇒ 每一步都判 dense）。两条路都等效全程关闭稀疏 —— 换回致密画质，耗时回满。
     attention: Literal["sparse", "dense"] | None = Field(
         None,
         description=(
