@@ -90,7 +90,13 @@ for name, entry in MODELS.items():
         fi = model.model_fields[f["name"]]
         if f.get("required") != fi.is_required():
             diff.append(f"{f['name']}.required")
-        if f.get("default") != (None if fi.is_required() else fi.default) and not fi.is_required():
+        if f["name"] in spec.param_specs:
+            # 模型自述参数（params: 块）：tool-info 的 default/min/max 来自声明，
+            # 语义是「不传时工作流实际生效的值」，与请求字段缺省（None=不传）刻意不同。
+            ps = spec.param_specs[f["name"]]
+            if f.get("default") != ps.default:
+                diff.append(f"{f['name']}.declared_default")
+        elif f.get("default") != (None if fi.is_required() else fi.default) and not fi.is_required():
             diff.append(f"{f['name']}.default")
     check(f"{name} 必填/默认值对齐", not diff, diff)
 

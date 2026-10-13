@@ -101,6 +101,106 @@ def resolve_workflow_path(workflows_dir: Path, wf_name: str, local_dir: Path | N
 
 
 @dataclass
+class ParamSpec:
+    """模型自述参数（models.yaml `params:` 块，v1.43.0 起）。
+
+    声明即生效：`bind` 自动并入 bindings（免 KNOWN_PARAMS 白名单）、
+    `default` 并入 defaults、范围/类型在请求入口统一校验、
+    tool-info 字段元数据优先取自这里。边界以下（pipeline 注入、apply_route）
+    对声明参数与内置参数一视同仁，不出现任何模型名。
+    """
+
+    name: str
+    type: str = "float"  # float | int | str | bool
+    default: Any = None
+    min: float | None = None
+    max: float | None = None
+    choices: list[Any] | None = None
+    bind: str | list[str] | None = None
+    description: str = ""
+
+    def validate(self, value: Any) -> Any:
+        """类型收敛 + 范围/枚举校验；非法抛 APIError（param 指向参数名）。"""
+        try:
+            if self.type == "float":
+                value = float(value)
+            elif self.type == "int":
+                value = int(value)
+            elif self.type == "str":
+                value = str(value)
+            elif self.type == "bool":
+                value = bool(value)
+            else:
+                raise APIError(
+                    f"Param `{self.name}` declares invalid type `{self.type}`",
+                    param=self.name,
+                )
+        except (TypeError, ValueError):
+            raise APIError(
+                f"Param `{self.name}` expects {self.type}, got {value!r}", param=self.name
+            ) from None
+        if self.choices is not None and value not in self.choices:
+            raise APIError(
+                f"Param `{self.name}` must be one of {self.choices}, got {value!r}",
+                param=self.name,
+            )
+        if self.min is not None and value < self.min:
+            raise APIError(
+                f"Param `{self.name}` must be >= {self.min}, got {value}", param=self.name
+            )
+        if self.max is not None and value > self.max:
+            raise APIError(
+                f"Param `{self.name}` must be <= {self.max}, got {value}", param=self.name
+            )
+        return value
+
+
+def _parse_param_specs(
+    model: str, raw: Any
+) -> tuple[dict[str, ParamSpec], dict[str, list[str]], dict[str, Any]]:
+    """解析模型的 `params:` 块，返回 (param_specs, 由声明派生的 bindings, 由声明派生的 defaults)。"""
+    specs: dict[str, ParamSpec] = {}
+    binds: dict[str, list[str]] = {}
+    defs: dict[str, Any] = {}
+    if not raw:
+        return specs, binds, defs
+    if not isinstance(raw, dict):
+        raise RuntimeError(f"model `{model}`: `params` must be a mapping")
+    for pname, cfg in raw.items():
+        pname = str(pname)
+        cfg = cfg or {}
+        known_types = {"float", "int", "str", "bool"}
+        ptype = str(cfg.get("type") or "float").lower()
+        if ptype not in known_types:
+            raise RuntimeError(
+                f"model `{model}` param `{pname}`: invalid type `{ptype}` (expected {sorted(known_types)})"
+            )
+        choices = cfg.get("choices")
+        if choices is not None and (not isinstance(choices, list) or not choices):
+            raise RuntimeError(f"model `{model}` param `{pname}`: `choices` must be a non-empty list")
+        mn, mx = cfg.get("min"), cfg.get("max")
+        if mn is not None and mx is not None and float(mn) > float(mx):
+            raise RuntimeError(f"model `{model}` param `{pname}`: min > max")
+        ps = ParamSpec(
+            name=pname,
+            type=ptype,
+            default=cfg.get("default"),
+            min=None if mn is None else float(mn),
+            max=None if mx is None else float(mx),
+            choices=choices,
+            bind=cfg.get("bind"),
+            description=str(cfg.get("description") or ""),
+        )
+        specs[pname] = ps
+        if ps.bind:
+            paths = [ps.bind] if isinstance(ps.bind, str) else [str(p) for p in ps.bind]
+            binds[pname] = paths
+        if ps.default is not None:
+            defs[pname] = ps.default
+    return specs, binds, defs
+
+
+@dataclass
 class ModelSpec:
     name: str
     workflow_path: Path
@@ -131,6 +231,9 @@ class ModelSpec:
     # workflow 文件来源：template=仓库模板（workflows/，更新会被覆盖）| local=本机实例
     # （workflows.local/，gitignored，永不被更新触碰）。见 resolve_workflow_path。
     wf_source: str = "template"
+    # 模型自述参数（models.yaml `params:` 块）：声明式 type/min/max/choices/default/bind，
+    # 见 ParamSpec。pipeline / toolinfo 对这里声明的参数零硬编码。
+    param_specs: dict[str, ParamSpec] = field(default_factory=dict)
 
     @property
     def supports_batch(self) -> bool:
@@ -312,7 +415,18 @@ class Registry:
                     node_inputs[key] = value
                     log.info("device override: %s node %s.inputs.%s = %s", wf_path.name, nid, key, value)
 
-            bindings = _normalize_bindings(name, cfg.get("bindings") or {})
+            # 模型自述参数（params: 块）：声明的 bind/default 并入 bindings/defaults，
+            # 声明即免 KNOWN_PARAMS 白名单——加新参数只写 yaml，不动 Python。
+            param_specs, declared_binds, declared_defs = _parse_param_specs(name, cfg.get("params"))
+            bindings = _normalize_bindings(
+                name, cfg.get("bindings") or {}, allowed_extra=set(param_specs)
+            )
+            for k, paths in declared_binds.items():
+                if k in bindings:
+                    raise RuntimeError(
+                        f"model `{name}`: param `{k}` declared in both `bindings` and `params`"
+                    )
+                bindings[k] = paths
             # 显存分档：档位值作为默认值的地基，模型自己写的 defaults 覆盖它。
             # 探测不到显存时 tier 为空，行为等同不做自适应。
             tier: dict[str, Any] = {}
@@ -333,6 +447,7 @@ class Registry:
             merged_defaults = {
                 **(shared_defaults.get("params") or {}),
                 **tier,
+                **declared_defs,  # params 块声明（defaults 同名键可覆盖声明，属迁移期兼容）
                 **(cfg.get("defaults") or {}),
             }
 
@@ -353,6 +468,7 @@ class Registry:
                 workflow_path=wf_path,
                 template=template,
                 bindings=bindings,
+                param_specs=param_specs,
                 defaults=merged_defaults,
                 capabilities=caps,
                 output_node=str(cfg["output_node"]) if cfg.get("output_node") is not None else None,
@@ -480,10 +596,12 @@ def _weight_not_found(name: str) -> str | None:
     return "not found in any ComfyUI model dir"
 
 
-def _normalize_bindings(model: str, raw: dict[str, Any]) -> dict[str, list[str]]:
+def _normalize_bindings(
+    model: str, raw: dict[str, Any], allowed_extra: set[str] | None = None
+) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
     for key, value in raw.items():
-        if key not in KNOWN_PARAMS:
+        if key not in KNOWN_PARAMS and not (allowed_extra and key in allowed_extra):
             log.warning("model `%s`: unknown binding key `%s` (ignored)", model, key)
             continue
         paths = [value] if isinstance(value, str) else list(value or [])

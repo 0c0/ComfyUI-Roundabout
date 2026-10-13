@@ -38,7 +38,13 @@ from .registry import (
     ref_key,
     registry,
 )
-from .schemas import ImageGenerationRequest, ImageResponse, VideoGenerationRequest, VideoResponse
+from .schemas import (
+    MODEL_SPECIFIC_FIELDS,
+    ImageGenerationRequest,
+    ImageResponse,
+    VideoGenerationRequest,
+    VideoResponse,
+)
 from .store import store
 
 log = logging.getLogger("roundabout.pipeline")
@@ -507,20 +513,21 @@ def build_video_values(
             values[key] = explicit
         elif values.get(key) is None:
             values[key] = spec.defaults.get(key)
-    # H3 Turbo LoRA 开关（extra 字段：仅声明了绑定的档消费；未传 → 走 defaults 的 0=关）
-    turbo_val = getattr(req, "turbo_lora", None)
-    if turbo_val is not None:
-        values["turbo_lora"] = float(turbo_val)
-    # H3 TeaCache 阈值：h3 / edit 有绑定（常驻节点 185，默认 0=关）；其它模型显式拒绝。
-    teacache_val = getattr(req, "teacache_threshold", None)
-    if teacache_val is not None:
-        if "teacache_threshold" not in spec.bindings:
+    # 模型专属声明式参数（models.yaml `params:` 块，v1.43.0 起）：范围/类型校验 + 注入。
+    # 声明来源见 registry.ParamSpec——这里对具体参数名与模型名零硬编码。
+    for pname, ps in spec.param_specs.items():
+        v = getattr(req, pname, None)
+        if v is not None:
+            values[pname] = ps.validate(v)
+    # 请求带了「模型专属」字段但本模型既无声明也无绑定 → 显式拒绝
+    # （对齐旧 teacache 行为；字段清单 = 请求模型上标记为模型专属的集合，见 schemas）。
+    for pname in MODEL_SPECIFIC_FIELDS:
+        if pname in spec.param_specs or pname in spec.bindings:
+            continue
+        if getattr(req, pname, None) is not None:
             raise APIError(
-                f"Model `{spec.name}` has no TeaCache stage: `teacache_threshold` only "
-                "applies to minimax-h3 / minimax-h3-edit.",
-                param="teacache_threshold",
+                f"Model `{spec.name}` does not support `{pname}`.", param=pname
             )
-        values["teacache_threshold"] = float(teacache_val)
     if values.get("width") is None:
         values["width"] = spec.defaults.get("width")
     if values.get("height") is None:

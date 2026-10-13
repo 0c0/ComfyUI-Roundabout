@@ -21,7 +21,7 @@ ComfyUI 已经有模型、显存和队列，缺的只是一层 agent 能听懂�
 - 随 ComfyUI 启动自动加载、随 ComfyUI 退出而结束，**没有独立进程**
 - MCP 端点挂在 ComfyUI 自己的端口（`/mcp`），**不额外占端口**
 - 复用 ComfyUI 的 Python 解释器与依赖（纯 REST 场景零新增依赖）
-- 配置只有 `models.yaml`（模型）与 `.env`（可选）两个文件，改完热加载；另有一个可选的 `device_weights.yaml`（机器本地权重覆盖，gitignored，见下方[多机部署](#多机部署权重覆盖)）
+- 配置只有 `models.yaml`（模型）与 `.env`（可选）两个文件，改完热加载；模型专属参数可在 `models.yaml` 的 `params:` 块**声明式注册**（type/min/max/default/bind 全数据驱动，声明即免 `KNOWN_PARAMS` 白名单、bind/default 自动并入、tool-info 元数据取自声明，v1.43.0）；另有一个可选的 `device_weights.yaml`（机器本地权重覆盖，gitignored，见下方[多机部署](#多机部署权重覆盖)）
 
 没有 docker、没有守护进程、没有第二份 registry 要同步。
 

@@ -122,6 +122,9 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
     契约：返回 `(True, None)` 或 `(False, 原因)` —— 生效的字段绝不带原因，否则前端
     会显示一个与「可用」自相矛盾的解释。
     """
+    if name in spec.param_specs:
+        # 模型自述参数（params: 块声明）：声明即生效，元数据也来自声明。
+        return True, None
     if name == "prompt":
         if spec.promptless:
             return False, "promptless tool model (no prompt)"
@@ -222,6 +225,19 @@ def _model_entry(spec) -> dict[str, Any]:
     fields = _walk_request_fields(VideoGenerationRequest if is_video else ImageGenerationRequest)
     for field in fields:
         applies, reason = _applies(spec, field["name"])
+        # 模型自述参数：范围/默认值/描述以 models.yaml `params:` 声明为准（覆盖请求模型静态值）。
+        ps = spec.param_specs.get(field["name"])
+        if ps is not None:
+            if ps.min is not None:
+                field["min"] = ps.min
+            if ps.max is not None:
+                field["max"] = ps.max
+            if ps.default is not None:
+                field["default"] = ps.default
+            if ps.choices is not None:
+                field["choices"] = list(ps.choices)
+            if ps.description:
+                field["description"] = ps.description
         # route 换档字段（如 minimax-h3 的 reference_videos → -edit）：本档虽无槽，
         # 请求携带时网关会整体换档执行，对调用方等效于「生效」。
         if not applies and field["name"] in (spec.route or {}):

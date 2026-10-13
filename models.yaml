@@ -515,9 +515,24 @@ models:
       denoise: 1
       duration: 5
       fps: 24
-      turbo_lora: 0
-      teacache_threshold: 0
 
+    # 模型自述参数（v1.43.0）：声明即注册——bind 并入 bindings、default 并入 defaults、
+    # 类型/范围在请求入口校验、tool-info 元数据取自这里。加新参数只写这里，不动 Python。
+    params:
+      turbo_lora:
+        type: float
+        min: 0
+        max: 1.5
+        default: 0
+        bind: '160.inputs.strength_model'
+        description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=8 步蒸馏 Turbo，需配 steps≈8
+      teacache_threshold:
+        type: float
+        min: 0
+        max: 0.15
+        default: 0
+        bind: '185.inputs.rel_l1_thresh'
+        description: TeaCache 步间缓存复用阈值，越大越快漂移越大；0=关（默认），0.08 特写/手部与简单场景，0.15 常规慢景；含文字/大色块渐变/重约束 prompt/双锚长链用 0（0.22 有已知硬伤，已硬拦）
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
@@ -533,8 +548,6 @@ models:
       chunks: 158.inputs.chunks
       seq_threshold: 158.inputs.seq_threshold
       spark_enabled: '159.inputs.enabled'
-      turbo_lora: '160.inputs.strength_model'
-      teacache_threshold: '185.inputs.rel_l1_thresh'
     aliases:
     - minimax_h3
     - minimaxh3
@@ -575,8 +588,23 @@ models:
       denoise: 1
       duration: 5
       fps: 24
-      turbo_lora: 0
-      teacache_threshold: 0
+    # 模型自述参数（v1.43.0）：声明即注册——bind 并入 bindings、default 并入 defaults、
+    # 类型/范围在请求入口校验、tool-info 元数据取自这里。加新参数只写这里，不动 Python。
+    params:
+      turbo_lora:
+        type: float
+        min: 0
+        max: 1.5
+        default: 0
+        bind: '160.inputs.strength_model'
+        description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=8 步蒸馏 Turbo，需配 steps≈8
+      teacache_threshold:
+        type: float
+        min: 0
+        max: 0.15
+        default: 0
+        bind: '185.inputs.rel_l1_thresh'
+        description: TeaCache 步间缓存复用阈值，越大越快漂移越大；0=关（默认），0.08 特写/手部与简单场景，0.15 常规慢景；含文字/大色块渐变/重约束 prompt/双锚长链用 0（0.22 有已知硬伤，已硬拦）
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
@@ -592,8 +620,6 @@ models:
       chunks: 158.inputs.chunks
       seq_threshold: 158.inputs.seq_threshold
       spark_enabled: '159.inputs.enabled'
-      turbo_lora: '160.inputs.strength_model'
-      teacache_threshold: '185.inputs.rel_l1_thresh'
     aliases:
     - minimax_h3_edit
     - minimaxh3edit
@@ -658,7 +684,16 @@ models:
       duration: 5
       fps: 24
       scale: 1.875
-      turbo_lora: 0
+    # 模型自述参数（v1.43.0）：声明即注册——bind 并入 bindings、default 并入 defaults、
+    # 类型/范围在请求入口校验、tool-info 元数据取自这里。加新参数只写这里，不动 Python。
+    params:
+      turbo_lora:
+        type: float
+        min: 0
+        max: 1.5
+        default: 0
+        bind: '160.inputs.strength_model'
+        description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=ref2v 8 步蒸馏，需配 steps≈8
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
@@ -675,7 +710,6 @@ models:
       seq_threshold: 158.inputs.seq_threshold
       sparse_start_percent: '159.inputs.start_percent'
       scale: '910.inputs.scale'
-      turbo_lora: '160.inputs.strength_model'
     aliases:
     - minimax_h3_lift
     - h3-lift
@@ -723,7 +757,16 @@ models:
       duration: 5
       fps: 24
       scale: 1.875
-      turbo_lora: 0
+    # 模型自述参数（v1.43.0）：声明即注册——bind 并入 bindings、default 并入 defaults、
+    # 类型/范围在请求入口校验、tool-info 元数据取自这里。加新参数只写这里，不动 Python。
+    params:
+      turbo_lora:
+        type: float
+        min: 0
+        max: 1.5
+        default: 0
+        bind: '160.inputs.strength_model'
+        description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=ref2v 8 步蒸馏，需配 steps≈8
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
@@ -740,7 +783,6 @@ models:
       seq_threshold: 158.inputs.seq_threshold
       sparse_start_percent: '159.inputs.start_percent'
       scale: '910.inputs.scale'
-      turbo_lora: '160.inputs.strength_model'
     aliases:
     - minimax_h3_lift_edit
     - minimax-h3-edit-lift
