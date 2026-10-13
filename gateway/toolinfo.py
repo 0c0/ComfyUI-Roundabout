@@ -177,7 +177,7 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
         # 参数解析器按「模型是否声明 scale 绑定」判定，lift 两支正是唯一声明者。
         if spec.binds(name):
             return True, None
-        return False, "lift only (minimax-h3-lift / -lift-edit)"
+        return False, "model declares no `scale` binding (latent-lift only)"
     if name == "output_size":
         if spec.binds("scale"):
             return True, None
@@ -346,8 +346,8 @@ def _surface() -> dict[str, Any]:
         },
         "attention": {
             "choices": sorted(ATTENTION_SPARSE_START),
-            "note": "sparse 更快更省显存，dense 换回致密画质；落点按模型分（minimax-h3 → Spark 节点 `enabled` 布尔；其余三支 → "
-                    "BlockSparseAttention.start_percent 数值），未声明 binding 的模型传了报 400",
+            "note": "sparse 更快更省显存，dense 换回致密画质；落点按模型 bindings 分派"
+                    "（`spark_enabled` 布尔或 `sparse_start_percent` 数值），未声明 binding 的模型传了报 400",
         },
         "response_format": ["b64_json", "url", "file", "path"],
     }

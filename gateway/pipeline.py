@@ -546,14 +546,15 @@ def build_video_values(
             raise APIError(
                 f"Model `{spec.name}` always runs sparse attention: its weights are "
                 "trained for that sparse pattern, so there is no dense counterpart to "
-                "switch to. `attention` applies to the non-distilled H3 video models "
-                "(minimax-h3, minimax-h3-edit, minimax-h3-lift, minimax-h3-lift-edit).",
+                "switch to. `attention` applies to video models that declare a "
+                "sparse/dense attention binding (see tool-info fields).",
                 param="attention",
             )
         else:
             raise APIError(
                 f"Model `{spec.name}` has no block-sparse attention stage, so `attention` "
-                "has nothing to switch. It is only supported by the H3 video models.",
+                "has nothing to switch. It applies only to models with an attention "
+                "binding (see tool-info fields).",
                 param="attention",
             )
     # Lift 放大倍率：仅 lift 两支有 `scale` 绑定；其它模型显式拒绝，别静默忽略。
@@ -564,7 +565,7 @@ def build_video_values(
         raise APIError(
             f"Model `{spec.name}` has no latent-lift stage: its output size IS `size` "
             f"({values.get('width')}x{values.get('height')}). `output_size`/`scale` only "
-            "apply to minimax-h3-lift / minimax-h3-lift-edit.",
+            "apply to models with a `scale` binding (latent-lift; see tool-info fields).",
             param=param,
         )
     if out_size is not None and req_scale is not None:
@@ -664,7 +665,12 @@ async def generate_video(
                 hint = (f" `{spec.name}` has no frame slots wired: images go via "
                         f"`reference_images` (up to {ref_slots or len(img_slots)}).")
             else:
-                hint = " Models with first/last frame slots: minimax-h3, minimax-h3-lift."
+                frame_models = [
+                    s.name for s in registry.all() if (s.references or {}).get("frame_params")
+                ]
+                if frame_models:
+                    hint = (" Models with first/last frame slots: "
+                            + ", ".join(sorted(frame_models)) + ".")
             raise APIError(f"Model `{spec.name}` does not take `{p}`.{hint}", param=p)
     if req.reference_images and not ref_slots:
         if frame_params:

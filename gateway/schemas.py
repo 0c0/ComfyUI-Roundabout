@@ -134,7 +134,7 @@ class VideoGenerationRequest(BaseModel):
     # ---- H3 TeaCache 步间缓存阈值（仅 minimax-h3 / minimax-h3-edit 有绑定）----
     teacache_threshold: float | None = Field(
         None,
-        description="TeaCache 复用阈值：越大越快、漂移越大（特写/手部镜头 0.08，常规 0.15，含文字画面 ≤0.15；0.22 有已知硬伤）。仅 minimax-h3 / minimax-h3-edit 支持，默认 0=关闭。",
+        description="TeaCache 复用阈值：越大越快、漂移越大（特写/手部镜头 0.08，常规 0.15，含文字画面 ≤0.15）。按模型声明支持，越界或未声明档传了报 400；取值范围以 tool-info 为准，默认 0=关闭。",
     )
 
     # ---- 注意力档位（仅 base 四支 H3 视频档）----
@@ -147,7 +147,7 @@ class VideoGenerationRequest(BaseModel):
         description=(
             "注意力档位：`sparse`（默认，块稀疏加速，更快、更省显存）/"
             "`dense`（关闭稀疏，画质优先，更慢、更吃显存）。不传则保持工作流模板默认（稀疏）。"
-            "仅 base 四支 H3 视频档（minimax-h3 / -edit / -lift / -lift-edit）支持；"
+            "仅声明了注意力绑定的视频档支持（见 tool-info 各模型 fields 的 applies）；"
             "其它模型传了报 400。"
         ),
     )
@@ -155,7 +155,7 @@ class VideoGenerationRequest(BaseModel):
     output_size: str | None = Field(
         None,
         description=(
-            "期望输出尺寸（仅 minimax-h3-lift / -lift-edit）：支持分辨率预设键"
+            "期望输出尺寸（仅声明 `scale` 绑定的 latent-lift 档）：支持分辨率预设键"
             "（如 \"1440p-16:9\"）或 WxH；网关据此反推放大倍率"
             " scale = 输出短边 / 画布短边（输出保持画布宽高比，长边可能有少量偏差，"
             "实际输出尺寸见响应 `size`）。与 `scale` 互斥；其它模型传了报 400"
@@ -167,7 +167,7 @@ class VideoGenerationRequest(BaseModel):
         ge=1.0,
         le=4.0,
         description=(
-            "放大倍率（仅 minimax-h3-lift / -lift-edit）：输出 = 768p 画布 × scale，"
+            "放大倍率（仅声明 `scale` 绑定的 latent-lift 档）：输出 = 画布 × scale，"
             "默认 1.875 → 2520x1440。与 `output_size` 互斥；其它模型传了报 400。"
         ),
     )
@@ -189,8 +189,8 @@ class VideoGenerationRequest(BaseModel):
     # 首尾帧（minimax-h3 / -lift）：帧会实际成为输出的第一/最后一帧，
     # 网关按画布 size 做 cover 等比铺满 + 居中裁剪（纵横比不一致时裁边，不变形）。
     # 只在声明了 frame_params 的模型上生效，其余模型传了报 400。
-    first_frame: str | None = Field(None, description="首帧图（minimax-h3 / -lift）：成为输出第 1 帧，按画布 cover 裁剪；支持 base64/http(s)/本地路径")
-    last_frame: str | None = Field(None, description="尾帧图（minimax-h3 / -lift）：成为输出最后 1 帧，按画布 cover 裁剪；支持 base64/http(s)/本地路径")
+    first_frame: str | None = Field(None, description="首帧图（声明帧槽的视频档）：成为输出第 1 帧，按画布 cover 裁剪；支持 base64/http(s)/本地路径")
+    last_frame: str | None = Field(None, description="尾帧图（声明帧槽的视频档）：成为输出最后 1 帧，按画布 cover 裁剪；支持 base64/http(s)/本地路径")
 
     # 参考资源（OpenAI 风格扩展字段）：每项可为 dataURL / base64 / http(s) URL / 本地路径。
     # 本地路径支持「绝对路径」或「相对 ComfyUI input 目录的相对路径」（匹配原生 loader 约定）；
@@ -200,8 +200,8 @@ class VideoGenerationRequest(BaseModel):
     # 统一节点拓扑下帧与参考图并存：帧槽走 first_frame/last_frame，参考槽走 reference_images；
     # 参考视频/音频仅 Ref2VA 系（edit 两支）接入，FL2VA 权重不消费（传了 400）。
     reference_images: list[str] | None = Field(None, description="参考图（有剩余参考槽的模型最多 6 张；与首尾帧可同传），支持 base64/http(s)/本地路径")
-    reference_videos: list[str] | None = Field(None, description="参考视频（最多 3 个）：视频编辑 / 动作 / 运镜参考；在 minimax-h3 / -lift 上会自动换档到对应 -edit 模型执行（09-25 实测 FL2VA 权重不迁移动作，参考内容只有 Ref2VA 消费）；支持 base64/http(s)/本地路径")
-    reference_audios: list[str] | None = Field(None, description="参考音频（最多 3 个）：音频复用 / 音色节奏参考；在 minimax-h3 / -lift 上会自动换档到对应 -edit 模型执行（09-25 实测 FL2VA 权重不迁移音色，输出 H3S 自有音色）；支持 base64/http(s)/本地路径")
+    reference_videos: list[str] | None = Field(None, description="参考视频（最多 3 个）：视频编辑 / 动作 / 运镜参考；在声明 route 的生成档上会自动换档到编辑档执行（H3 系实测 FL2VA 权重不迁移动作，参考内容只有 Ref2VA 消费）；支持 base64/http(s)/本地路径")
+    reference_audios: list[str] | None = Field(None, description="参考音频（最多 3 个）：音频复用 / 音色节奏参考；在声明 route 的生成档上会自动换档到编辑档执行（H3 系实测 FL2VA 权重不迁移音色，输出 H3S 自有音色）；支持 base64/http(s)/本地路径")
 
     # 直接改写工作流节点，形如 {"3.inputs.cfg": 4.5}
     workflow_overrides: dict[str, Any] | None = None
