@@ -806,25 +806,53 @@ models:
     - text-to-speech
     output_node: '8'
     timeout: 900
-    defaults:
-      language: Auto
-      temperature: 0.9
-      top_p: 1.0
-      top_k: 50
-      repetition_penalty: 1.05
-      max_new_tokens: 2048
+    params:
+      language:
+        type: str
+        default: Auto
+        bind: 2.inputs.language
+        description: "引擎语言：Auto / Chinese / English / Japanese / Korean …（Auto=自动判别）"
+      temperature:
+        type: float
+        min: 0.1
+        max: 2.0
+        default: 0.9
+        bind: 2.inputs.temperature
+        description: "采样温度"
+      top_p:
+        type: float
+        min: 0.0
+        max: 1.0
+        default: 1.0
+        bind: 2.inputs.top_p
+        description: "核采样"
+      top_k:
+        type: int
+        min: 1
+        max: 100
+        default: 50
+        bind: 2.inputs.top_k
+        description: "Top-K 采样"
+      repetition_penalty:
+        type: float
+        min: 1.0
+        max: 2.0
+        default: 1.05
+        bind: 2.inputs.repetition_penalty
+        description: "重复惩罚"
+      max_new_tokens:
+        type: int
+        min: 64
+        max: 8192
+        default: 2048
+        bind: 2.inputs.max_new_tokens
+        description: "最大生成 token 数（长文本要调大）"
     bindings:
       filename_prefix: 8.inputs.filename_prefix
       prompt: 6.inputs.reference_text
       voice_instruction: 6.inputs.voice_instruction
       seed: 6.inputs.seed
-      language: 2.inputs.language
       voice: 2.inputs.voice_preset
-      temperature: 2.inputs.temperature
-      top_p: 2.inputs.top_p
-      top_k: 2.inputs.top_k
-      repetition_penalty: 2.inputs.repetition_penalty
-      max_new_tokens: 2.inputs.max_new_tokens
     aliases:
     - qwen3_tts_voice_design
     - qwen3-tts

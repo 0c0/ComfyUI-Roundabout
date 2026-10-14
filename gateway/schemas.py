@@ -282,13 +282,10 @@ class AudioSpeechRequest(BaseModel):
     prompt: str | None = Field(None, description="`input` 的别名：要朗读的文本")
     # `voice_instruction` 直连节点输入名，与 `instructions` 同义（二传时以 `instructions` 为准）
     voice_instruction: str | None = Field(None, description="`instructions` 的同义字段：音色设计描述")
-    language: str | None = Field(None, description="引擎语言：Auto / Chinese / English / Japanese / Korean …（默认 Auto 自动判别）")
     seed: int | None = Field(None, description="随机种子；0 = 交给引擎自己的随机行为，正整数 = 固定")
-    temperature: float | None = Field(None, ge=0.1, le=2.0, description="采样温度：默认 0.9")
-    top_p: float | None = Field(None, ge=0.0, le=1.0, description="核采样：默认 1.0")
-    top_k: int | None = Field(None, ge=1, le=100, description="Top-K 采样：默认 50")
-    repetition_penalty: float | None = Field(None, ge=1.0, le=2.0, description="重复惩罚：默认 1.05")
-    max_new_tokens: int | None = Field(None, ge=64, le=8192, description="最大生成 token：默认 2048（长文本要调大）")
+    # 采样类字段（language / temperature / top_p / top_k / repetition_penalty /
+    # max_new_tokens）不在此声明 —— 走 models.yaml `params:` 块的模型自述
+    # （v1.43.0 声明式机制）：类型/范围校验与 tool-info 元数据全部来自模型声明。
     n: int = Field(1, ge=1, description="生成条数（串行多次提交，种子递增）")
 
     # 直接改写工作流节点，形如 {"2.inputs.language": "Chinese"}

@@ -802,22 +802,22 @@ def build_audio_values(
 
     `voice_instruction` 特意**不参与**「None 回落 defaults」：它是自由文本，模板里
     写着一段可用的默认音色描述，用 None 覆盖掉反而让「不给描述」退化成空描述。
+
+    采样类字段（language / temperature / top_p / top_k / repetition_penalty /
+    max_new_tokens）走 models.yaml `params:` 块的模型自述（v1.43.0 声明式机制）：
+    类型/范围校验 + None 回落 defaults 与视频档同一循环，此处零字段硬编码。
     """
     values: dict[str, Any] = {
         "prompt": text,
-        "language": req.language,
         "voice": req.voice,
-        "temperature": req.temperature,
-        "top_p": req.top_p,
-        "top_k": req.top_k,
-        "repetition_penalty": req.repetition_penalty,
-        "max_new_tokens": req.max_new_tokens,
         "filename_prefix": req.filename_prefix,  # 透传：None 时回落模板默认前缀
     }
-    for key in ("language", "voice", "temperature", "top_p", "top_k",
-                "repetition_penalty", "max_new_tokens"):
-        if values.get(key) is None:
-            values[key] = spec.defaults.get(key)
+    for pname, ps in spec.param_specs.items():
+        v = getattr(req, pname, None)
+        if v is not None:
+            values[pname] = ps.validate(v)
+        elif values.get(pname) is None:
+            values[pname] = spec.defaults.get(pname)
     if instruction:
         values["voice_instruction"] = instruction
     return values
@@ -864,7 +864,7 @@ async def generate_audio(
     log.info(
         "req=%s | AUDIO gen | model=%s n=%d fmt=%s lang=%s voice=%s desc=%s text=%s",
         request_id, spec.name, n, response_format,
-        req.language or "-", req.voice or "-",
+        getattr(req, "language", None) or "-", req.voice or "-",
         "yes" if instruction else "no(template default)", _trunc(text),
     )
 

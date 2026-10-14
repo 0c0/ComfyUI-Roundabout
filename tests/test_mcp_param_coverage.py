@@ -29,6 +29,14 @@ from gateway.schemas import (  # noqa: E402
     VideoGenerationRequest,
 )
 
+# 模型自述参数（models.yaml `params:` 块声明，v1.43.0 起）不进请求 schema，
+# 但允许作为 MCP 工具形参出现（便捷门面，同 generate_video 的 turbo_lora 先例）。
+import yaml  # noqa: E402
+
+_DECLARED_PARAMS: set[str] = set()
+for _m in (yaml.safe_load((ROOT / "models.yaml").read_text(encoding="utf-8")) or {}).get("models", {}).values():
+    _DECLARED_PARAMS |= set((_m or {}).get("params") or {})
+
 MCP_SRC = ROOT / "mcp_server.py"
 REQUEST_MODELS = (ImageGenerationRequest, VideoGenerationRequest, AudioSpeechRequest)
 
@@ -167,12 +175,12 @@ for tool, required in REQUIRED.items():
     missing = sorted(required - actual)
     check(f"{tool} 必备字段齐全", not missing, f"缺 {missing}")
 
-print("\n=== [3] 形参名不得拼错（必须都是请求模型的字段）===")
+print("\n=== [3] 形参名不得拼错（必须都是请求模型的字段或模型自述参数）===")
 for tool, model in TOOL_MODEL.items():
     if tool not in tools:
         continue
     fields = set(model.model_fields)
-    stray = sorted(set(param_names(tools[tool])) - SDK_PARAMS - fields)
+    stray = sorted(set(param_names(tools[tool])) - SDK_PARAMS - fields - _DECLARED_PARAMS)
     check(f"{tool} 无越界形参", not stray, f"不在 {model.__name__} 里: {stray}")
 
 print("\n=== [4] 没有预期外的遗漏（REST 有、MCP 没有）===")

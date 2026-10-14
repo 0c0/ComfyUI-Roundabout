@@ -72,14 +72,10 @@ KNOWN_PARAMS = {
     # ---- 音频档（Qwen3-TTS VoiceDesign）----
     # `prompt` 落在「要朗读的文本」（audio 请求的 `input` / `prompt`），复用图像档那条校验：
     # 音频模型同样必须有文本落点，否则整支工作流没有输入。
+    # 采样类字段（language/temperature/top_p/…）走 params: 声明（bind 自动并入 bindings），
+    # 不进这份白名单；这里只留显式 schema 字段的落点。
     "voice_instruction",  # 音色设计描述（age/gender/timbre/pace…），OpenAI 同名概念 instructions
-    "language",  # 引擎语言（Auto / Chinese / English …）
     "voice",  # 引擎预设音色（CustomVoice 档生效；VoiceDesign 档忽略）
-    "temperature",
-    "top_p",
-    "top_k",
-    "repetition_penalty",
-    "max_new_tokens",
     # ---- 尺寸来源开关（Qwen 2.1 合并档）----
     # 落到 ComfySwitchNode.switch：latent 要么跟参考图（聚合节点的 latent 输出），
     # 要么用 width/height 直传的空 latent。值由 pipeline 按「有没有参考素材」推导，

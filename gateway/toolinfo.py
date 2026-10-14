@@ -140,11 +140,10 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
         if spec.binds("voice_instruction"):
             return True, None
         return False, "model declares no voice_instruction binding (no voice-design stage)"
-    if spec.is_audio and name in ("language", "voice", "temperature", "top_p", "top_k",
-                                  "repetition_penalty", "max_new_tokens"):
-        if spec.binds(name):
+    if spec.is_audio and name == "voice":
+        if spec.binds("voice"):
             return True, None
-        return False, f"model declares no {name} binding"
+        return False, "model declares no voice binding"
     if name == "negative_prompt":
         # 没有反向输入落点时网关不报错、只是静默无效，所以必须在这里标出来。
         if spec.binds(name):
