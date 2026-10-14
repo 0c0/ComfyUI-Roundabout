@@ -533,7 +533,7 @@ def build_video_values(
         if v is not None:
             values[pname] = ps.validate(v)
     # 请求带了「模型专属」字段但本模型既无声明也无绑定 → 显式拒绝
-    # （对齐旧 teacache 行为；字段清单 = 请求模型上标记为模型专属的集合，见 schemas）。
+    # （字段清单 = 请求模型上标记为模型专属的集合，见 schemas）。
     for pname in MODEL_SPECIFIC_FIELDS:
         if pname in spec.param_specs or pname in spec.bindings:
             continue

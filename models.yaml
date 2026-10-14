@@ -474,7 +474,7 @@ models:
   #     ⇒ 只能改工作流 JSON。
   minimax-h3:
     workflow: video_minimax_h3.json
-    description: MiniMax H3 (FL2VA) —— 生成档：文生视频 / 首尾帧 / 参考图（留在本档，不换档）/ 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-edit（09-25 实测 FL2VA 不迁移音色/动作，参考内容只有 Ref2VA 消费）；**注意力档 = Spark-H3 (SM86)**：`attention` 取 `sparse`（默认，Spark 稀疏）或 `dense`（关闭，Spark 节点原样透传模型）；TeaCache 同 h3（`teacache_threshold`，默认 0=关），20 步，低显存分块按档位自适应；Turbo 快档：`turbo_lora` 强度（0=关默认，1.0=8 步蒸馏，配 steps≈8）；TeaCache 步间缓存：`teacache_threshold`（默认 0=关；0.08 特写/手部与简单场景+人物主体、0.15 慢速全身/风景、含文字/大色块渐变背景/重约束 prompt/双锚长链用 0、0.22 勿用）
+    description: MiniMax H3 (FL2VA) —— 生成档：文生视频 / 首尾帧 / 参考图（留在本档，不换档）/ 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-edit（09-25 实测 FL2VA 不迁移音色/动作，参考内容只有 Ref2VA 消费）；**注意力档 = Spark-H3 (SM86)**：`attention` 取 `sparse`（默认，Spark 稀疏）或 `dense`（关闭，Spark 节点原样透传模型），20 步，低显存分块按档位自适应；Turbo 快档：`turbo_lora` 强度（0=关默认，1.0=8 步蒸馏，配 steps≈8）
     mode: video
     capabilities:
     - text-to-video
@@ -526,18 +526,11 @@ models:
         default: 0
         bind: '160.inputs.strength_model'
         description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=8 步蒸馏 Turbo，需配 steps≈8
-      teacache_threshold:
-        type: float
-        min: 0
-        max: 0.15
-        default: 0
-        bind: '185.inputs.rel_l1_thresh'
-        description: TeaCache 步间缓存复用阈值，越大越快漂移越大；0=关（默认），0.08 特写/手部与简单场景，0.15 常规慢景；含文字/大色块渐变/重约束 prompt/双锚长链用 0（0.22 有已知硬伤，已硬拦）
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
       seed: 129.inputs.noise_seed
-      steps: [124.inputs.steps, 185.inputs.total_steps, 159.inputs.steps]
+      steps: [124.inputs.steps, 159.inputs.steps]
       sampler_name: 123.inputs.sampler_name
       scheduler: 124.inputs.scheduler
       denoise: 124.inputs.denoise
@@ -598,18 +591,11 @@ models:
         default: 0
         bind: '160.inputs.strength_model'
         description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=8 步蒸馏 Turbo，需配 steps≈8
-      teacache_threshold:
-        type: float
-        min: 0
-        max: 0.15
-        default: 0
-        bind: '185.inputs.rel_l1_thresh'
-        description: TeaCache 步间缓存复用阈值，越大越快漂移越大；0=关（默认），0.08 特写/手部与简单场景，0.15 常规慢景；含文字/大色块渐变/重约束 prompt/双锚长链用 0（0.22 有已知硬伤，已硬拦）
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
       seed: 129.inputs.noise_seed
-      steps: [124.inputs.steps, 185.inputs.total_steps, 159.inputs.steps]
+      steps: [124.inputs.steps, 159.inputs.steps]
       sampler_name: 123.inputs.sampler_name
       scheduler: 124.inputs.scheduler
       denoise: 124.inputs.denoise

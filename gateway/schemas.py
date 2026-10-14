@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # 「模型专属」请求字段：只有 models.yaml `params:` 块（或 bindings）声明了它的模型才接受，
 # 传给未声明的模型一律 400 指路（pipeline 通用拒绝逻辑消费此清单）。
 # 新增模型专属参数时：请求模型加字段 + 这里记一笔 + models.yaml 声明，三处齐。
-MODEL_SPECIFIC_FIELDS = ("turbo_lora", "teacache_threshold")
+MODEL_SPECIFIC_FIELDS = ("turbo_lora",)
 
 
 class ImageGenerationRequest(BaseModel):
@@ -144,11 +144,6 @@ class VideoGenerationRequest(BaseModel):
     turbo_lora: float | None = Field(
         None,
         description="Turbo LoRA 强度：0=关（默认，零开销）；1.0=8 步蒸馏 Turbo，需配 steps≈8",
-    )
-    # ---- H3 TeaCache 步间缓存阈值（仅 minimax-h3 / minimax-h3-edit 有绑定）----
-    teacache_threshold: float | None = Field(
-        None,
-        description="TeaCache 复用阈值：越大越快、漂移越大（特写/手部镜头 0.08，常规 0.15，含文字画面 ≤0.15）。按模型声明支持，越界或未声明档传了报 400；取值范围以 tool-info 为准，默认 0=关闭。",
     )
 
     # ---- 注意力档位（仅 base 四支 H3 视频档）----

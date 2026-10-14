@@ -110,36 +110,26 @@ def main() -> int:
     edit = r.resolve("minimax-h3-edit")
     lift = r.resolve("minimax-h3-lift")
     lift_edit = r.resolve("minimax-h3-lift-edit")
-    check("h3/h3-edit 声明 turbo+teacache",
-          set(h3.param_specs) == {"turbo_lora", "teacache_threshold"}
-          and set(edit.param_specs) == {"turbo_lora", "teacache_threshold"})
+    check("h3/h3-edit 只声明 turbo",
+          set(h3.param_specs) == {"turbo_lora"} and set(edit.param_specs) == {"turbo_lora"})
     check("lift 两支只声明 turbo",
           set(lift.param_specs) == {"turbo_lora"} and set(lift_edit.param_specs) == {"turbo_lora"})
-    check("h3 bindings 由声明并入", h3.binds("turbo_lora") and h3.binds("teacache_threshold"))
-    check("h3 defaults 取自声明（0=关）",
-          h3.defaults.get("turbo_lora") == 0 and h3.defaults.get("teacache_threshold") == 0)
-    check("teacache max=0.15（0.22 硬拦）", h3.param_specs["teacache_threshold"].max == 0.15)
+    check("h3 bindings 由声明并入", h3.binds("turbo_lora"))
+    check("h3 defaults 取自声明", h3.defaults.get("turbo_lora") == 0)
 
     print("== pipeline 拒绝判据 ==")
     from gateway.schemas import MODEL_SPECIFIC_FIELDS
-    check("MODEL_SPECIFIC_FIELDS 覆盖两参数", set(MODEL_SPECIFIC_FIELDS) == {"turbo_lora", "teacache_threshold"})
-    # lift 传 teacache：无声明无绑定 → 拒绝路径成立
-    check("lift 对 teacache 无声明无绑定",
-          "teacache_threshold" not in lift.param_specs and not lift.binds("teacache_threshold"))
+    check("MODEL_SPECIFIC_FIELDS 覆盖 turbo", set(MODEL_SPECIFIC_FIELDS) == {"turbo_lora"})
 
     print("== tool-info 元数据来自声明 ==")
     entry = toolinfo._model_entry(h3)
-    f_teacache = next(f for f in entry["fields"] if f["name"] == "teacache_threshold")
     f_turbo = next(f for f in entry["fields"] if f["name"] == "turbo_lora")
-    check("teacache applies=true", f_teacache["applies"] is True)
-    check("teacache min/max 来自声明", f_teacache.get("min") == 0 and f_teacache.get("max") == 0.15)
-    check("teacache default 来自声明", f_teacache.get("default") == 0)
-    check("teacache description 来自声明", "步间缓存" in f_teacache.get("description", ""))
-    check("turbo max 来自声明", f_turbo.get("max") == 1.5)
-    # 未声明档：lift 的 teacache 应标不生效
+    check("turbo applies=true", f_turbo["applies"] is True)
+    check("turbo min/max 来自声明", f_turbo.get("min") == 0 and f_turbo.get("max") == 1.5)
+    check("turbo default 来自声明", f_turbo.get("default") == 0)
+    check("turbo description 来自声明", "Turbo" in f_turbo.get("description", ""))
+    # 未声明档的 tool-info 元数据
     entry_lift = toolinfo._model_entry(lift)
-    f_lift_tc = next(f for f in entry_lift["fields"] if f["name"] == "teacache_threshold")
-    check("lift 的 teacache applies=false", f_lift_tc["applies"] is False)
     check("lift 的 turbo applies=true（声明）",
           next(f for f in entry_lift["fields"] if f["name"] == "turbo_lora")["applies"] is True)
 

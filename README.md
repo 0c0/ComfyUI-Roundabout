@@ -174,7 +174,7 @@ https://github.com/HJH-AILab/ComfyUI-Roundabout
 
 4. **准备模型权重**：仓库不含权重。内置 16 个工作流共引用 26 个权重文件（清单另列 3 个非内置引用的 LoRA，共 29 行 / 约 177 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 103 GB**，可以先只下这一族。
 
-   > **视频档还需要三个第三方节点包**：KJNodes（`MiniMaxChunkFeedForward`，视频档全用）、`comfyui-SelfLift`（lift 两支的 latent 上采样节点 `SelfLiftH3LatentLift`）与 `ComfyUI-MiniMaxH3-TeaCache`（h3 / edit 档的步间缓存节点 `MiniMaxH3TeaCache`）。清单见下方[第三方节点依赖](#第三方节点依赖)。
+   > **视频档还需要两个第三方节点包**：KJNodes（`MiniMaxChunkFeedForward`，视频档全用）与 `comfyui-SelfLift`（lift 两支的 latent 上采样节点 `SelfLiftH3LatentLift`）。清单见下方[第三方节点依赖](#第三方节点依赖)。
 
 5. 重启 ComfyUI。启动日志出现 `OpenAI gateway routes registered ... models=...` 即成功。
 
@@ -296,7 +296,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 图像编辑 | `flux2-klein-image-edit-turbo` | 语义改写首选：换背景 / 换材质 / 增删物体（`edit_image` 默认）；**多图参考**最多 4 张 |
 | 图像编辑 | `boogu-image-edit` / `boogu-image-edit-turbo` | 擅长改写 / 添加**图内文字**，30 步 / 6 步 |
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
-| 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base / edit 均 20 步）：base 收**首尾帧** `first_frame`/`last_frame`（cover 裁剪），edit 收**参考**（6 图 + 3 视频 + 3 音频）；低显存分块按档位自适应（`vram_adaptive`）；内置 TeaCache 步间缓存（`teacache_threshold`，默认 0=关，0.08 特写/手部+简单场景、0.15 慢速全身/风景、含文字/大色块背景/重约束 prompt/双锚长链用 0、0.22 勿用） |
+| 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base / edit 均 20 步）：base 收**首尾帧** `first_frame`/`last_frame`（cover 裁剪），edit 收**参考**（6 图 + 3 视频 + 3 音频）；低显存分块按档位自适应（`vram_adaptive`） |
 | 视频 | `minimax-h3-lift` | **base 骨架 + 确定性放大**：20 步原生采样 → 学习式 latent lift（1344x768 × scale 1.875 = 2528x1440），构图零重掷、纹理最强；支持首尾帧（`first_frame`/`last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧，cover 裁剪）；产物落 `video/H3_Lift`；`scale` 是请求参数（默认 1.875 → 2528x1440）；`rho` 精调走 `workflow_overrides`（`910.inputs.rho`） |
 | 视频 | `minimax-h3-lift-edit` | 同上，改用 **edit 骨架**：Ref2VA 权重 + 参考槽全套 6 图 / 3 视频 / 3 音频。⚠️ **未标定**：步数 30（随 edit 统一），放大与参考的组合效果没做过 A/B |
 | **音频（TTS）** | `qwen3-tts-voice-design` | **文本转语音 + 音色设计**（Qwen3-TTS 1.7B VoiceDesign）：`POST /v1/audio/speech`，`input` = 要朗读的文本、`instructions` = 音色描述（年龄/性别/语速/气质…）；产物 mp3 落 `audio/`。依赖 custom node **TTS-Audio-Suite**（引擎默认跑 Shared Runtime，首次调用要准备运行时） |
@@ -482,9 +482,8 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 
 ### 第三方节点依赖
 
-> 这些工作流用到的节点**除 lift 系列（`minimax-h3-lift*`）、基础两支 `minimax-h3` / `-edit`（低显存分块 + TeaCache 缓存节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。
+> 这些工作流用到的节点**除 lift 系列（`minimax-h3-lift*`）、基础两支 `minimax-h3` / `-edit`（低显存分块节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。
 > lift 系列额外依赖一个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3LatentLift` + `latent_upscale_models/` 下的上采样权重）。
-> 基础两支 `minimax-h3` / `-edit` 额外依赖一个第三方节点包：`ComfyUI-MiniMaxH3-TeaCache`（`MiniMaxH3TeaCache`，常驻挂在 UNet 与 guider 之间做步间输出复用；阈值即请求参数 `teacache_threshold`，默认 0=关，步数双绑定自动跟随；lift 两支不含该节点）。
 > 需要 KJNodes 的 `MiniMaxChunkFeedForward` 做 FFN 分块：**全部视频档**。低显存都走两级 —— 注意力档 → `MiniMaxChunkFeedForward`：`minimax-h3` 的注意力档是 **`Spark-H3`（本机自编 SM86 轮子，依赖 `custom_nodes/ComfyUI-Spark-H3` + 打了 Spark 补丁的 comfy-kitchen）**，其余三支（`-edit` / `-lift` / `-lift-edit`）仍是 `BlockSparseAttention` 的 `sol-attn`（training-free，约保留 16% key block）。
 > ⛔ **不要在视频档里接 KJNodes 的 `MiniMaxLowVRAMAttention`**：它替换 `block.forward`，而 `BlockSparseAttention` 的 block patch 会无条件补传 `attention=` 关键字（`comfy/ldm/minimax/model.py`），签名对不上 ⇒ 实测 `TypeError`。两者**硬互斥**，因此 base 四支原先的 LowVRAM 节点已于 2026-09-21 撤除（`head_chunks` 档位值随之失去消费者，保留在表里仅为复原方便）。
 > 稀疏节点的参数（`tau` / `min_tokens` / `dense_blocks` …）不在可注入白名单；其中 `tau` 的键名是 `selection.tau`（含点号），按 `.` 切分的路径解析寻址不到，要调只能改工作流 JSON 再 `/admin/reload`。**但「更快 ↔ 更高质量」这一档有正式请求参数**：`attention`（`sparse` 默认 / `dense` 关闭稀疏换致密画质）。落点按模型分：`minimax-h3` 落到 Spark 节点的 `enabled`（`dense` = 节点原样透传模型），其余三支落到 `BlockSparseAttention.start_percent`（`1.0` 因 `percent_to_sigma(1.0) = 0` 而等效全程致密）。**这一档只给 base 四支**（`minimax-h3` / `-edit` / `-lift` / `-lift-edit`）；其它模型传 `attention` 会报 400。
