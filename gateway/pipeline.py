@@ -839,7 +839,7 @@ async def generate_audio(
     ``on_submit(prompt_id, workflow)`` 在提交给 ComfyUI 成功后调用（异步任务回填
     prompt_id 与工作流快照）。
     """
-    spec = registry.resolve(req.model)
+    spec = registry.resolve(req.model, mode="audio")
     if not spec.is_audio:
         raise APIError(
             f"Model `{spec.name}` is not an audio model (mode={spec.mode}). "

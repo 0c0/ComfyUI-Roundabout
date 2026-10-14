@@ -339,9 +339,24 @@ class Registry:
     def all(self) -> list[ModelSpec]:
         return [self._models[n] for n in self._order]
 
-    def resolve(self, name: str | None) -> ModelSpec:
+    def resolve(self, name: str | None, mode: str | None = None) -> ModelSpec:
+        """按名解析；`name` 为空时回落顺序：指定模态的第一个档 → 全局 DEFAULT_MODEL。
+
+        音频端点不传 `model` 时靠 mode 回落命中 `qwen3-tts-voice-design`（API.md 5.3
+        承诺的默认值），而不是落到全局图像默认档。显式传名的行为完全不变。
+        """
         with self._lock:
-            key = (name or self.default_model or "").strip()
+            if name:
+                key = name.strip()
+                spec = self._models.get(key) or self._models.get(key.lower())
+                if spec is None:
+                    raise ModelNotFound(key, self._order)
+                return spec
+            if mode:
+                for n in self._order:
+                    if self._models[n].mode == mode:
+                        return self._models[n]
+            key = (self.default_model or "").strip()
             if not key:
                 raise APIError("`model` is required and no DEFAULT_MODEL is configured.", param="model")
             spec = self._models.get(key) or self._models.get(key.lower())
