@@ -1,0 +1,39 @@
+# models.local.yaml.example — 本机扩展登记表（复制为 models.local.yaml 后填写）
+#
+# 仓库跟踪的 models.yaml 是所有机器共享的基础登记表；本文件（gitignored）放
+# 本机专属的模型条目与微调，上游更新 models.yaml 永不覆盖它。
+#
+# 合并语义（models.local.yaml 优先）：
+# - 顶层键：覆盖 models.yaml 同名键（如 default_model）；
+# - `models`：按模型名合并——
+#   · 新名字 → 追加为本机专属模型；
+#   · 同名条目 → 浅合并：只覆盖本文件写的键，其余键继承 models.yaml
+#     （所以上游给基础条目新增字段时不会被本机条目抹掉）。
+#   微调生效默认值不必重写 params 声明：条目里写 `defaults:` 即可
+#   （defaults 覆盖 params 声明的 default，是既有语义）。
+
+# default_model: my-local-model
+
+models:
+  # ---- 本机专属模型（示例：整条新登记，写法与 models.yaml 完全一致）----
+  # my-local-model:
+  #   description: "[本机] 试验档，未进仓库"
+  #   mode: image
+  #   workflow: image_my_local.json
+  #   bindings:
+  #     prompt: ["6", "inputs", "text"]
+  #     width: ["6", "inputs", "width"]
+  #     height: ["6", "inputs", "height"]
+  #     steps: ["6", "inputs", "steps"]
+  #     seed: ["3", "inputs", "noise_seed"]
+  #   defaults:
+  #     steps: 20
+  #     width: 1024
+  #     height: 1024
+  #   timeout: 600
+
+  # ---- 微调仓库已有模型（示例：浅合并，只写要覆盖的键）----
+  # minimax-h3:
+  #   defaults:
+  #     steps: 25
+  #   timeout: 2400

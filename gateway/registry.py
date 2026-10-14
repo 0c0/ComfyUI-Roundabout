@@ -513,6 +513,8 @@ class Registry:
     ) -> bool:
         """仅校验一份 YAML 文本能否被正常加载（不改内存状态、不写磁盘）。"""
         raw = yaml.safe_load(text)
+        if self._models_file is not None:
+            raw = _merge_local_models(raw, self._models_file)
         self._build(raw, self._models_file or Path("models.yaml"), workflows_dir, default_model, workflows_local_dir)
         return True
 
@@ -527,6 +529,7 @@ class Registry:
             raise RuntimeError(f"models file not found: {models_file}")
         self._models_file = models_file
         raw = yaml.safe_load(models_file.read_text(encoding="utf-8")) or {}
+        raw = _merge_local_models(raw, models_file)
         state = self._build(raw, models_file, workflows_dir, default_model, workflows_local_dir)
 
         with self._lock:
@@ -540,6 +543,50 @@ class Registry:
             ", ".join(state["order"]),
             self.default_model,
         )
+
+
+def _merge_local_models(raw: dict[str, Any], models_file: Path) -> dict[str, Any]:
+    """合并本机扩展文件 models.local.yaml（可选、gitignored，模式同 workflows.local/）。
+
+    语义：
+    - 顶层键：local 覆盖（浅）；
+    - `models`：按模型名合并——local 新名字 = 追加（本机专属模型）；
+      local 同名 = 条目浅合并（只覆盖 local 写的键，其余继承 git 版，
+      上游更新带来的新字段不会被本机条目抹掉）。
+
+    本机插/拔模型登记在 local 文件里，上游更新 models.yaml 永不覆盖它。
+    """
+    path = models_file.parent / "models.local.yaml"
+    if not path.exists():
+        return raw
+    local = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(local, dict):
+        raise RuntimeError(f"{path.name}: top-level must be a mapping")
+    if not local:
+        return raw
+    merged = dict(raw)
+    for key, value in local.items():
+        if key == "models":
+            continue
+        if key in merged and merged[key] != value:
+            log.info("%s: override top-level `%s`", path.name, key)
+        merged[key] = value
+    entries = dict(raw.get("models") or {})
+    local_models = local.get("models") or {}
+    if not isinstance(local_models, dict):
+        raise RuntimeError(f"{path.name}: `models` must be a mapping")
+    for name, cfg in local_models.items():
+        if name in entries:
+            if not isinstance(cfg, dict) or not isinstance(entries[name], dict):
+                raise RuntimeError(f"{path.name}: model `{name}` must be a mapping")
+            entries[name] = {**entries[name], **cfg}
+            log.info("%s: model `%s` overrides repo entry (per-key merge)", path.name, name)
+        else:
+            entries[name] = cfg
+            log.info("%s: model `%s` registered (machine-local)", path.name, name)
+    if local_models:
+        merged["models"] = entries
+    return merged
 
 
 def _load_device_overrides(base_dir: Path) -> dict[str, list[dict[str, Any]]]:

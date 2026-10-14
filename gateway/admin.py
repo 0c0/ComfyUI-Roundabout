@@ -71,8 +71,10 @@ async def get_tool_info(request: web.Request) -> web.Response:
 @gateway_handler
 async def admin_state(request: web.Request) -> web.Response:
     verify(request)
+    local_file = settings.models_file.parent / "models.local.yaml"
     return web.json_response({
         "models_file": str(settings.models_file),
+        "models_local_file": str(local_file) if local_file.exists() else None,
         "workflows_dir": str(settings.workflows_dir),
         "workflows_local_dir": str(settings.workflows_local_dir),
         "auth_enabled": settings.auth_enabled,
