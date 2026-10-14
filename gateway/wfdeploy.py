@@ -141,12 +141,7 @@ def deploy(name: str, as_name: str = "", force: bool = False) -> dict[str, Any]:
     log.info("workflow deployed: %s -> %s", template_path, target)
 
     # 热加载：若实例名与某档的 `workflow:` 声明一致，本次部署立即生效
-    registry.load(
-        settings.models_file,
-        settings.workflows_dir,
-        settings.default_model,
-        settings.workflows_local_dir,
-    )
+    registry.load_from_settings()
     try:
         hints = arch_hints(template_path.read_text(encoding="utf-8"))
     except OSError:

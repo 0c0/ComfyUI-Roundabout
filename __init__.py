@@ -81,11 +81,7 @@ WEB_DIRECTORY = "web"
 # ------------------------------------------------------------------ 加载模型注册表
 # 失败不阻断 ComfyUI 启动：把错误打日志，路由仍会注册（请求时返回对应错误）。
 try:
-    registry.load(
-        settings.models_file,
-        settings.workflows_dir,
-        settings.default_model,
-    )
+    registry.load_from_settings()
 except Exception as exc:  # noqa: BLE001
     log.error(
         "OpenAI gateway: failed to load models from %s / %s: %s",

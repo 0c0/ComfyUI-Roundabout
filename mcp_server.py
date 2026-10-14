@@ -155,11 +155,7 @@ comfy = ComfyClient(settings.comfy_base_url)
 
 # 加载模型注册表：独立进程必须自行加载；嵌入模式由节点 __init__.py 加载（此处幂等重载无害）
 try:
-    registry.load(
-        settings.models_file,
-        settings.workflows_dir,
-        settings.default_model,
-    )
+    registry.load_from_settings()
 except Exception as exc:  # noqa: BLE001
     log.error("MCP gateway: failed to load models: %s", exc)
 
@@ -692,7 +688,7 @@ async def get_workflow(prompt_id: str) -> dict[str, Any]:
 # ---- 工具 10：reload --------------------------------------------------------
 @mcp.tool(name="reload", description="热加载 models.yaml 模型配置（无需重启 ComfyUI）。")
 async def reload() -> dict[str, Any]:
-    registry.load(settings.models_file, settings.workflows_dir, settings.default_model, settings.workflows_local_dir)
+    registry.load_from_settings()
     return {"ok": True, "models": [s.name for s in registry.all()]}
 
 

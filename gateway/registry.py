@@ -572,6 +572,23 @@ class Registry:
             self.default_model,
         )
 
+    def load_from_settings(self) -> None:
+        """生产环境统一加载入口：全部参数从 settings 取。
+
+        v1.42.0 引入工作流双层后，启动加载点曾漏传 `workflows_local_dir`
+        （重启后实例层静默失效、全部落模板，直到手动 reload），故把
+        「与 config 同源」收进这一个方法——生产代码一律调它，别再手写
+        四个实参；显式 `load()` 留给测试与临时目录场景。
+        """
+        from .config import settings  # 局部 import：config 不依赖 registry，无环
+
+        self.load(
+            settings.models_file,
+            settings.workflows_dir,
+            settings.default_model,
+            settings.workflows_local_dir,
+        )
+
 
 def _merge_local_models(raw: dict[str, Any], models_file: Path) -> dict[str, Any]:
     """合并本机扩展文件 models.local.yaml（可选、gitignored，模式同 workflows.local/）。

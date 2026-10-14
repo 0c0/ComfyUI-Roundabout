@@ -70,7 +70,7 @@ def setup(base: Path) -> tuple[Path, Path]:
 
 
 def main() -> int:
-    old = (settings.workflows_dir, settings.workflows_local_dir, settings.models_file)
+    old = (settings.workflows_dir, settings.workflows_local_dir, settings.models_file, settings.default_model)
     try:
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
@@ -79,6 +79,7 @@ def main() -> int:
             object.__setattr__(settings, "workflows_dir", wf_dir)
             object.__setattr__(settings, "workflows_local_dir", local_dir)
             object.__setattr__(settings, "models_file", base / "models.yaml")
+            object.__setattr__(settings, "default_model", "")
 
             # ---- 1. 实例层为空 → 模板回落 ----
             registry.load(settings.models_file, wf_dir, "", local_dir)
@@ -94,6 +95,16 @@ def main() -> int:
             spec = registry.resolve("test-model")
             check("有实例时走实例", spec.wf_source == "local", spec.wf_source)
             check("实例内容生效",
+                  spec.template["127"]["inputs"]["unet_name"] == "local_weight.safetensors")
+
+            # ---- 2b. load_from_settings：启动路径不得漏实例层 ----
+            # 回归护栏（2026-10-14 反馈）：__init__.py / mcp_server 曾手写 3 参漏传
+            # workflows_local_dir，重启后全部静默落模板。生产调用点已收敛到
+            # load_from_settings()，此用例锁「它必须与显式 4 参 load 同效」。
+            registry.load_from_settings()
+            spec = registry.resolve("test-model")
+            check("load_from_settings 实例优先", spec.wf_source == "local", spec.wf_source)
+            check("load_from_settings 实例内容生效",
                   spec.template["127"]["inputs"]["unet_name"] == "local_weight.safetensors")
 
             # ---- 3. deploy：已有实例未 force → 拒绝 ----
@@ -136,6 +147,7 @@ def main() -> int:
         object.__setattr__(settings, "workflows_dir", old[0])
         object.__setattr__(settings, "workflows_local_dir", old[1])
         object.__setattr__(settings, "models_file", old[2])
+        object.__setattr__(settings, "default_model", old[3])
         # 还原全局 registry（其他测试依赖真实配置）
         registry.load(settings.models_file, settings.workflows_dir, settings.default_model, settings.workflows_local_dir)
 
