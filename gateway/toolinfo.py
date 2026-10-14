@@ -30,7 +30,7 @@ from .params import (
     _RES_TIERS,
 )
 from .registry import registry
-from .schemas import ImageGenerationRequest, VideoGenerationRequest
+from .schemas import AudioSpeechRequest, ImageGenerationRequest, VideoGenerationRequest
 
 _API_VERSION = "roundabout-tool-info-1"
 
@@ -125,10 +125,26 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
     if name in spec.param_specs:
         # 模型自述参数（params: 块声明）：声明即生效，元数据也来自声明。
         return True, None
-    if name == "prompt":
+    if name in ("prompt", "input"):
+        if spec.is_audio:
+            # 音频档：文本落点是「要朗读的文本」（`input` 与 `prompt` 同一处）。
+            if spec.promptless:
+                return False, "promptless tool model (no text)"
+            if spec.binds("prompt"):
+                return True, None
+            return False, "model declares no text binding"
         if spec.promptless:
             return False, "promptless tool model (no prompt)"
         return True, None
+    if spec.is_audio and name in ("instructions", "voice_instruction"):
+        if spec.binds("voice_instruction"):
+            return True, None
+        return False, "model declares no voice_instruction binding (no voice-design stage)"
+    if spec.is_audio and name in ("language", "voice", "temperature", "top_p", "top_k",
+                                  "repetition_penalty", "max_new_tokens"):
+        if spec.binds(name):
+            return True, None
+        return False, f"model declares no {name} binding"
     if name == "negative_prompt":
         # 没有反向输入落点时网关不报错、只是静默无效，所以必须在这里标出来。
         if spec.binds(name):
@@ -199,7 +215,12 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
         if n:
             return True, None
         return False, f"model declares no {cat} reference slots"
-    if name in ("fps", "num_frames", "duration", "background", "async_mode"):
+    if name in ("background", "async_mode"):
+        # 异步任务模式：视频与音频两条链路都支持（音频长文本同样会跑很久）
+        if spec.is_video or spec.is_audio:
+            return True, None
+        return False, "video/audio-only"
+    if name in ("fps", "num_frames", "duration"):
         if spec.is_video:
             return True, None
         return False, "video-only"
@@ -209,6 +230,15 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
 
 
 # ---------------------------------------------------------------- 模型块
+def _request_model(spec):
+    """该模型的请求模型（决定自描述里列出哪些字段）：按 mode 分流。"""
+    if spec.is_video:
+        return VideoGenerationRequest
+    if spec.is_audio:
+        return AudioSpeechRequest
+    return ImageGenerationRequest
+
+
 def _slot_counts(spec) -> dict[str, int]:
     ref = spec.references or {}
     out = {cat: len(ref.get(cat) or []) for cat in ("images", "videos", "audios")}
@@ -222,7 +252,7 @@ def _slot_counts(spec) -> dict[str, int]:
 
 def _model_entry(spec) -> dict[str, Any]:
     is_video = spec.is_video
-    fields = _walk_request_fields(VideoGenerationRequest if is_video else ImageGenerationRequest)
+    fields = _walk_request_fields(_request_model(spec))
     for field in fields:
         applies, reason = _applies(spec, field["name"])
         # 模型自述参数：范围/默认值/描述以 models.yaml `params:` 声明为准（覆盖请求模型静态值）。
@@ -282,11 +312,14 @@ def _endpoints() -> dict[str, list[str]]:
             "POST /v1/images/generations",
             "POST /v1/images/edits",
             "POST /v1/images/remove-background",
+            "POST /v1/audio/speech",
             "POST /v1/videos/generations",
             "GET /v1/models",
             "GET /v1/images/tasks/{id}",
+            "GET /v1/audio/tasks/{id}",
             "GET /v1/videos/tasks/{id}",
             "DELETE /v1/images/tasks/{id}",
+            "DELETE /v1/audio/tasks/{id}",
             "GET /roundabout/admin/tool-info",
             "GET /roundabout/admin/workflows",
             "POST /roundabout/admin/workflows/deploy",
@@ -303,7 +336,7 @@ def _endpoints() -> dict[str, list[str]]:
         ],
         "mcp": [
             "list_models", "generate_image", "edit_image", "remove_background",
-            "process_image",
+            "process_image", "generate_speech",
             "generate_video", "get_task", "cancel_task", "queue_status",
             "get_workflow", "reload", "health", "get_view_url", "get_skills",
             "check_weights", "get_tool_info",
@@ -350,6 +383,13 @@ def _surface() -> dict[str, Any]:
                     "（`spark_enabled` 布尔或 `sparse_start_percent` 数值），未声明 binding 的模型传了报 400",
         },
         "response_format": ["b64_json", "url", "file", "path"],
+        "audio": {
+            "endpoint": "POST /v1/audio/speech",
+            # 音频端点容易被 OpenAI 客户端习惯误导：把 response_format 当成编码填 "mp3"/"wav"。
+            # 这里显式声明它只是交付形态，编码由工作流决定 —— 否则填错只能靠 400 文案才知道。
+            "response_format": ["b64_json", "url", "file", "path"],
+            "note": "`response_format` 是交付形态不是音频编码；编码由工作流的 SaveAudio 节点决定（当前档位 mp3）。`input`/`prompt` = 要朗读的文本，`instructions`/`voice_instruction` = 音色描述",
+        },
     }
 
 
@@ -364,6 +404,7 @@ def build() -> dict[str, Any]:
         "field_order": {
             "image": list(ImageGenerationRequest.model_fields),
             "video": list(VideoGenerationRequest.model_fields),
+            "audio": list(AudioSpeechRequest.model_fields),
         },
         "models": [_model_entry(s) for s in registry.all()],
     }

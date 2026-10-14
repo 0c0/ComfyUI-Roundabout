@@ -29,7 +29,11 @@ if "rb_gateway" not in sys.modules:
 
 from rb_gateway.config import settings  # noqa: E402
 from rb_gateway.registry import registry  # noqa: E402
-from rb_gateway.schemas import ImageGenerationRequest, VideoGenerationRequest  # noqa: E402
+from rb_gateway.schemas import (  # noqa: E402
+    AudioSpeechRequest,
+    ImageGenerationRequest,
+    VideoGenerationRequest,
+)
 from rb_gateway import toolinfo  # noqa: E402
 
 registry.load(settings.models_file, settings.workflows_dir, settings.default_model)
@@ -62,10 +66,15 @@ check("counts.models 自洽",
 check("字段顺序清单非空", all(PAYLOAD["field_order"].values()))
 
 print("\n=== [2] 逐模型字段清单 = 对应请求模型的全部字段 ===")
-# 图像档给图像字段、视频档给视频字段；漏一个字段前端就渲染不出那个输入框。
+# 图像档给图像字段、视频档给视频字段、音频档给音频字段；漏一个字段前端就渲染不出那个输入框。
 for name, entry in MODELS.items():
     spec = registry.resolve(name)
-    want = VideoGenerationRequest if spec.is_video else ImageGenerationRequest
+    if spec.is_audio:
+        want = AudioSpeechRequest
+    elif spec.is_video:
+        want = VideoGenerationRequest
+    else:
+        want = ImageGenerationRequest
     got = [f["name"] for f in entry["fields"]]
     check(f"{name} 字段集完整", got == list(want.model_fields),
           f"缺 {sorted(set(want.model_fields) - set(got))} / 多 {sorted(set(got) - set(want.model_fields))}")
@@ -84,7 +93,12 @@ for name, entry in MODELS.items():
 print("\n=== [4] 区间 / 枚举 / 必填 与 schema 逐字段对齐 ===")
 for name, entry in MODELS.items():
     spec = registry.resolve(name)
-    model = VideoGenerationRequest if spec.is_video else ImageGenerationRequest
+    if spec.is_audio:
+        model = AudioSpeechRequest
+    elif spec.is_video:
+        model = VideoGenerationRequest
+    else:
+        model = ImageGenerationRequest
     diff = []
     for f in entry["fields"]:
         fi = model.model_fields[f["name"]]
@@ -117,9 +131,13 @@ for name, slots in (("flux2-klein-image-edit-turbo", 4), ("qwen-image-2.1", 6)):
     check(f"{name} reference_images 生效", ri["applies"] is True, ri)
 
 for name, entry in MODELS.items():
-    if entry["reference_slots"]["images"] == 0:
-        ri = [f for f in entry["fields"] if f["name"] == "reference_images"][0]
-        check(f"{name} 无槽 → reference_images 不生效", ri["applies"] is False, ri)
+    if entry["reference_slots"]["images"] != 0:
+        continue
+    # 音频档没有参考槽概念（输入是文本），跳过
+    if registry.resolve(name).is_audio:
+        continue
+    ri = [f for f in entry["fields"] if f["name"] == "reference_images"][0]
+    check(f"{name} 无槽 → reference_images 不生效", ri["applies"] is False, ri)
 
 # 5.3 图像档的 `image` 单图入口：生效性 == 是否声明了 image 绑定。
 #     `qwen-image-2.1` 是刻意的反例 —— 文生与多图编辑同支、有 6 个参考槽，却没有 image 绑定：
@@ -127,8 +145,8 @@ for name, entry in MODELS.items():
 #     （`image` 改由网关落成第 1 张参考图，`pipeline._ref_images`。）
 for name, entry in MODELS.items():
     spec = registry.resolve(name)
-    if spec.is_video:
-        continue
+    if spec.is_video or spec.is_audio:
+        continue  # 音频档没有 `image` 字段（输入是文本）
     img = [f for f in entry["fields"] if f["name"] == "image"][0]
     check(f"{name} image 生效性 = 声明了 image 绑定", img["applies"] is spec.binds("image"), img)
 
@@ -158,6 +176,14 @@ for name, entry in MODELS.items():
         check(f"{name}（图像档）无 scale 字段", not hit, hit)
         continue
     check(f"{name} scale 生效性 = 声明了 scale 绑定", hit[0]["applies"] is spec.binds("scale"), hit[0])
+
+# 5.6 音频档：文本落点（`input` / `prompt`）与音色描述入口（`instructions` / `voice_instruction`）
+#     都必须标成生效 —— 这四个是同一件事的两套命名，漏标会让 agent 以为没处传文本。
+_aud = MODELS.get("qwen3-tts-voice-design")
+if _aud:
+    for _field in ("input", "prompt", "instructions", "voice_instruction"):
+        _f = [x for x in _aud["fields"] if x["name"] == _field][0]
+        check(f"音频档 {_field} 生效", _f["applies"] is True, _f)
 
 print("\n=== [6] 全局块 ===")
 s = PAYLOAD["surface"]
@@ -198,7 +224,7 @@ declared = set(PAYLOAD["endpoints"]["mcp"])
 check("端点清单与 @mcp.tool 注册集完全一致",
       declared == registered,
       f"清单缺 {sorted(registered - declared)} / 清单多 {sorted(declared - registered)}")
-check("MCP 工具数为 18", len(registered) == 18, sorted(registered))
+check("MCP 工具数为 19", len(registered) == 19, sorted(registered))
 
 rest_src = (ROOT / "gateway" / "routes.py").read_text(encoding="utf-8")
 for path in PAYLOAD["endpoints"]["rest"]:

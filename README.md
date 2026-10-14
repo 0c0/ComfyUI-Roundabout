@@ -83,24 +83,24 @@ agent 全程**看不到也用不着**工作流 JSON。它只传语义参数，�
 
 | skill | 内容 | 什么时候用 |
 |---|---|---|
-| [`roundabout-skill`](https://github.com/0c0/roundabout-skill) | 本插件的**总入口**：选模型、走 REST / MCP 生成、把工作流接进网关或下线、权重下载、排障运维、核对「文档与实现是否一致」 | agent 要驱动本机 ComfyUI 出图出视频，或要改 `models.yaml` / 加工作流时 |
-| [`h3-playbook-skill`](https://github.com/0c0/h3-playbook-skill) | MiniMax H3 的**单一入口**（官方使用手册口径 + 官方 h3-prompt-writing 契约合并版）：三段式公式、五类模式判定（T2VA / I2VA / FL2VA / L2VA / Ref2VA）、Ref2VA 六段改写格式、素材用途标签、时长与宽高比边界、踩坑表 | 写 / 改 H3 提示词，或判断某个需求 H3 能不能做、排查口型 / 切镜 / 乱码时 |
-| [`qwen-image2.1-prompt-writing-skill`](https://github.com/0c0/qwen-image2.1-prompt-writing-skill) | Qwen-Image-2.1 官方 Prompt Enhancer 契约的手写替身：t2i 观察者报告与 edit 改写指令，产出 `rewritten_prompt` + `wh_ratio` / `ratio_follow` 结构 | 用网关 `qwen-image-2.1` 档出图 / 改图，或要把一句粗糙需求扩写成该模型能吃的描述前必查 |
+| [`roundabout-skill`](https://github.com/HJH-AILab/roundabout-skill) | 本插件的**总入口**：选模型、走 REST / MCP 生成、把工作流接进网关或下线、权重下载、排障运维、核对「文档与实现是否一致」 | agent 要驱动本机 ComfyUI 出图出视频，或要改 `models.yaml` / 加工作流时 |
+| [`h3-playbook-skill`](https://github.com/HJH-AILab/h3-playbook-skill) | MiniMax H3 的**单一入口**（官方使用手册口径 + 官方 h3-prompt-writing 契约合并版）：三段式公式、五类模式判定（T2VA / I2VA / FL2VA / L2VA / Ref2VA）、Ref2VA 六段改写格式、素材用途标签、时长与宽高比边界、踩坑表 | 写 / 改 H3 提示词，或判断某个需求 H3 能不能做、排查口型 / 切镜 / 乱码时 |
+| [`qwen-image2.1-prompt-writing-skill`](https://github.com/HJH-AILab/qwen-image2.1-prompt-writing-skill) | Qwen-Image-2.1 官方 Prompt Enhancer 契约的手写替身：t2i 观察者报告与 edit 改写指令，产出 `rewritten_prompt` + `wh_ratio` / `ratio_follow` 结构 | 用网关 `qwen-image-2.1` 档出图 / 改图，或要把一句粗糙需求扩写成该模型能吃的描述前必查 |
 
 装法就是把这个目录放进 agent 的 skills 目录（目录名与 skill 的 `name` 保持一致）：
 
 ```bash
-git clone https://github.com/0c0/roundabout-skill.git <agent 的 skills 目录>/roundabout
-git clone https://github.com/0c0/h3-playbook-skill.git <agent 的 skills 目录>/h3-playbook
-git clone https://github.com/0c0/qwen-image2.1-prompt-writing-skill.git <agent 的 skills 目录>/qwen-image-prompt-writing
+git clone https://github.com/HJH-AILab/roundabout-skill.git <agent 的 skills 目录>/roundabout
+git clone https://github.com/HJH-AILab/h3-playbook-skill.git <agent 的 skills 目录>/h3-playbook
+git clone https://github.com/HJH-AILab/qwen-image2.1-prompt-writing-skill.git <agent 的 skills 目录>/qwen-image-prompt-writing
 ```
 
 **一句话安装**（把这句丢给 agent 即可，装在哪、怎么落位由它按自家约定处理）：
 
 ```text
-安装这个skill https://github.com/0c0/roundabout-skill
-安装这个skill https://github.com/0c0/h3-playbook-skill
-安装这个skill https://github.com/0c0/qwen-image2.1-prompt-writing-skill
+安装这个skill https://github.com/HJH-AILab/roundabout-skill
+安装这个skill https://github.com/HJH-AILab/h3-playbook-skill
+安装这个skill https://github.com/HJH-AILab/qwen-image2.1-prompt-writing-skill
 ```
 
 > 三份都由本仓库维护（`MCP get_skills` 里标 `source="roundabout"`）。
@@ -117,7 +117,7 @@ git clone https://github.com/0c0/qwen-image2.1-prompt-writing-skill.git <agent �
 **两套接入层，共享同一个引擎**
 
 - **OpenAI 兼容 REST**：`/v1/images/generations`（文生图 / 图生图）、`/v1/images/edits`（multipart 标准编辑）、`/v1/images/remove-background`（去背景）、`/v1/videos/generations`（视频，支持异步）。返回格式可选 `b64_json` / `url` / `file` / `path`，可直接替换 OpenAI 官方地址使用。
-- **MCP 服务（18 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `process_image` / `generate_video`，查询类 `get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills` / `manage_workflows`，看板类 `view_board`（单入口按 action 分发：pin / remove / clear / get / history / load）。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 钉到看板」全流程。
+- **MCP 服务（19 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `process_image` / `generate_speech` / `generate_video`，查询类 `get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills` / `manage_workflows`，看板类 `view_board`（单入口按 action 分发：pin / remove / clear / get / history / load）。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 钉到看板」全流程。
 - **共享端口**：MCP 端点 `/mcp` 直接挂在 ComfyUI 同一端口（`http://<comfyui>:8188/mcp`），不用额外开端口、不用另起进程；REST 与 MCP 共用同一份注册表、生成链路与任务表。
 
 **声明式模型注册**
@@ -145,7 +145,7 @@ git clone https://github.com/0c0/qwen-image2.1-prompt-writing-skill.git <agent �
 **方式一 · 用 ComfyUI-Manager 从 Git URL 安装**（推荐）——装好 [ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager) 后，打开 **Custom Nodes Manager**，右上角菜单选 **Install via Git URL**，填入：
 
 ```
-https://github.com/0c0/ComfyUI-Roundabout
+https://github.com/HJH-AILab/ComfyUI-Roundabout
 ```
 
 装完点 **Restart**。节点包已按 Comfy Registry 规范声明元数据（`pyproject.toml`），ComfyUI-Manager 能从中识别名称与版本；因为是 git 仓库，之后也可以直接在 Manager 里检查/拉取更新。
@@ -158,7 +158,7 @@ https://github.com/0c0/ComfyUI-Roundabout
 
    ```bash
    cd ComfyUI/custom_nodes
-   git clone https://github.com/0c0/ComfyUI-Roundabout.git
+   git clone https://github.com/HJH-AILab/ComfyUI-Roundabout.git
    ```
 
 2. 安装依赖 —— **MCP 网关默认开启，所以默认需要这一步**：
@@ -299,10 +299,11 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base / edit 均 20 步）：base 收**首尾帧** `first_frame`/`last_frame`（cover 裁剪），edit 收**参考**（6 图 + 3 视频 + 3 音频）；低显存分块按档位自适应（`vram_adaptive`）；内置 TeaCache 步间缓存（`teacache_threshold`，默认 0=关，0.08 特写/手部+简单场景、0.15 慢速全身/风景、含文字/大色块背景/重约束 prompt/双锚长链用 0、0.22 勿用） |
 | 视频 | `minimax-h3-lift` | **base 骨架 + 确定性放大**：20 步原生采样 → 学习式 latent lift（1344x768 × scale 1.875 = 2528x1440），构图零重掷、纹理最强；支持首尾帧（`first_frame`/`last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧，cover 裁剪）；产物落 `video/H3_Lift`；`scale` 是请求参数（默认 1.875 → 2528x1440）；`rho` 精调走 `workflow_overrides`（`910.inputs.rho`） |
 | 视频 | `minimax-h3-lift-edit` | 同上，改用 **edit 骨架**：Ref2VA 权重 + 参考槽全套 6 图 / 3 视频 / 3 音频。⚠️ **未标定**：步数 30（随 edit 统一），放大与参考的组合效果没做过 A/B |
+| **音频（TTS）** | `qwen3-tts-voice-design` | **文本转语音 + 音色设计**（Qwen3-TTS 1.7B VoiceDesign）：`POST /v1/audio/speech`，`input` = 要朗读的文本、`instructions` = 音色描述（年龄/性别/语速/气质…）；产物 mp3 落 `audio/`。依赖 custom node **TTS-Audio-Suite**（引擎默认跑 Shared Runtime，首次调用要准备运行时） |
 
 - 编辑类模型**必须传图**：单图模型传 `image`；**多图模型**（`flux2-klein-image-edit-turbo` 4 张 / `qwen-image-2.1` 6 张）传 `reference_images` 按序喂槽，单图也可以直接传 `image`（等价第 1 张）。输出尺寸跟随输入图（boogu / klein 缩放到 1MP；qwen 按官方默认不做重采样，直接跟随第 1 张参考图），此时 `size` 不生效 —— `qwen-image-2.1` 是**文生与编辑同一支**，一张参考图都不传就是纯文生，那一支才用 `size`。
 - 给文生图模型传 `image` 会被拒绝，错误信息里会列出所有支持输入图的模型名。
-- 别名与绑定路径见 `models.yaml` 与 [API.md §5.4](API.md)。
+- 别名与绑定路径见 `models.yaml` 与 [API.md §5.5](API.md)。
 
 ---
 
@@ -583,7 +584,7 @@ MCP_PORT_MAP=[8188,888],[8189,999]
 ```
 ComfyUI-Roundabout/
 ├── __init__.py            # ComfyUI 节点入口（启动网关、加载模型）
-├── mcp_server.py          # MCP 服务（19 工具）+ 共享端口嵌入启动
+├── mcp_server.py          # MCP 服务（18 工具）+ 共享端口嵌入启动
 ├── gateway/               # REST 网关
 │   ├── config.py          # 配置（.env / 环境变量）
 │   ├── registry.py        # models.yaml 解析、绑定校验、热加载

@@ -1,0 +1,59 @@
+{
+  "2": {
+    "inputs": {
+      "model_variant": "Voice Design - 1.7B VoiceDesign",
+      "device": "auto",
+      "voice_preset": "Vivian",
+      "language": "Auto",
+      "instruct": "",
+      "top_k": 50,
+      "top_p": 1.0,
+      "temperature": 0.9,
+      "repetition_penalty": 1.05,
+      "max_new_tokens": 2048,
+      "runtime_mode": "⚠️ Shared Runtime",
+      "dtype": "auto",
+      "attn_implementation": "auto",
+      "x_vector_only_mode": false,
+      "use_torch_compile": false,
+      "use_cuda_graphs": false,
+      "compile_mode": "default",
+      "asr_use_forced_aligner": false,
+      "asr_translate_target_language": "English",
+      "asr_translate_instruction_override": "Translate the speech from {source_language} into {target_language} text. Return only the translated text."
+    },
+    "class_type": "Qwen3TTSEngineNode",
+    "_meta": {
+      "title": "⚙️ Qwen3-TTS Engine"
+    }
+  },
+  "6": {
+    "inputs": {
+      "reference_text": "肿瘤早期有哪些常见的警示症状？比如持续咳嗽、体重下降是警告吗？肿瘤的早期表现多样且通常不具特异性，但了解并关注某些持续性症状，对于早期发现具有重要意义",
+      "seed": 0,
+      "voice_instruction": "成熟中年男性声线，低沉醇厚，嗓音带有轻微自然胸腔共鸣，语速平缓从容，吐字清晰标准，语调稳定克制，没有夸张起伏。气质沉稳可靠、温和内敛，略带一丝阅历感，无沙哑破音，不生硬冰冷，也不油腻，像阅历丰富的儒雅男士，说话松弛自然，停顿合理。",
+      "TTS_engine": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "UnifiedVoiceDesignerNode",
+    "_meta": {
+      "title": "🎨 Voice Designer"
+    }
+  },
+  "8": {
+    "inputs": {
+      "audio": [
+        "6",
+        1
+      ],
+      "filename_prefix": "audio/Qwen3TTS_VoiceDesign",
+      "quality": "V0"
+    },
+    "class_type": "SaveAudioMP3",
+    "_meta": {
+      "title": "💾 Save Audio (MP3)"
+    }
+  }
+}
