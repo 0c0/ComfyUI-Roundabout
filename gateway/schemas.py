@@ -31,7 +31,21 @@ class ImageGenerationRequest(BaseModel):
         None, description='产物形态，默认 "url"（可打开的地址）；需要内联字节才传 b64_json'
     )
     user: str | None = Field(None)
-    background: str | None = None
+    # ---- 异步任务模式（与视频/音频档同契约）----
+    # OpenAI 官方用 background: "pending" 触发异步：POST 立即返回 task 对象（id + status: pending），
+    # 客户端轮询 GET /v1/images/tasks/{id} 直到 status: "completed"，结果在 output.data[]。
+    background: str | None = Field(
+        None,
+        description='OpenAI 标准异步开关："pending" 异步立即返回 task 对象；缺省 同步',
+    )
+    # 自定义别名（向后兼容）：{"async": true} 等价于 background="pending"
+    async_mode: bool = Field(False, alias="async", description="异步任务模式兼容别名：true 等价于 background=pending")
+
+    @property
+    def is_async(self) -> bool:
+        """是否进入异步任务模式（OpenAI 标准或自定义别名任一触发）。"""
+        return self.background == "pending" or bool(self.async_mode)
+
     output_format: str | None = None
     moderation: str | None = None
 

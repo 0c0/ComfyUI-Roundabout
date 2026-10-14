@@ -115,6 +115,28 @@ def _record_failure(task_id: str, exc: Exception) -> None:
     task_store.fail(task_id, message, getattr(exc, "status_code", None))
 
 
+def _start_async_task(runner, req, *, log_label: str) -> web.Response:
+    """异步生成公共入口：建任务、起后台协程、立即返回 OpenAI task 对象。
+
+    视频 / 音频 / 图像三端点的异步分支同构，收敛于此——`runner` 是对应的
+    `_run_*_task` 协程函数（签名 ``(task_id, req, request_id)``）。此前只有
+    视频/音频有异步分支且各自手写，图像端点长期缺失（background 字段收下
+    不用），导致图像同步链路被长生成拖到客户端超时。
+    """
+    task_id = uuid.uuid4().hex
+    request_id = new_request_id()
+    task_store.create(task_id, model=req.model, request_id=request_id)
+    log.info("req=%s async task=%s model=%s queued (%s)", request_id, task_id, req.model, log_label)
+    asyncio.create_task(runner(task_id, req, request_id))
+    # 对齐 OpenAI 异步范式：返回 image_generation.task 对象（status: pending）
+    return web.json_response({
+        "id": task_id,
+        "object": "image_generation.task",
+        "status": "pending",
+        "created_at": int(time.time()),
+    })
+
+
 async def generate_tracked(
     req: ImageGenerationRequest,
     *,
@@ -197,12 +219,18 @@ async def images_generations(request: web.Request) -> web.Response:
     spec = registry.resolve(req.model)
     if spec.is_video:
         vreq = VideoGenerationRequest.model_validate(body)
+        if vreq.is_async:
+            return _start_async_task(_run_video_task, vreq, log_label="video")
         result = await generate_video_tracked(vreq)
         return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))
     if spec.is_audio:
         areq = AudioSpeechRequest.model_validate(body)
+        if areq.is_async:
+            return _start_async_task(_run_audio_task, areq, log_label="audio")
         result = await generate_audio_tracked(areq)
         return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))
+    if req.is_async:
+        return _start_async_task(_run_image_task, req, log_label="image")
     result = await generate_tracked(req)
     return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))
 
@@ -309,17 +337,7 @@ async def audio_speech(request: web.Request) -> web.Response:
     req = AudioSpeechRequest.model_validate(body)
 
     if req.is_async:
-        task_id = uuid.uuid4().hex
-        request_id = new_request_id()
-        task_store.create(task_id, model=req.model, request_id=request_id)
-        log.info("req=%s async audio task=%s model=%s queued", request_id, task_id, req.model)
-        asyncio.create_task(_run_audio_task(task_id, req, request_id))
-        return web.json_response({
-            "id": task_id,
-            "object": "image_generation.task",
-            "status": "pending",
-            "created_at": int(time.time()),
-        })
+        return _start_async_task(_run_audio_task, req, log_label="audio")
 
     result = await generate_audio_tracked(req)
     return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))
@@ -343,6 +361,24 @@ async def _run_audio_task(task_id: str, req: AudioSpeechRequest, request_id: str
         task_store.fail(task_id, "Internal server error during generation.", 500)
 
 
+async def _run_image_task(task_id: str, req: ImageGenerationRequest, request_id: str) -> None:
+    """异步图像任务执行体（与 _run_audio_task 同构）：结果写入 task_store。"""
+    task_store.mark_processing(task_id)
+    try:
+        result = await generate(
+            req,
+            comfy,
+            request_id=request_id,
+            on_submit=lambda pid, wf: task_store.attach_prompt(task_id, pid, wf),
+        )
+        task_store.complete(task_id, result.model_dump(exclude_none=True))
+    except APIError as exc:
+        task_store.fail(task_id, exc.message, exc.status_code)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("async image task %s failed: %s", task_id, exc)
+        task_store.fail(task_id, "Internal server error during generation.", 500)
+
+
 @gateway_handler
 async def videos_generations(request: web.Request) -> web.Response:
     """文生视频 / 图生视频（扩展端点，结构对齐 OpenAI images）。
@@ -356,18 +392,7 @@ async def videos_generations(request: web.Request) -> web.Response:
     req = VideoGenerationRequest.model_validate(body)
 
     if req.is_async:
-        task_id = uuid.uuid4().hex
-        request_id = new_request_id()
-        task_store.create(task_id, model=req.model, request_id=request_id)
-        log.info("req=%s async task=%s model=%s queued", request_id, task_id, req.model)
-        asyncio.create_task(_run_video_task(task_id, req, request_id))
-        # 对齐 OpenAI 异步范式：返回 image_generation.task 对象（status: pending）
-        return web.json_response({
-            "id": task_id,
-            "object": "image_generation.task",
-            "status": "pending",
-            "created_at": int(time.time()),
-        })
+        return _start_async_task(_run_video_task, req, log_label="video")
 
     result = await generate_video_tracked(req)
     return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))

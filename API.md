@@ -155,8 +155,8 @@ MCP 客户端配置（`mcp.json`）：
 
 ## 4. 核心概念
 
-- **模型与别名**：`model` 可传注册名或其任一 `aliases`（不区分大小写）。当前默认 `default_model=z-image-turbo`。
-- **异步任务（仅视频）**：视频生成可带 `background:"pending"` 或 `async:true`，POST 立即返回 `task` 对象（`status:pending`），后台继续生成；用 `GET /v1/videos/tasks/{id}` 查结果。图片请求始终同步返回。
+- **模型与别名**：`model` 可传注册名或其任一 `aliases`（不区分大小写）。`default_model` 在 `models.yaml` 顶层配置，本机可用 `models.local.yaml` 覆盖（本机当前 `qwen-image-2.1`）。
+- **异步任务（三模态通用）**：图像 / 视频 / 音频生成都可带 `background:"pending"` 或 `async:true`，POST 立即返回 `task` 对象（`status:pending`），后台继续生成；分别用 `GET /v1/images/tasks/{id}`、`GET /v1/videos/tasks/{id}`、`GET /v1/audio/tasks/{id}` 查结果（三命名空间同一张任务表）。缺省仍为同步返回（向后兼容）。MCP 面保持同步（长任务建议走 REST 异步）。
 - **任务记录（同步 + 异步都记）**：**每次真正开工的生成请求都会在网关任务表留一条记录**——异步视频是「排队中 → 执行中 → 终态」，同步生图/编辑/视频则直接落终态，成功后附产物地址。这样 agent 用 MCP 或 REST 生成完，视图页上能看到痕迹与产物入口。**前提是请求通过了前置校验**（模型名写错、参数非法这类 400/404 在进入生成链路前就返回了，不留记录）。
 - **记录保留期**：任务记录是进程内存态，终态记录保留 6 小时后自动回收（未完成任务不回收）；重启 ComfyUI 全部清空。
 - **产物 url 绝对化**：`response_format=url` 时返回绝对 `http(s)` 地址。基准顺序：`PUBLIC_BASE_URL` → REST 用请求 host / MCP 用 `comfy_base_url`。若填 `b64_json` 则内联 base64；`file`/`path` 返回磁盘绝对路径。
@@ -192,6 +192,8 @@ MCP 客户端配置（`mcp.json`）：
 | `mode` | string? | 生图模式；仅当模型在 `models.yaml` 声明了 `mode_choices` 时生效（当前内置模型均未声明） |
 | `workflow_overrides` | object? | 直接改写节点，如 `{"3.inputs.cfg": 4.5}` |
 | `filename_prefix` | string? | 落盘前缀，可含 `/` 建子目录；空则用该模型工作流模板里的前缀（H3 视频统一为 `video/MiniMax_H3`） |
+| `background` | `"pending"`? | **异步**触发：POST 立即返回 task 对象，用 `GET /v1/images/tasks/{id}` 查结果（缺省同步） |
+| `async` | bool? | 兼容别名，`true` 等价于 `background:"pending"` |
 
 **响应**（200）：
 

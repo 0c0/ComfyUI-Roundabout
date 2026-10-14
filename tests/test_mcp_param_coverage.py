@@ -70,14 +70,14 @@ REQUIRED = {
 # 维护方式：只在这里**补/加**字段，不要为了让它变短而删 —— 空集合永远合法。
 ALLOWED_MISSING = {
     # 省略标准占位参数 + 采样器类精调（MCP 面向对话式调用，保持 schema 精简）
-    "generate_image": {"style", "user", "background", "output_format", "moderation",
+    "generate_image": {"style", "user", "background", "async_mode", "output_format", "moderation",
                        "sampler_name", "scheduler", "denoise"},
-    "edit_image": {"size", "style", "user", "background", "output_format",
+    "edit_image": {"size", "style", "user", "background", "async_mode", "output_format",
                    "moderation", "steps", "cfg", "sampler_name", "scheduler",
                    "denoise", "mode"},
     # 去背景是 promptless 工具，只留最小面
     "remove_background": {"prompt", "model", "n", "size", "style", "user",
-                          "background", "output_format", "moderation", "negative_prompt",
+                          "background", "async_mode", "output_format", "moderation", "negative_prompt",
                           "seed", "steps", "cfg", "sampler_name", "scheduler",
                           # 去背景是 promptless 单图工具，多图参考对它没有意义
                           "reference_images",
