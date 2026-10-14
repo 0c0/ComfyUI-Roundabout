@@ -90,6 +90,8 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 
 ## 第三步：登记到 models.yaml
 
+> 只想本机用、不进仓库的条目写 `models.local.yaml`（gitignored，模板 `models.local.yaml.example`）：合并语义 = 顶层键覆盖，`models` 按名合并（新名字追加、同名条目浅合并只覆盖写的键）。上游更新 `models.yaml` 永不覆盖它。以下写法对两个文件完全一致。
+
 ```yaml
 models:
   my-model:                                     # 对外暴露的 model 名

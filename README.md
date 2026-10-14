@@ -21,7 +21,7 @@ ComfyUI 已经有模型、显存和队列，缺的只是一层 agent 能听懂�
 - 随 ComfyUI 启动自动加载、随 ComfyUI 退出而结束，**没有独立进程**
 - MCP 端点挂在 ComfyUI 自己的端口（`/mcp`），**不额外占端口**
 - 复用 ComfyUI 的 Python 解释器与依赖（纯 REST 场景零新增依赖）
-- 配置只有 `models.yaml`（模型）与 `.env`（可选）两个文件，改完热加载；模型专属参数可在 `models.yaml` 的 `params:` 块**声明式注册**（type/min/max/default/bind 全数据驱动，声明即免 `KNOWN_PARAMS` 白名单、bind/default 自动并入、tool-info 元数据取自声明，v1.43.0）；另有一个可选的 `device_weights.yaml`（机器本地权重覆盖，gitignored，见下方[多机部署](#多机部署权重覆盖)）
+- 配置只有 `models.yaml`（模型）与 `.env`（可选）两个文件，改完热加载；模型专属参数可在 `models.yaml` 的 `params:` 块**声明式注册**（type/min/max/default/bind 全数据驱动，声明即免 `KNOWN_PARAMS` 白名单、bind/default 自动并入、tool-info 元数据取自声明，v1.43.0）；本机专属模型与本机微调写 `models.local.yaml`（gitignored，合并语义见 `models.local.yaml.example`，上游更新不覆盖，v1.44.0）；另有一个可选的 `device_weights.yaml`（机器本地权重覆盖，gitignored，见下方[多机部署](#多机部署权重覆盖)）
 
 没有 docker、没有守护进程、没有第二份 registry 要同步。
 
@@ -500,7 +500,7 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 三步：
 
 1. ComfyUI 画布 → `Workflow` → **`Export (API)`**（必须是 API 格式，不是普通 Export）→ 存进 `workflows/`
-2. 在 `models.yaml` 加一条：`workflow` / `mode` / `capabilities` / `output_node` / `bindings`（接口参数 → 节点路径）
+2. 在 `models.yaml` 加一条：`workflow` / `mode` / `capabilities` / `output_node` / `bindings`（接口参数 → 节点路径）。**只想本机用、不进仓库**就写到 `models.local.yaml`（gitignored，[写法](models.local.yaml.example)与 models.yaml 完全一致）
 3. `POST /admin/reload` 或面板点「重新加载」，然后打一发接口验证
 
 **完整指南见 [WORKFLOWS.md](WORKFLOWS.md)** —— 参数白名单、常见落点表、找路径的方法、三条铁律（尤其：**别绑被连线覆盖的 input**）、`models.yaml` 全字段、`references` 段、排错表。
@@ -521,6 +521,8 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 1. 复制 `device_weights.example.yaml` 为 `device_weights.yaml`（gitignored，不进仓库、不随 push 同步）；
 2. 按本机硬件声明覆盖（如 4090 侧把 `video_minimax_h3.json` 节点 127 的 `unet_name` 换回全量 bf16）；
 3. 重启或 `/roundabout/admin/reload` 生效，启动日志逐条回显 `device override: ...`。
+
+同一套思路也覆盖模型登记表：本机专属模型与本机微调写 `models.local.yaml`（gitignored，见 [models.local.yaml.example](models.local.yaml.example)），上游更新 `models.yaml` 不会覆盖你的条目。
 
 `.safetensors` 结尾的值会在 ComfyUI 模型目录里做存在性校验，缺失打启动告警（提交时 ComfyUI 侧仍会硬报错兜底）。不建这个文件 = 零覆盖，行为与单机部署完全一致。
 
@@ -598,6 +600,7 @@ ComfyUI-Roundabout/
 ├── web/                   # 前端（可视化看板页面）
 ├── workflows/             # API 格式工作流（example_txt2img.json 为接入样本）
 ├── models.yaml            # 模型注册表
+├── models.local.yaml.example  # 本机模型登记扩展模板（复制为 models.local.yaml，gitignored、上游更新不覆盖）
 ├── weights.yaml           # 权重 → 下载来源索引（报错里的下载指引与体检的数据源）
 ├── pyproject.toml         # 节点包元数据（供 ComfyUI-Manager 等抓取识别）
 ├── requirements.txt       # mcp + uvicorn（MCP 默认启用故默认需要；关掉 MCP 可不装）
