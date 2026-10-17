@@ -1,5 +1,7 @@
 # ComfyUI-Roundabout
 
+[中文（本版）](README.md) | [**English**](README.en.md)
+
 > 一个 ComfyUI **custom node**：把本地工作流包装成 **OpenAI 兼容 REST API** + **MCP 工具**（14 个），让 AI agent / 脚本 / 任意 OpenAI 客户端直接调用你本机的图像与视频生成。
 
 **不碰画布、不改代码。** 你在 ComfyUI 里搭好的流程，导出一个 JSON、在 `models.yaml` 写一段参数映射，就变成了一个可被任意客户端调用的 `model`。
