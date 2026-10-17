@@ -235,10 +235,28 @@ async def images_generations(request: web.Request) -> web.Response:
     return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))
 
 
-@gateway_handler
-async def images_edits(request: web.Request) -> web.Response:
-    """OpenAI 标准的图生图端点（multipart/form-data）。"""
-    verify(request)
+IMAGE_FIELD_NAMES = ("image", "image[]", "images")
+
+
+def _is_image_part(part: Any) -> bool:
+    """判断 multipart 分部是不是图片：字段名、文件名、Content-Type 任一命中即可。"""
+    if part.name in IMAGE_FIELD_NAMES:
+        return True
+    if getattr(part, "filename", None):
+        return True
+    return (part.headers.get("Content-Type") or "").startswith("image/")
+
+
+async def _read_image_multipart(
+    request: web.Request,
+) -> tuple[dict[str, str], list[bytes], bytes | None]:
+    """读取图片端点的 multipart/form-data，返回 (文本字段, 图片列表, mask)。
+
+    图片按字段名（`image`、`image[]`——OpenAI 官方 SDK 与 liteLLM 的多图就是这样
+    发的）、文件名或 `image/*` 的 Content-Type 识别。此前只认裸 `image`，其它分部
+    一律 `await part.text()`：二进制送进 UTF-8 解码 → `UnicodeDecodeError` → HTTP 500，
+    客户端只能看到一个用处不大的 "Internal server error"。
+    """
     reader = await request.multipart()
     fields: dict[str, str] = {}
     images: list[bytes] = []
@@ -247,13 +265,21 @@ async def images_edits(request: web.Request) -> web.Response:
         part = await reader.next()
         if part is None:
             break
-        name = part.name
-        if name == "image":
-            images.append(await part.read(decode=False))
-        elif name == "mask":
+        name = part.name or ""
+        if name == "mask":
             mask = await part.read(decode=False)
+        elif _is_image_part(part):
+            images.append(await part.read(decode=False))
         else:
             fields[name] = await part.text()
+    return fields, images, mask
+
+
+@gateway_handler
+async def images_edits(request: web.Request) -> web.Response:
+    """OpenAI 标准的图生图端点（multipart/form-data）。"""
+    verify(request)
+    fields, images, mask = await _read_image_multipart(request)
 
     req = ImageGenerationRequest(
         prompt=fields.get("prompt"),
@@ -290,17 +316,7 @@ async def images_remove_background(request: web.Request) -> web.Response:
     返回结构与 images 端点一致（response_format=url/b64_json/path）。
     """
     verify(request)
-    reader = await request.multipart()
-    fields: dict[str, str] = {}
-    images: list[bytes] = []
-    while True:
-        part = await reader.next()
-        if part is None:
-            break
-        if part.name == "image":
-            images.append(await part.read(decode=False))
-        else:
-            fields[part.name] = await part.text()
+    fields, images, _mask = await _read_image_multipart(request)
 
     model = fields.get("model") or REMOVE_BG_MODEL
     spec = registry.resolve(model)

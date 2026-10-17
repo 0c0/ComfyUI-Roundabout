@@ -224,7 +224,7 @@ MCP 客户端配置（`mcp.json`）：
 
 #### `POST /v1/images/edits`
 
-OpenAI 标准 multipart 图生图。字段：`image`（文件，可多张）、`mask`（文件，可选）、`prompt`、`model`、`n`、`size`、`response_format`、`user`、`negative_prompt`、`seed`、`steps`、`cfg`、`denoise`。
+OpenAI 标准 multipart 图生图。字段：`image`（文件，可多张；也接受 OpenAI 多图写法 `image[]`，liteLLM / 官方 SDK 就是这么发的；带文件名或 `image/*` Content-Type 的分部同样按图片处理）、`mask`（文件，可选）、`prompt`、`model`、`n`、`size`、`response_format`、`user`、`negative_prompt`、`seed`、`steps`、`cfg`、`denoise`。
 
 **单图编辑模型**（改图内文字首选 boogu 系列；风格/内容改写首选 flux2 klein）：
 
