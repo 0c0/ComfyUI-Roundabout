@@ -13,6 +13,7 @@ import uuid
 from functools import wraps
 from typing import Any
 
+import aiohttp
 from aiohttp import web
 from pydantic import ValidationError
 
@@ -340,7 +341,28 @@ async def audio_speech(request: web.Request) -> web.Response:
         return _start_async_task(_run_audio_task, req, log_label="audio")
 
     result = await generate_audio_tracked(req)
-    return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))
+    data = _absolutize(result.model_dump(exclude_none=True), request)
+
+    # OpenAI compatibility: POST /v1/audio/speech returns the audio bytes by
+    # default. Without an explicit response_format (or when one of the OpenAI
+    # audio encodings is passed) stream the generated file instead of JSON
+    # with a URL — that is what OpenAI SDKs and clients such as Open WebUI
+    # expect, and it keeps `response_format: "mp3"` from failing validation.
+    fmt = (body.get("response_format") or "").lower()
+    if fmt in ("", "mp3", "opus", "aac", "flac", "wav", "pcm"):
+        url = ((data.get("data") or [{}])[0] or {}).get("url")
+        if url:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                        if resp.status == 200:
+                            return web.Response(
+                                body=await resp.read(),
+                                content_type=resp.headers.get("Content-Type", "audio/mpeg"),
+                            )
+            except Exception:  # noqa: BLE001
+                log.warning("audio_speech: could not fetch %s, falling back to JSON", url)
+    return web.json_response(data)
 
 
 async def _run_audio_task(task_id: str, req: AudioSpeechRequest, request_id: str) -> None:
