@@ -43,7 +43,7 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 
 **白名单以外的键会被静默忽略**（只在启动日志里留一条 warning）。厂商特有参数用 `workflow_overrides` 传，不要在 `bindings` 里造名字。
 
-少数白名单键的值**不是请求参数，而是网关按本次请求推导出来的**：`sparse_start_percent` / `spark_enabled`（都由 `attention` 档位翻译，落点按模型分，见下表）与 `use_custom_size`（有没有参考素材）。它们出现在白名单里只是为了让 `bindings` 放行 —— 调用方无需、也不该直接传。
+少数白名单键的值**不是请求参数，而是网关按本次请求推导出来的**：`spark_mode` / `sparse_start_percent`（都由 `attention` 档位翻译，落点按模型分，见下表）与 `use_custom_size`（有没有参考素材）。它们出现在白名单里只是为了让 `bindings` 放行 —— 调用方无需、也不该直接传。
 
 ### 常见落点
 
@@ -68,8 +68,8 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 | `fps` | `CreateVideo.fps`、`VideoCombine.frame_rate` |
 | `duration` / `num_frames` | 你自己链路里的时长/帧数节点 |
 | `chunks` / `seq_threshold` | `MiniMaxChunkFeedForward.chunks` / `.seq_threshold`（KJNodes） |
-| `sparse_start_percent` / `spark_enabled` | 对外同一个 `attention: sparse\|dense` 的两个落点，按模型分：`sparse_start_percent` → `BlockSparseAttention.start_percent`（其余三支；`1.0` 因 `percent_to_sigma(1.0)=0` 等效全程关闭稀疏）；`spark_enabled` → Spark 节点 `enabled`（`minimax-h3`；`dense` = 节点原样透传模型）。翻译在 `params.resolve_attention`；`attention` 只对 base 四支 H3 视频档有效（`minimax-h3` / `-edit` / `-lift` / `-lift-edit`，其它模型传了报错） |
-| `turbo_lora` | `LoraLoaderModelOnly.strength_model`（节点 160，minimax-h3 / -edit 有绑定）。0=关（默认，关时不注入开销）；1.0=8 步蒸馏 Turbo（h3 用 fl2v_turbo_8step_v1.0、h3-edit 用 ref2v_turbo_8step_v1.0_768p），**需配 `steps≈8`**；2026-10-05 实测 0.65@8 步端到端 -47%、画面干净、契合度不降 |
+| `spark_mode` / `sparse_start_percent` | 对外同一个 `attention: sparse\|dense` 的两个落点：H3 四支全用 `spark_mode` → Spark 节点 `mode`（`sparse`→`fidelity` / `dense`→`dense`，后者完全旁路 Spark）；`sparse_start_percent` 保留给「159 是 BlockSparseAttention」的模板（当前无档使用）。翻译在 `params.resolve_attention`；`attention` 只对 H3 四支有效（其它模型传了报错） |
+| `turbo_lora` | `LoraLoaderModelOnly.strength_model`（节点 160，H3 四支都有绑定）。`minimax-h3` / `-edit` 默认 0（关，不注入开销）；SelfLift 两支默认 **1.0**（配方按 8 步蒸馏轨迹标定，设 0 画质必坏）。1.0=8 步蒸馏 Turbo，**需配 `steps≈8`** |
 | `head_chunks` | **当前无绑定**：唯一消费者 `MiniMaxLowVRAMAttention` 与 `BlockSparseAttention` 硬互斥，已从 6 支视频档撤除。参数名仍在可注入白名单里，把节点挂回去即可复用；档位表里的值不会注入任何工作流 |
 
 ### 写映射的三条铁律

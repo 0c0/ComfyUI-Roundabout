@@ -8,10 +8,15 @@ defaults:
   # 只有声明了 `vram_adaptive: true` 的模型会用它；模型自己的 defaults 覆盖档位值。
   # 改档位只动这里，不用碰代码。数值是经验标定（原始调优文档已不在仓库内）；`chunks` 只切
   # FFN 的 token 维、数学精确，改它不影响输出（分块耗时开销实测 ≈ 0）。
+  # 落地：`chunks` / `seq_threshold` 在 4 支视频档都有 bind（158.inputs.*），提交时覆盖模板值。
+  #   模板里写死的 6 / 4096 = 本表最低档，作用是「不经网关 / 探不到显存 / 未开 adaptive」时的
+  #   兜底 —— 那几条旁路曾经是 1 / 262144（等于完全不分块），且没有任何测试守着。
   # ⚠️ `head_chunks` 自 09-21 起**没有任何模型绑定**：唯一消费它的 MiniMaxLowVRAMAttention
   #   与 BlockSparseAttention 硬互斥，已从 6 支视频档全部撤除（原因见下方 H3 系列共同点）。
-  #   `highres_tiling` 同样无绑定（本项目已无该参数的消费者）。这两列数值留在表里
-  #   只为复原方便 —— **改它们不会影响任何工作流**。
+  #   `highres_tiling` 同理**不按档位自动开**：SelfLiftH3Sampler 的这颗开关会改变画质
+  #   （高分辨率段只保留第一块的音频预测），所以改由 lift 两支的 `params.highres_tiling`
+  #   声明（default false）接管 —— 声明 default 优先级高于档位，请求里可显式开。
+  #   这两列数值留在表里只为复原方便 —— **改它们不会影响任何工作流**。
   vram_tiers:
     - min_gb: 48
       chunks: 1
@@ -309,18 +314,18 @@ models:
   #   - 未上传的资源由网关在发送前动态删除对应节点（删 LoadVideo 会级联删其 GetVideoComponents，
   #     见 references 段与 gateway/pipeline.py 的 _prune_unused_references）。
   #   - 低显存统一两级：注意力档(159) → MiniMaxChunkFeedForward(158)。
-  #     159 按模型分档：**minimax-h3 用 Spark-H3 (SM86)**（本机自编 sm86 轮子，comfy-kitchen Sol 栈
-  #     上的 Spark 稀疏内核，2026-10-12 落地）；**edit / lift / lift-edit 三支仍是 BlockSparseAttention
-  #     的 `sol-attn`**（training-free，tau 1.3 自适应阈值，约保留 16% key block）。
+  #     159 四支统一 **MiniMaxH3SparkAttentionSM86**（Spark-H3，SM86 原生；需 comfy-kitchen 的
+  #     Spark 变体 >= 0.2.39+spark.h3.sm86 —— PyPI 上同版本号没有 spark_attn）。
+  #     档位开关是 **`mode`**（fidelity / speed / custom / dense），**不是 `enabled`**：老版本的
+  #     `enabled` 落点是死键，写上去照样命中、值却没人读。
+  #     h3 两支模板写 fidelity（20 步全功能）；lift 两支写 speed + steps=8（配 8 步 turbo 配方）。
   #     ⛔ **不能再接** KJNodes 的 MiniMaxLowVRAMAttention：它替换 `block.forward`，而稀疏的 block
   #     patch 会无条件补传 `attention=` 关键字（comfy/ldm/minimax/model.py:753），签名对不上
   #     ⇒ 实测 TypeError。base 四支原先的 LowVRAM 节点已按此撤除（09-21）。
-  #     ⚠️ 承载对外 `attention` 的可注入键按模型分：minimax-h3 / minimax-h3-edit 是 `spark_enabled`
-  #     （→ Spark.enabled，sparse→True / dense→False）；lift 两支是 `sparse_start_percent`
-  #     （→ BlockSparseAttention.start_percent，sparse→0.2 / dense→1.0）。Spark 的 warmup_ratio /
-  #     topk_ratio / strict 与 sol 的 `tau` / `min_tokens` 均未注册（后者键名 `selection.tau`
-  #     含点号、路径按 `.` 切分无法寻址）
-  #     ⇒ 只能改工作流 JSON。
+  #     ⚠️ 承载对外 `attention` 的可注入键四支统一为 `spark_mode`：sparse→fidelity / dense→dense
+  #     （dense 完全旁路 Spark）。lift 两支模板值已是 speed，**日常别传 `attention`**
+  #     （传 sparse 会把它顶回 fidelity，全功能但慢）。Spark 的 warmup_ratio / topk_ratio / strict
+  #     未注册 ⇒ 只能改工作流 JSON 或走 workflow_overrides。
   minimax-h3:
     workflow: video_minimax_h3.json
     description: MiniMax H3 (FL2VA) —— 生成档：文生视频 / 首尾帧 / 参考图（留在本档，不换档）/ 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-edit（09-25 实测 FL2VA 不迁移音色/动作，参考内容只有 Ref2VA 消费）；**注意力档 = Spark-H3 (SM86)**：`attention` 取 `sparse`（默认，Spark 稀疏）或 `dense`（关闭，Spark 节点原样透传模型），20 步，低显存分块按档位自适应；Turbo 快档：`turbo_lora` 强度（0=关默认，1.0=8 步蒸馏，配 steps≈8）
@@ -389,7 +394,7 @@ models:
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
       seq_threshold: 158.inputs.seq_threshold
-      spark_enabled: '159.inputs.enabled'
+      spark_mode: '159.inputs.mode'
     aliases:
     - minimax_h3
     - minimaxh3
@@ -440,6 +445,12 @@ models:
         default: 0
         bind: '160.inputs.strength_model'
         description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=8 步蒸馏 Turbo，需配 steps≈8
+      vpack_ratio:
+        type: str
+        default: auto
+        choices: [auto, '0/5', '1/5', '2/5', '3/5']
+        bind: '970.inputs.compression_ratio'
+        description: 参考视频 latent 压缩档：auto=带参考视频时 2/5、无则 0/5 直通；0/5 不压缩 / 1/5 轻 / 2/5 官方推荐 / 3/5 最强（每 5 帧留 2 帧）。只压参考视频的时间维，空间与生成 latent 不变
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
@@ -454,29 +465,29 @@ models:
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
       seq_threshold: 158.inputs.seq_threshold
-      spark_enabled: '159.inputs.enabled'
+      spark_mode: '159.inputs.mode'
     aliases:
     - minimax_h3_edit
     - minimaxh3edit
     - h3-edit
 
-  # ===================== MiniMax H3 · Lift 确定性放大 =====================
-  # lift 家族 = base / edit 的骨架 + 尾部一个 SelfLiftH3LatentLift(910)：
-  #   采样 125 → latent lift 910 → 解码 122 → CreateVideo 130 → SaveVideo 92
-  # 与源工作流的差别只有两处：122.inputs.samples 由 125 改接 910、保存前缀改 video/H3_Lift；
-  # 新增节点 900 / 901（抽中间帧存预览 PNG）与 910（学习式 3D conv 抬分辨率）。
-  # 两份工作流由 .workbuddy/build_lift_family.py 从 base / edit 派生——改了源图重跑脚本即可同步。
+  # ===================== MiniMax H3 · SelfLift 一体化精修 =====================
+  # lift 家族 = base / edit 骨架 + **SelfLiftH3Sampler(125)**：
+  #   条件 136 → 125（低分前缀 + 一次性学习式升采样）→ 解码 122/121 → 130 → 92
+  # 与 base 的差别：125 顶替 SamplerCustomAdvanced、删 BasicGuider(126) 把它的 conditioning
+  # 直接喂给 125.positive、negative 走 ConditioningZeroOut(300)；旧版 910/900/901 已全部退役。
   #
-  # 机制定位（09-20 实测）：低分一采拿结构 → lift 抬分辨率并铺学习高频 → 收尾。
-  #   - rho 是**伪影阻尼**不是保细节（默认 0；拉向像素锚 = 白放大）；
-  #   - 高分二采会洗掉 lift 的高频（54.4 vs 78.4），所以只做 lift、不做二采；
-  #   - 输出尺寸 = 画布 × scale，默认 1344x768 × 1.875 = 2520x1440。
-  #   - 步数 30（09-21 与 base / edit 统一）：原 defaults 的 8 是初始导入的漏值。
-  # scale 是正式请求参数（仅 lift 两支有绑定）：默认 1.875 = 768p 画布 × 1.875 = 2520x1440。
-  # rho / w_min / w_max 仍是模板固定值（节点 910），精调走 workflow_overrides（如 910.inputs.rho=0.3）。
+  # 配方（8 步 turbo）：steps=8、sampler=euler、turbo_lora=1.0、lowres_scale=0.75、
+  #   transition_step=5 —— 前 5 步在 0.75 前缀上跑，其余 3 步全分辨率，升采样只发生一次。
+  #   - **采样器只能是 euler**：节点内对 sampler_function 有硬断言（sample_euler），换别的直接报错。
+  #   - **输出尺寸 = `size`**：没有放大倍率；`scale` 已下线（传了 400），`output_size` 是同义入口。
+  #   - lowres_scale 越低越省，但升采样要补的跨度变大；1.0 = 前缀与输出同尺寸（白付一次放大）。
+  #   - transition_step 逼近总步数 ⇒ 前缀吃满、全分辨率没步可跑，等于退回低分生成。
+  #   - 不含 teacache(185)：8 步档没多少步可省。
+  # 两套工作流由 .workbuddy/build_lift_family.py 从 base / edit 派生（改源图后重跑即可同步）。
   minimax-h3-lift:
     workflow: video_minimax_h3_lift.json
-    description: MiniMax H3 Lift —— 生成档骨架 + 确定性放大：`size` = 768p 第一采画布（默认 1344x768，保持原生别改大），20 步采样 → latent lift × `scale`（默认 1.875 → 输出 2520x1440）；构图零重掷，纹理最强；支持首尾帧 / 参考图（留在本档，不换档）/ 帧+参考组合；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-lift-edit（FL2VA 不迁移内容，实测见 minimax-h3）
+    description: MiniMax H3 SelfLift —— 生成档骨架 + SelfLift 一体化精修（8 步 turbo）：先在 `lowres_scale`（默认 0.75）的低分辨率前缀上跑 `transition_step` 步，再用一次性学习式升采样把同一条轨迹拉到全分辨率；NFE 与普通 8 步档相同，构图零重掷。**`size` 就是输出尺寸**（不再有放大倍率）；支持首尾帧 / 参考图（留在本档）；请求带 reference_videos / reference_audios 时自动换档到 minimax-h3-lift-edit
     mode: video
     capabilities:
     - text-to-video
@@ -506,19 +517,18 @@ models:
       - ref_images.ref_image_3
       - ref_images.ref_image_4
       - ref_images.ref_image_5
-    # 放大阶段要解码 2520x1440，比常规 H3 慢；想要完全不限时仍可设 JOB_TIMEOUT=0。
-    timeout: 2700
+    timeout: 1800
     vram_adaptive: true
     defaults:
       width: 1344
       height: 768
-      steps: 20
-      sampler_name: res_multistep
+      steps: 8
+      sampler_name: euler
       scheduler: simple
       denoise: 1
       duration: 5
       fps: 24
-      scale: 1.875
+      lowres_scale: 0.75
     # 模型自述参数（v1.43.0）：声明即注册——bind 并入 bindings、default 并入 defaults、
     # 类型/范围在请求入口校验、tool-info 元数据取自这里。加新参数只写这里，不动 Python。
     params:
@@ -526,14 +536,33 @@ models:
         type: float
         min: 0
         max: 1.5
-        default: 0
+        default: 1.0
         bind: '160.inputs.strength_model'
-        description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=ref2v 8 步蒸馏，需配 steps≈8
+        description: Turbo LoRA 强度。SelfLift 配方按 8 步蒸馏轨迹标定，**默认 1.0**；设 0 会让低分前缀跑在未蒸馏轨迹上，画质必坏
+      lowres_scale:
+        type: float
+        min: 0.25
+        max: 1.0
+        default: 0.75
+        bind: '125.inputs.lowres_scale'
+        description: 低分辨率前缀的空间比例（论文 0.5，实测配方 0.75）。越小越快，细节越依赖升采样阶段
+      transition_step:
+        type: int
+        min: 1
+        max: 8
+        default: 5
+        bind: '125.inputs.transition_step'
+        description: 低分辨率阶段消耗的采样步数（8 步里用 5，其余在全分辨率上跑）；升到 8 = 全程低分，失去精修意义
+      highres_tiling:
+        type: bool
+        default: false
+        bind: '125.inputs.highres_tiling'
+        description: 高分辨率阶段分块（按剩余显存选 1–8 块）。8 GiB 上开到 true 可显著降峰值显存；**实验性**——节点只保留第一块的音频预测、画质与耗时都会变，故默认关、按请求显式开
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
-      seed: 129.inputs.noise_seed
-      steps: 124.inputs.steps
+      seed: [129.inputs.noise_seed, 125.inputs.seed]
+      steps: [124.inputs.steps, 159.inputs.steps]
       sampler_name: 123.inputs.sampler_name
       scheduler: 124.inputs.scheduler
       denoise: 124.inputs.denoise
@@ -543,27 +572,25 @@ models:
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
       seq_threshold: 158.inputs.seq_threshold
-      sparse_start_percent: '159.inputs.start_percent'
-      scale: '910.inputs.scale'
+      spark_mode: '159.inputs.mode'
     aliases:
     - minimax_h3_lift
     - h3-lift
     - h3lift
     - minimax-h3-upscale
 
-  # Ref2VA 版 lift：放大机制与上面那支完全一致，差别只在工作流源于 edit ——
-  #   ref2va 权重 + 统一聚合节点（编辑档）+ 参考槽全套 6 图 / 3 视频 / 3 音频。
-  # ⚠️ 未标定：步数 30（随 edit 统一），放大与参考的组合效果没做过 A/B。
+  # Ref2VA 版 SelfLift：引擎与上面那支完全一致，差别只在工作流源于 edit ——
+  #   ref2va 参考条件 + 统一聚合节点 + 参考槽全套 6 图 / 3 视频 / 3 音频。
   minimax-h3-lift-edit:
     workflow: video_minimax_h3_lift_edit.json
-    description: MiniMax H3 Lift Ref2VA —— 编辑档骨架（20 步）+ 确定性放大：参考视频编辑 / 动作·运镜迁移 / 音频复用 / 参考图生视频后过一遍学习式 latent lift；Turbo 快档：`turbo_lora` 强度（0=关默认，1.0=ref2v 8 步蒸馏，配 steps≈8）
+    description: MiniMax H3 SelfLift Ref2VA —— 编辑档骨架 + SelfLift 一体化精修（8 步 turbo）：参考视频编辑 / 动作·运镜迁移 / 音频复用 / 参考图生视频；低分前缀 `lowres_scale` + 一次性升采样，`size` 即输出尺寸
     mode: video
     capabilities:
     - text-to-video
     - image-to-video
     - reference-to-video
     output_node: '92'
-    timeout: 2700
+    timeout: 1800
     vram_adaptive: true
     references:
       aggregator: '136'
@@ -585,28 +612,51 @@ models:
     defaults:
       width: 1344
       height: 768
-      steps: 20
-      sampler_name: res_multistep
+      steps: 8
+      sampler_name: euler
       scheduler: simple
       denoise: 1
       duration: 5
       fps: 24
-      scale: 1.875
-    # 模型自述参数（v1.43.0）：声明即注册——bind 并入 bindings、default 并入 defaults、
-    # 类型/范围在请求入口校验、tool-info 元数据取自这里。加新参数只写这里，不动 Python。
+      lowres_scale: 0.75
     params:
       turbo_lora:
         type: float
         min: 0
         max: 1.5
-        default: 0
+        default: 1.0
         bind: '160.inputs.strength_model'
-        description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=ref2v 8 步蒸馏，需配 steps≈8
+        description: Turbo LoRA 强度。SelfLift 配方按 8 步蒸馏轨迹标定，**默认 1.0**；设 0 会让低分前缀跑在未蒸馏轨迹上，画质必坏
+      lowres_scale:
+        type: float
+        min: 0.25
+        max: 1.0
+        default: 0.75
+        bind: '125.inputs.lowres_scale'
+        description: 低分辨率前缀的空间比例（论文 0.5，实测配方 0.75）。越小越快，细节越依赖升采样阶段
+      transition_step:
+        type: int
+        min: 1
+        max: 8
+        default: 5
+        bind: '125.inputs.transition_step'
+        description: 低分辨率阶段消耗的采样步数（8 步里用 5，其余在全分辨率上跑）
+      highres_tiling:
+        type: bool
+        default: false
+        bind: '125.inputs.highres_tiling'
+        description: 高分辨率阶段分块（按剩余显存选 1–8 块）。8 GiB 上开到 true 可显著降峰值显存；**实验性**——节点只保留第一块的音频预测、画质与耗时都会变，故默认关、按请求显式开
+      vpack_ratio:
+        type: str
+        default: auto
+        choices: [auto, '0/5', '1/5', '2/5', '3/5']
+        bind: '970.inputs.compression_ratio'
+        description: 参考视频 latent 压缩档：auto=带参考视频时 2/5、无则 0/5 直通；0/5 不压缩 / 1/5 轻 / 2/5 官方推荐 / 3/5 最强（每 5 帧留 2 帧）。只压参考视频的时间维，空间与生成 latent 不变
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
-      seed: 129.inputs.noise_seed
-      steps: 124.inputs.steps
+      seed: [129.inputs.noise_seed, 125.inputs.seed]
+      steps: [124.inputs.steps, 159.inputs.steps]
       sampler_name: 123.inputs.sampler_name
       scheduler: 124.inputs.scheduler
       denoise: 124.inputs.denoise
@@ -616,8 +666,7 @@ models:
       fps: 130.inputs.fps
       chunks: 158.inputs.chunks
       seq_threshold: 158.inputs.seq_threshold
-      sparse_start_percent: '159.inputs.start_percent'
-      scale: '910.inputs.scale'
+      spark_mode: '159.inputs.mode'
     aliases:
     - minimax_h3_lift_edit
     - minimax-h3-edit-lift

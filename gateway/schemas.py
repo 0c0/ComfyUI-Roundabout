@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # 「模型专属」请求字段：只有 models.yaml `params:` 块（或 bindings）声明了它的模型才接受，
 # 传给未声明的模型一律 400 指路（pipeline 通用拒绝逻辑消费此清单）。
 # 新增模型专属参数时：请求模型加字段 + 这里记一笔 + models.yaml 声明，三处齐。
-MODEL_SPECIFIC_FIELDS = ("turbo_lora",)
+MODEL_SPECIFIC_FIELDS = ("turbo_lora", "vpack_ratio", "highres_tiling")
 
 
 class ImageGenerationRequest(BaseModel):
@@ -144,6 +144,27 @@ class VideoGenerationRequest(BaseModel):
     turbo_lora: float | None = Field(
         None,
         description="Turbo LoRA 强度：0=关（默认，零开销）；1.0=8 步蒸馏 Turbo，需配 steps≈8",
+    )
+
+    # ---- 参考视频 latent 压缩（VPack；仅 edit 两支有绑定）----
+    vpack_ratio: Literal["auto", "0/5", "1/5", "2/5", "3/5"] | None = Field(
+        None,
+        description=(
+            "参考视频 latent 压缩档（VPack）：`auto`（默认，带参考视频时用 2/5、否则 0/5 直通）/"
+            "`0/5` 不压缩 / `1/5` 轻 / `2/5` 官方推荐 / `3/5` 最强（每 5 帧保留 2 帧）。"
+            "只压缩参考视频的 latent 时间维，空间分辨率与生成 latent 不变；"
+            "无参考视频时非 0/5 报 400。仅 edit 两支支持（见 tool-info）。"
+        ),
+    )
+
+    # ---- 高分辨率阶段分块（SelfLift；仅 lift 两支有绑定）----
+    highres_tiling: bool | None = Field(
+        None,
+        description=(
+            "高分辨率阶段分块（SelfLift 升采样后用）：true 按剩余显存选 1–8 块降峰值显存，"
+            "8 GiB 上明显更稳；**实验性**——只保留第一块的音频预测、画质与耗时都会变，"
+            "故默认 false。仅 lift 两支支持（见 tool-info）。"
+        ),
     )
 
     # ---- 注意力档位（仅 base 四支 H3 视频档）----

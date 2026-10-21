@@ -110,16 +110,21 @@ def main() -> int:
     edit = r.resolve("minimax-h3-edit")
     lift = r.resolve("minimax-h3-lift")
     lift_edit = r.resolve("minimax-h3-lift-edit")
-    check("h3/h3-edit 只声明 turbo",
-          set(h3.param_specs) == {"turbo_lora"} and set(edit.param_specs) == {"turbo_lora"})
-    check("lift 两支只声明 turbo",
-          set(lift.param_specs) == {"turbo_lora"} and set(lift_edit.param_specs) == {"turbo_lora"})
+    check("h3 只声明 turbo；edit 多一个 VPack 档",
+          set(h3.param_specs) == {"turbo_lora"}
+          and set(edit.param_specs) == {"turbo_lora", "vpack_ratio"})
+    check("SelfLift 两支声明 turbo + lowres_scale + transition_step",
+          set(lift.param_specs) == {"turbo_lora", "lowres_scale", "transition_step", "highres_tiling"}
+          and set(lift_edit.param_specs) == {"turbo_lora", "lowres_scale", "transition_step", "vpack_ratio", "highres_tiling"})
+    check("SelfLift 的 turbo 默认 1.0（蒸馏配方）",
+          lift.defaults.get("turbo_lora") == 1.0 and lift_edit.defaults.get("turbo_lora") == 1.0)
     check("h3 bindings 由声明并入", h3.binds("turbo_lora"))
     check("h3 defaults 取自声明", h3.defaults.get("turbo_lora") == 0)
 
     print("== pipeline 拒绝判据 ==")
     from gateway.schemas import MODEL_SPECIFIC_FIELDS
-    check("MODEL_SPECIFIC_FIELDS 覆盖 turbo", set(MODEL_SPECIFIC_FIELDS) == {"turbo_lora"})
+    check("MODEL_SPECIFIC_FIELDS 覆盖 turbo + vpack + highres_tiling",
+          set(MODEL_SPECIFIC_FIELDS) == {"turbo_lora", "vpack_ratio", "highres_tiling"})
 
     print("== tool-info 元数据来自声明 ==")
     entry = toolinfo._model_entry(h3)

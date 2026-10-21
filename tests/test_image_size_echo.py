@@ -106,12 +106,15 @@ check("多张产物取第一张的实测值",
       str(response_size([_Img(png(832, 480)), _Img(png(64, 64))], canvas)))
 
 print("3. 视频换算（只作回落）")
-check("lift：画布 1344x768 × 1.875",
-      estimated_video_size({"width": 1344, "height": 768, "scale": 1.875}) == "2528x1440",
-      str(estimated_video_size({"width": 1344, "height": 768, "scale": 1.875})))
+check("SelfLift：输出即画布（size 就是输出尺寸）",
+      estimated_video_size({"width": 2520, "height": 1440, "lowres_scale": 0.75}) == "2520x1440",
+      str(estimated_video_size({"width": 2520, "height": 1440, "lowres_scale": 0.75})))
 check("非 lift：即画布",
       estimated_video_size({"width": 1376, "height": 768}) == "1376x768",
       str(estimated_video_size({"width": 1376, "height": 768})))
+check("历史 `scale` 键不再参与换算（防回退）",
+      estimated_video_size({"width": 1344, "height": 768, "scale": 1.875}) == "1344x768",
+      str(estimated_video_size({"width": 1344, "height": 768, "scale": 1.875})))
 check("无画布则 None", estimated_video_size({}) is None, str(estimated_video_size({})))
 
 print("4. probe 节点发现与自报值读取")

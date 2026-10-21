@@ -62,11 +62,11 @@ KNOWN_PARAMS = {
     "highres_tiling",
     # ---- 注意力档位 ----
     # 对外统一是 `attention: sparse|dense`（见 schemas.VideoGenerationRequest），由
-    # params.resolve_attention 翻译后落到对应节点：minimax-h3 落 Spark.enabled（键 `spark_enabled`，
-    # 布尔）；其余 base 三支落 BlockSparseAttention.start_percent（键 `sparse_start_percent`，数值）。
+    # params.resolve_attention 翻译后落到对应节点：Spark 档落 Spark.mode（键 `spark_mode`，
+    # 枚举字符串 fidelity|dense）；若某档 159 是 BlockSparseAttention 则落 start_percent（数值）。
     # 内部名与对外枚举分开，是为了让 defaults / 档位表里存的始终是落点原生类型，不混入枚举语义。
     "sparse_start_percent",
-    "spark_enabled",
+    "spark_mode",
     # ---- 音频档（Qwen3-TTS VoiceDesign）----
     # `prompt` 落在「要朗读的文本」（audio 请求的 `input` / `prompt`），复用图像档那条校验：
     # 音频模型同样必须有文本落点，否则整支工作流没有输入。
@@ -476,6 +476,19 @@ class Registry:
                 **declared_defs,  # params 块声明（defaults 同名键可覆盖声明，属迁移期兼容）
                 **(cfg.get("defaults") or {}),
             }
+            # 模板字面值 vs 提交时的实际生效值。模板是跨机器的兜底值，真实值由档位/声明决定
+            # —— 磁盘 JSON 里看到的 158.chunks 常常不是跑起来的值，「看起来没分块」正是漏了
+            # 这一步注入。只对档位表里的键打差异，避免把 width/steps 之类的常规覆盖刷满日志。
+            if tier:
+                drift = {}
+                for tkey in tier:
+                    eff = merged_defaults.get(tkey)
+                    for p in bindings.get(tkey, [])[:1]:
+                        cur = get_path(template, p)
+                        if cur != eff:
+                            drift[tkey] = f"{cur} -> {eff}"
+                if drift:
+                    log.info("model `%s`: 提交时覆盖模板字面值 %s", name, drift)
 
             caps = set(cfg.get("capabilities") or [CAP_TXT2IMG])
             if "image" in bindings:

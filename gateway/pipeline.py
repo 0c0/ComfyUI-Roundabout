@@ -26,7 +26,6 @@ from .params import (
     resolve_attention,
     resolve_seed,
     resolve_video_size,
-    resolve_output_scale,
     sniff_image,
     split_negative_prompt,
 )
@@ -247,19 +246,15 @@ def response_size(
 
 
 def estimated_video_size(values: dict[str, Any]) -> str | None:
-    """视频尺寸的**换算**值：lift 档 = latent(画布/16) × scale 取整后再 ×16；其余 = 画布。
+    """视频输出尺寸的**换算**值：所有档都等于画布（SelfLift 档 `size` 即输出尺寸，没有放大倍率）。
 
     只作回落用 —— 工作流装了 RoundaboutSizeProbe 时以它实测自报的值为准（见 `response_size`）。
-    保留换算是因为工作流模板有可能没带 probe（旧模板 / 手工改过的图），那时至少还有个
-    合理值，而不是干脆不报。
+    保留这个函数是因为模板有可能没带 probe（旧模板 / 手工改过的图），那时至少还有个合理值。
     """
     w, h = values.get("width"), values.get("height")
     if not w or not h:
         return None
-    eff_scale = values.get("scale") or 1.0
-    out_w = int(round(w // 16 * eff_scale)) * 16
-    out_h = int(round(h // 16 * eff_scale)) * 16
-    return f"{out_w}x{out_h}"
+    return f"{int(w)}x{int(h)}"
 
 
 async def generate(
@@ -532,6 +527,25 @@ def build_video_values(
         v = getattr(req, pname, None)
         if v is not None:
             values[pname] = ps.validate(v)
+        elif values.get(pname) is None:
+            # 声明式 default 必须真正落到 values —— 否则 bindings 注入时拿到 None 直接跳过，
+            # 参数看起来有默认值、实际生效的是模板里写死的值（两处漂移）。
+            values[pname] = spec.defaults.get(pname)
+    # VPack 的 `auto`：只有带参考视频才压缩。SparkVPack.pack 对「conditioning 里没有视频参考」
+    # 会直接 ValueError（不是静默直通），所以无视频时必须先降成 0/5；显式要压缩但不给视频
+    # 就在网关层报 400，别让错误炸在节点里。
+    if "vpack_ratio" in spec.bindings:
+        ratio = str(values.get("vpack_ratio") or "auto").strip().lower()
+        has_video = bool(getattr(req, "reference_videos", None))
+        if ratio == "auto":
+            values["vpack_ratio"] = "2/5" if has_video else "0/5"
+        elif ratio != "0/5" and not has_video:
+            raise APIError(
+                f"`vpack_ratio={ratio}` requires at least one `reference_videos` entry: "
+                "VPack compresses reference-video latents and the node errors out when the "
+                "conditioning carries none. Use `0/5` (passthrough) or pass reference videos.",
+                param="vpack_ratio",
+            )
     # 请求带了「模型专属」字段但本模型既无声明也无绑定 → 显式拒绝
     # （字段清单 = 请求模型上标记为模型专属的集合，见 schemas）。
     for pname in MODEL_SPECIFIC_FIELDS:
@@ -546,13 +560,13 @@ def build_video_values(
     if values.get("height") is None:
         values["height"] = spec.defaults.get("height")
     # 注意力档位：对外 `attention`（sparse|dense）→ 内部键，落点按模型分两种
-    # （见 params.resolve_attention）：minimax-h3 落 `spark_enabled`（Spark.enabled，布尔）；
-    # 其余 base 三支落 `sparse_start_percent`（BlockSparseAttention.start_percent，数值）。
-    # 不传 = 完全不注入，保持工作流模板默认（两档模板默认都是稀疏）。
+    # （见 params.resolve_attention）：Spark 档落 `spark_mode`（Spark.mode，枚举字符串）；
+    # 若某档 159 是 BlockSparseAttention 则落 `sparse_start_percent`（数值）。
+    # 不传 = 完全不注入，保持工作流模板默认（模板默认稀疏）。
     # 传了但该模型没有这一档 ⇒ 显式拒绝，别让参数静默无效。
     if getattr(req, "attention", None):
-        if "spark_enabled" in spec.bindings:
-            values["spark_enabled"] = resolve_attention(req.attention, spark=True)
+        if "spark_mode" in spec.bindings:
+            values["spark_mode"] = resolve_attention(req.attention, spark=True)
         elif "sparse_start_percent" in spec.bindings:
             values["sparse_start_percent"] = resolve_attention(req.attention)
         elif spec.is_video:
@@ -570,25 +584,30 @@ def build_video_values(
                 "binding (see tool-info fields).",
                 param="attention",
             )
-    # Lift 放大倍率：仅 lift 两支有 `scale` 绑定；其它模型显式拒绝，别静默忽略。
+    # 输出尺寸：SelfLift 档的输出就是 `size`（`lowres_scale` 只改内部低分前缀，不放大画布）。
+    # `output_size` 保留为 `size` 的同义入口 —— 老调用要的是「最终多少像素」，语义不变；
+    # `scale`（画布 × 倍率）在新引擎里没有对应物，显式报错而不是静默丢掉。
     out_size = getattr(req, "output_size", None)
     req_scale = getattr(req, "scale", None)
-    if (out_size is not None or req_scale is not None) and "scale" not in spec.bindings:
+    if "lowres_scale" in spec.bindings:
+        if req_scale is not None:
+            raise APIError(
+                f"`scale` no longer applies to `{spec.name}`: the latent-lift magnification "
+                "stage was replaced by SelfLift, whose output size IS `size` (no multiplier). "
+                "Pass the target size via `size` (or `output_size`, same meaning); tune the "
+                "internal low-res prefix with `lowres_scale` instead.",
+                param="scale",
+            )
+        if out_size is not None:
+            values["width"], values["height"] = resolve_video_size(out_size, spec)
+    elif out_size is not None or req_scale is not None:
         param = "output_size" if out_size is not None else "scale"
         raise APIError(
-            f"Model `{spec.name}` has no latent-lift stage: its output size IS `size` "
+            f"Model `{spec.name}` has no lift stage: its output size IS `size` "
             f"({values.get('width')}x{values.get('height')}). `output_size`/`scale` only "
-            "apply to models with a `scale` binding (latent-lift; see tool-info fields).",
+            "apply to the SelfLift models (see tool-info fields).",
             param=param,
         )
-    if out_size is not None and req_scale is not None:
-        raise APIError(
-            "Pass either `output_size` or `scale`, not both (`output_size` is translated "
-            "into a scale factor; `scale` is the direct entry).",
-            param="output_size",
-        )
-    if out_size is not None:
-        values["scale"] = resolve_output_scale(out_size, values["width"], values["height"], spec)
     return values
 
 

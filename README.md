@@ -60,7 +60,7 @@ agent 全程**看不到也用不着**工作流 JSON。它只传语义参数，�
 |---|---|---|---|
 | `vram_adaptive` | 显卡显存 | 启动时探测显存，取「`min_gb` 不超过本机显存」的最大一档，覆盖分块参数 | `models.yaml` 的 `defaults.vram_tiers` |
 | 分辨率档位 | 请求里的 `size` | 把 `576p-16:9` 这类档位名解析成具体宽高（六档 × 五种比例） | `gateway/params.py` 的 `VIDEO_RES_PRESETS`（**代码常量**） |
-| 注意力档位 | 请求里的 `attention` | `sparse` / `dense` → `minimax-h3` 落 Spark 节点 `enabled`（布尔）；其余三支落 `BlockSparseAttention.start_percent` | `gateway/params.py` 的 `ATTENTION_SPARSE_START` / `ATTENTION_SPARK_ENABLED`（**代码常量**） |
+| 注意力档位 | 请求里的 `attention` | `sparse` / `dense` → H3 四支全落 Spark 节点 `mode`（`fidelity` / `dense`） | `gateway/params.py` 的 `ATTENTION_SPARK_MODE`（**代码常量**） |
 
 第一行改 YAML、热加载即生效；后两行是代码常量，改了要重启 ComfyUI。三者都不进工作流 JSON—— 工作流永远只有一份模板。细节见[按显卡自动调参](#按显卡自动调参vram_adaptive)。
 
@@ -171,7 +171,7 @@ https://github.com/HJH-AILab/ComfyUI-Roundabout
 
 3. 配置（可选）：把 `.env.example` 复制成 `.env`，按需修改。**MCP 默认已启用**，不用额外设置；要关掉就把 `MCP_ENABLED` 改成 `false`。
 
-4. **准备模型权重**：仓库不含权重。内置 11 个工作流共引用 19 个权重文件（清单另列 3 个非内置引用的 LoRA，共 22 行 / 约 123 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 49 GB**，可以先只下这一族。
+4. **准备模型权重**：仓库不含权重。内置 11 个工作流共引用 18 个权重文件（清单另列 6 个非内置引用的参考项，共 24 行 / 约 160 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 49 GB**，可以先只下这一族。
 
    > **视频档还需要两个第三方节点包**：KJNodes（`MiniMaxChunkFeedForward`，视频档全用）与 `comfyui-SelfLift`（lift 两支的 latent 上采样节点 `SelfLiftH3LatentLift`）。清单见下方[第三方节点依赖](#第三方节点依赖)。
 
@@ -291,9 +291,9 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 文生图 / 多图编辑（默认） | `qwen-image-2.1-turbo` | 8 步 turbo（底模 int8 + 官方抽取 turbo LoRA + ManualSigmas 焊死官方落点），默认画布 2048×2048：与 `qwen-image-2.1` 同面（1–6 张参考图，跟随第 1 张尺寸）；⚠️ steps/cfg/sampler/scheduler 无效，`turbo_lora=0` 会坏 |
 | 图像编辑 | `flux2-klein-image-edit-turbo` | 语义改写首选：换背景 / 换材质 / 增删物体（`edit_image` 默认）；**多图参考**最多 4 张 |
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
-| 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base / edit 均 20 步）：base 收**首尾帧** `first_frame`/`last_frame`（cover 裁剪），edit 收**参考**（6 图 + 3 视频 + 3 音频）；低显存分块按档位自适应（`vram_adaptive`） |
-| 视频 | `minimax-h3-lift` | **base 骨架 + 确定性放大**：20 步原生采样 → 学习式 latent lift（1344x768 × scale 1.875 = 2528x1440），构图零重掷、纹理最强；支持首尾帧（`first_frame`/`last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧，cover 裁剪）；产物落 `video/H3_Lift`；`scale` 是请求参数（默认 1.875 → 2528x1440）；`rho` 精调走 `workflow_overrides`（`910.inputs.rho`） |
-| 视频 | `minimax-h3-lift-edit` | 同上，改用 **edit 骨架**：Ref2VA 权重 + 参考槽全套 6 图 / 3 视频 / 3 音频。⚠️ **未标定**：步数 30（随 edit 统一），放大与参考的组合效果没做过 A/B |
+| 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base / edit 均 20 步，底模统一 hybrid b25-49）：base 收**首尾帧** `first_frame`/`last_frame`（cover 裁剪），edit 收**参考**（6 图 + 3 视频 + 3 音频）且带参考视频时默认 VPack 2/5；低显存分块按档位自适应（`vram_adaptive`） |
+| 视频 | `minimax-h3-lift` | **base 骨架 + SelfLift 一体化精修**（8 步 turbo，构图零重掷）：`size` 就是输出尺寸，内部按 `lowres_scale`（默认 0.75）跑低分辨率前缀、再用一次性学习式升采样拉满；NFE 与普通 8 步档相同；支持首尾帧（`first_frame`/`last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧，cover 裁剪）；`sampler_name` 必须 `euler`，`turbo_lora` 默认 1.0 |
+| 视频 | `minimax-h3-lift-edit` | 同上，改用 **edit 骨架**：ref2va 参考条件 + VPack（带参考视频默认 2/5）+ 参考槽全套 6 图 / 3 视频 / 3 音频 |
 | **音频（TTS）** | `qwen3-tts-voice-design` | **文本转语音 + 音色设计**（Qwen3-TTS 1.7B VoiceDesign）：`POST /v1/audio/speech`，`input` = 要朗读的文本、`instructions` = 音色描述（年龄/性别/语速/气质…）；产物 mp3 落 `audio/`。依赖 custom node **TTS-Audio-Suite**（引擎默认跑 Shared Runtime，首次调用要准备运行时） |
 
 - 编辑类模型**必须传图**：单图模型传 `image`；**多图模型**（`flux2-klein-image-edit-turbo` 4 张 / `qwen-image-2.1` 6 张）传 `reference_images` 按序喂槽，单图也可以直接传 `image`（等价第 1 张）。输出尺寸跟随输入图（klein 缩放到 1MP；qwen 按官方默认不做重采样，直接跟随第 1 张参考图），此时 `size` 不生效 —— `qwen-image-2.1` 是**文生与编辑同一支**，一张参考图都不传就是纯文生，那一支才用 `size`。
@@ -304,7 +304,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 
 ## 权重清单（内置工作流的全部依赖）
 
-**本仓库不包含任何权重文件**（体积与许可原因）。内置的 11 个工作流共引用 **19 个**权重文件，合计约 **116 GB**（图像档约 49 GB / 视频档约 67 GB）；下面两张清单表共 **22 行**，另 3 行是**当前无内置工作流引用**的 LoRA（2 个 Acc LoRA + 1 个 hyperflow LoRA），仅作参考，计入则约 123 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入上列统计。）
+**本仓库不包含任何权重文件**（体积与许可原因）。内置的 11 个工作流共引用 **18 个**权重文件，合计约 **105 GB**（图像档约 49 GB / 视频档约 56 GB）；下面两张清单表共 **24 行**，另 6 行是**当前无内置工作流引用**的参考项（2 个旧底模、1 个 w6a8 hybrid、2 个 Acc LoRA、1 个 hyperflow LoRA），仅作参考，计入则约 160 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入上列统计。）
 
 这些文件基本都在 **HuggingFace 的 Comfy-Org 官方仓库**里（少数为模型原厂或社区仓库，已在表中标注）。国区建议把端点换成镜像，repo ID 与 repo 内路径完全一致：
 
@@ -358,12 +358,14 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 - Qwen-Image 2.1 的文本编码器是 `qwen3vl_8b_int8_convrot.safetensors`，与 klein 用的 `qwen3vl_8b_fp8_scaled.safetensors` **同名不同文件、不同仓库**，别互相顶替 —— 跑哪支就下哪支。同仓库里另有 `qwen3.5_9b_qwen_image_2.1_pe_t2i.int8_convrot.safetensors` / `..._pe_i2i...` 一路「PE」编码器，内置工作流**不用**它。
 - 想省显存可以换更小的量化版（`nvfp4` / `pruned_int8_convrot` 等，同仓库同目录下有），但**要同步改工作流 JSON 里的文件名**。
 
-### 视频档（11 行：8 个内置引用 + 3 个参考项，约 67 GB）
+### 视频档（13 行：7 个内置引用 + 6 个参考项，约 56 GB）
 
 | 文件 | 目标目录 | 体积 | 下载源（HF repo） | repo 内路径 |
 |---|---|---|---|---|
-| `minimax_h3_fl2va_pruned_w6a8.safetensors` | `diffusion_models/` | 15.98 GB | `Comfy-Org/MiniMax-H3` | `diffusion_models/` |
-| `minimax_h3_ref2va_pruned_w6a8.safetensors` | `diffusion_models/` | 15.98 GB | `Comfy-Org/MiniMax-H3` | `diffusion_models/` |
+| `minimax_h3_hybrid_fl2va_ref2va_b25-49-int8.safetensors` | `diffusion_models/` | 20.97 GB | `smhfacct/Minimax-H3-fl2va-ref2va-hybrid-models` | 根目录 |
+| `minimax_h3_hybrid_fl2va_ref2va_b25-49_w6a8.safetensors` | `diffusion_models/` | 15.98 GB | `binglingzhimeng/minimax_h3_hybrid_fl2va_ref2va_b25-49_w6a8` | 根目录（**参考项**：8GiB 机器用 `device_weights.yaml` 覆盖，或本机由两份 w6a8 底模拼装） |
+| `minimax_h3_fl2va_pruned_w6a8.safetensors` | `diffusion_models/` | 15.98 GB | `Comfy-Org/MiniMax-H3` | `diffusion_models/`（**参考项**：已被 hybrid 取代，留作回滚 A/B） |
+| `minimax_h3_ref2va_pruned_w6a8.safetensors` | `diffusion_models/` | 15.98 GB | `Comfy-Org/MiniMax-H3` | `diffusion_models/`（**参考项**：已被 hybrid 取代，留作回滚 A/B） |
 | `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` | `text_encoders/` | 27.14 GB | `Comfy-Org/MiniMax-H3` | `text_encoders/` |
 | `minimax_h3_video_vae_int8_convrot.safetensors` | `vae/` | 2.81 GB | `Comfy-Org/MiniMax-H3` | `vae/` |
 | `minimax_h3_audio_vae_fp32.safetensors` | `vae/` | 0.61 GB | `Comfy-Org/MiniMax-H3` | `vae/` |
@@ -447,10 +449,10 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 ### 第三方节点依赖
 
 > 这些工作流用到的节点**除 lift 系列（`minimax-h3-lift*`）、基础两支 `minimax-h3` / `-edit`（低显存分块节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。
-> lift 系列额外依赖一个第三方节点包：`comfyui-SelfLift`（`SelfLiftH3LatentLift` + `latent_upscale_models/` 下的上采样权重）。
-> 需要 KJNodes 的 `MiniMaxChunkFeedForward` 做 FFN 分块：**全部视频档**。低显存都走两级 —— 注意力档 → `MiniMaxChunkFeedForward`：`minimax-h3` 的注意力档是 **`Spark-H3`（本机自编 SM86 轮子，依赖 `custom_nodes/ComfyUI-Spark-H3` + 打了 Spark 补丁的 comfy-kitchen）**，其余三支（`-edit` / `-lift` / `-lift-edit`）仍是 `BlockSparseAttention` 的 `sol-attn`（training-free，约保留 16% key block）。
+> lift 系列额外依赖一个第三方节点包：`comfyui-SelfLift`（SelfLift 两支用 `SelfLiftH3Sampler` + `latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safetensors`）。
+> 需要 KJNodes 的 `MiniMaxChunkFeedForward` 做 FFN 分块：**全部视频档**。低显存都走两级 —— 注意力档 → `MiniMaxChunkFeedForward`：**四支视频档统一 `Spark-H3`**（`MiniMaxH3SparkAttentionSM86`，依赖 `custom_nodes/ComfyUI-Spark-H3` + 打了 Spark 补丁的 comfy-kitchen）；Spark v0.1.3 起用 `mode` 取代 `enabled`，落点见下面的 `attention` 说明。
 > ⛔ **不要在视频档里接 KJNodes 的 `MiniMaxLowVRAMAttention`**：它替换 `block.forward`，而 `BlockSparseAttention` 的 block patch 会无条件补传 `attention=` 关键字（`comfy/ldm/minimax/model.py`），签名对不上 ⇒ 实测 `TypeError`。两者**硬互斥**，因此 base 四支原先的 LowVRAM 节点已于 2026-09-21 撤除（`head_chunks` 档位值随之失去消费者，保留在表里仅为复原方便）。
-> 稀疏节点的参数（`tau` / `min_tokens` / `dense_blocks` …）不在可注入白名单；其中 `tau` 的键名是 `selection.tau`（含点号），按 `.` 切分的路径解析寻址不到，要调只能改工作流 JSON 再 `/admin/reload`。**但「更快 ↔ 更高质量」这一档有正式请求参数**：`attention`（`sparse` 默认 / `dense` 关闭稀疏换致密画质）。落点按模型分：`minimax-h3` 落到 Spark 节点的 `enabled`（`dense` = 节点原样透传模型），其余三支落到 `BlockSparseAttention.start_percent`（`1.0` 因 `percent_to_sigma(1.0) = 0` 而等效全程致密）。**这一档只给 base 四支**（`minimax-h3` / `-edit` / `-lift` / `-lift-edit`）；其它模型传 `attention` 会报 400。
+> 稀疏节点的参数（`tau` / `min_tokens` / `dense_blocks` …）不在可注入白名单；其中 `tau` 的键名是 `selection.tau`（含点号），按 `.` 切分的路径解析寻址不到，要调只能改工作流 JSON 再 `/admin/reload`。**但「更快 ↔ 更高质量」这一档有正式请求参数**：`attention`（`sparse` 默认 / `dense` 关闭稀疏换致密画质）。落点：H3 四支全落 Spark 节点的 `mode`（`sparse`→`fidelity`，`dense`→`dense`，后者让节点完全旁路 Spark）。**这一档只给 H3 四支**（`minimax-h3` / `-edit` / `-lift` / `-lift-edit`）；其它模型传 `attention` 会报 400。
 > 全部视频档的 `ModelAttentionBackend` 统一用 `comfy kitchen attention`（comfy_kitchen 的 INT8 实现，省显存）。要换 `pytorch attention` 得改工作流模板里那个节点的值；它不在 `bindings` 白名单里，但**可以**用 `workflow_overrides` 在运行时点改（`{"156.inputs.attention": "pytorch attention"}`）—— `workflow_overrides` 是任意路径注入，与白名单无关。
 > ⚠️ **comfy_kitchen 版本下限：`>= 0.2.37`**。`0.2.36` 的 w4a8 反量化 kernel 有 stack-overflow 回归 —— 量化权重叠加 LoRA patch（`turbo_lora`）时采样第 2 步直接杀死进程（2026-10-08 实测 2/2 复现，`0.2.37` 修复）；`0.2.35` 及更早则不支持 ref2va 权重里的 `K=8064` 层（采样即报 `ValueError: K=8064 must be divisible by 16…`）。两端都不行的只有 `0.2.36`，钉住 `0.2.37` 或更高。
 > 上述权重多为 `int8_convrot` 量化版，只在你已具备同名权重的机器上开箱即用；换成自己的模型时，同步改工作流 JSON 里的文件名即可。

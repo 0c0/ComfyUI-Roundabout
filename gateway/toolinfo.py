@@ -115,7 +115,7 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
 
     判定一律走 `ModelSpec` 的派生属性（`binds` / `supports_batch` / `is_video` /
     `references`），不重新解析 yaml —— 这些属性本身就是 pipeline 的判据，两处各写一遍
-    必然漂移。特别地，`attention` 的落点按模型分两种内部键（`spark_enabled` 布尔 /
+    必然漂移。特别地，`attention` 的落点按模型分两种内部键（`spark_mode` 枚举字符串 /
     `sparse_start_percent` 数值，公开枚举的翻译在 `params.resolve_attention`），
     不存在名为 `attention` 的 binding。
 
@@ -185,7 +185,7 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
     if name == "attention":
         if not spec.is_video:
             return False, "video-only"
-        if spec.binds("sparse_start_percent") or spec.binds("spark_enabled"):
+        if spec.binds("sparse_start_percent") or spec.binds("spark_mode"):
             return True, None
         return False, "model has no attention tier (weights are always sparse if sparse at all)"
     if name == "scale":
@@ -379,7 +379,7 @@ def _surface() -> dict[str, Any]:
         "attention": {
             "choices": sorted(ATTENTION_SPARSE_START),
             "note": "sparse 更快更省显存，dense 换回致密画质；落点按模型 bindings 分派"
-                    "（`spark_enabled` 布尔或 `sparse_start_percent` 数值），未声明 binding 的模型传了报 400",
+                    "（`spark_mode` 或 `sparse_start_percent`），未声明 binding 的模型传了报 400",
         },
         "response_format": ["b64_json", "url", "file", "path"],
         "audio": {

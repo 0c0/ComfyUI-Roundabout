@@ -540,17 +540,25 @@ async def generate_video_tool(
     steps: int | None = None,
     turbo_lora: float | None = Field(
         None,
-        description="Turbo LoRA 强度开关（仅 minimax-h3 / minimax-h3-edit）：0=关（默认）；1.0=8 步蒸馏 Turbo，需配 steps≈8。",
+        description="Turbo LoRA 强度（H3 视频档）：0=关；1.0=8 步蒸馏 Turbo，需配 steps≈8。minimax-h3 / -edit 默认 0，SelfLift 两支（-lift / -lift-edit）默认 1.0。",
     ),
     output_size: str = Field(
         "",
-        description="期望输出尺寸（仅 minimax-h3-lift / -lift-edit，如 \"1440p-16:9\"）：网关反推放大倍率，与 scale 互斥；其它模型传了报 400。",
+        description="期望输出尺寸（SelfLift 两支，如 \"1440p-16:9\"）：等价于 `size`——SelfLift 的输出就是目标尺寸，没有放大倍率。",
     ),
     scale: float | None = Field(
         None, ge=1.0, le=4.0,
-        description="输出 = 768p 画布 × scale（默认 1.875 → 2520x1440）；仅 minimax-h3-lift / -lift-edit，其它模型传了报 400。",
+        description="【已下线】lift 的放大倍率随 SelfLift 移除：输出尺寸就是 `size`（`output_size` 等价）。传了报 400。",
+    ),
+    vpack_ratio: str = Field(
+        "",
+        description="参考视频 latent 压缩档（仅 edit 两支）：auto（默认，带参考视频时 2/5、否则 0/5 直通）/ 0/5 / 1/5 / 2/5 / 3/5。只压参考视频时间维；无参考视频时非 0/5 报 400。",
     ),
     attention: str = "",  # "sparse"（默认，稀疏加速）| "dense"（关闭稀疏，画质优先）；仅 base 四支
+    highres_tiling: bool | None = Field(
+        None,
+        description="高分辨率阶段分块（仅 lift 两支，默认 false）：true 按剩余显存切 1–8 块降峰值显存，8 GiB 上更稳；实验性，会改变画质与耗时。",
+    ),
     background: str = "",  # "pending" 触发异步
     response_format: str = "",
     filename_prefix: str = "",
@@ -573,10 +581,12 @@ async def generate_video_tool(
         turbo_lora=turbo_lora,
         output_size=output_size or None,
         scale=scale,
+        vpack_ratio=vpack_ratio or None,  # type: ignore[arg-type]
         background=background or None,
         response_format=response_format or None,  # type: ignore[arg-type]
         filename_prefix=filename_prefix or None,
         attention=attention or None,  # type: ignore[arg-type]
+        highres_tiling=highres_tiling,
     )
     return await _handle_video(req, ctx)
 

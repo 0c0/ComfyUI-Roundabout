@@ -257,7 +257,10 @@ def _round32(v: int) -> int:
 
 
 def resolve_output_scale(output_size: str, in_w: int, in_h: int, spec: ModelSpec) -> float:
-    """由期望输出尺寸反推 lift 放大倍率。
+    """【已无调用点，保留给回滚旧 lift 模板用】由期望输出尺寸反推 lift 放大倍率。
+
+    自 SelfLift 上线后（1.48.0）lift 两支不再有 `scale` 绑定：输出尺寸就是 `size`，
+    放大倍率概念随 latent-lift 阶段一起移除。保留此函数是为了万一回滚旧模板。
 
     lift 的 latent 上采样是**等比**的（单一 scale 因子），输出保持画布宽高比：
     scale = 输出短边 / 画布短边，长边随画布比例走（预设键两边比例若与画布不一致，
@@ -294,25 +297,25 @@ def resolve_output_scale(output_size: str, in_w: int, in_h: int, spec: ModelSpec
 # 约为「换种子内容噪声」的 1/3），代价端是耗时（8 步 768p 实测 0.76~0.79x）。所以把它做成
 # 用户可选的「更快 ↔ 更高质量」档。对外同一个 `attention: sparse|dense`，落点按模型分两种：
 #
-#   * minimax-h3（159 = Spark-H3 SM86）：翻译成 Spark 节点的 `enabled`（sparse→True /
-#     dense→False）。dense 档 = 节点原样透传模型，走工作流里本来的致密注意力。
-#   * edit / lift / lift-edit（159 = BlockSparseAttention）：翻译成 `start_percent`
-#     （sparse→0.2 / dense→1.0）。
+#   * minimax-h3 全系（159 = Spark-H3 SM86）：翻译成 Spark 节点的 `mode`——sparse→`fidelity`
+#     （节点默认的 20% dense 预热），dense→`dense`（节点完全旁路 Spark，走致密注意力）。
+#     ⚠️ v0.1.3 起 Spark 用 `mode` 取代了 `enabled`，后者已不在节点签名里（写入被静默丢弃）。
+#   * 若某档 159 = BlockSparseAttention：翻译成 `start_percent`（sparse→0.2 / dense→1.0）。
 #
 # 1.0 为什么等效「关闭稀疏」：apply_block_sparse_attention 把 start_percent 过
 # percent_to_sigma()，而所有 percent_to_sigma 实现里 `percent >= 1.0` 一律返回 0.0；
 # SparseAttnPatch.dense_reason() 判 `sigma > sigma_start` 即走 dense ⇒ 每个采样步
 # （sigma 恒 > 0）都落在窗外 ⇒ 全程致密。
 ATTENTION_SPARSE_START: dict[str, float] = {"sparse": 0.2, "dense": 1.0}
-ATTENTION_SPARK_ENABLED: dict[str, bool] = {"sparse": True, "dense": False}
+ATTENTION_SPARK_MODE: dict[str, str] = {"sparse": "fidelity", "dense": "dense"}
 
 
-def resolve_attention(attention: str, *, spark: bool = False) -> float | bool:
-    """把对外 `attention` 档位翻译成落点值（`spark=True` 时返回 Spark 的 enabled 布尔）。
+def resolve_attention(attention: str, *, spark: bool = False) -> float | str:
+    """把对外 `attention` 档位翻译成落点值（`spark=True` 时返回 Spark 节点的 `mode` 字符串）。
 
     非法值直接报 400，不回落 —— 静默回落会让「参数看起来支持、实际无效」难以定位。
     """
-    table = ATTENTION_SPARK_ENABLED if spark else ATTENTION_SPARSE_START
+    table = ATTENTION_SPARK_MODE if spark else ATTENTION_SPARSE_START
     key = attention.strip().lower()
     try:
         return table[key]

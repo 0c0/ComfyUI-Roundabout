@@ -64,16 +64,32 @@ files:
     size_gb: 0.44
 
   # ---------- 视频档 ----------
+  # hybrid b25-49 = fl2va 骨架 + blocks 25-49 的 adaln_proj 取自 ref2va：
+  # 一个文件同时覆盖 T2VA 与参考任务，省掉两份底模（参考任务 E60 逐点对齐；T2VA 画质同级
+  # 但同 seed 轨迹会变，E60b）。仓库默认 int8；8GiB 机器用 device_weights.yaml 换 w6a8。
+  - file: minimax_h3_hybrid_fl2va_ref2va_b25-49-int8.safetensors
+    dir: diffusion_models
+    repo: smhfacct/Minimax-H3-fl2va-ref2va-hybrid-models
+    path: minimax_h3_hybrid_fl2va_ref2va_b25-49-int8.safetensors
+    size_gb: 20.97
+  - file: minimax_h3_hybrid_fl2va_ref2va_b25-49_w6a8.safetensors
+    dir: diffusion_models
+    repo: binglingzhimeng/minimax_h3_hybrid_fl2va_ref2va_b25-49_w6a8
+    path: minimax_h3_hybrid_fl2va_ref2va_b25-49_w6a8.safetensors
+    size_gb: 15.98
+    referenced: false   # 本机覆盖用（device_weights.yaml）；也可零下载由两份 w6a8 底模拼装
   - file: minimax_h3_fl2va_pruned_w6a8.safetensors
     dir: diffusion_models
     repo: Comfy-Org/MiniMax-H3
     path: diffusion_models/minimax_h3_fl2va_pruned_w6a8.safetensors
     size_gb: 15.98
+    referenced: false   # 已被 hybrid 取代；留作回滚 A/B 对照（E60/E60b），不再默认下载
   - file: minimax_h3_ref2va_pruned_w6a8.safetensors
     dir: diffusion_models
     repo: Comfy-Org/MiniMax-H3
     path: diffusion_models/minimax_h3_ref2va_pruned_w6a8.safetensors
     size_gb: 15.98
+    referenced: false   # 已被 hybrid 取代；留作回滚 A/B 对照（E60/E60b），不再默认下载
   - file: qwen3vl_32b_minimax_h3_int8_convrot.safetensors
     dir: text_encoders
     repo: Comfy-Org/MiniMax-H3

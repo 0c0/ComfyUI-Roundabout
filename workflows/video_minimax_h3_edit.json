@@ -124,8 +124,8 @@
         0
       ],
       "conditioning": [
-        "136",
-        0
+        "970",
+        1
       ]
     },
     "class_type": "BasicGuider",
@@ -135,7 +135,7 @@
   },
   "127": {
     "inputs": {
-      "unet_name": "minimax_h3_ref2va_pruned_w6a8.safetensors",
+      "unet_name": "minimax_h3_hybrid_fl2va_ref2va_b25-49-int8.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
@@ -455,7 +455,7 @@
     "inputs": {
       "attention": "comfy kitchen attention",
       "model": [
-        "160",
+        "970",
         0
       ]
     },
@@ -466,8 +466,8 @@
   },
   "158": {
     "inputs": {
-      "chunks": 1,
-      "seq_threshold": 262144,
+      "chunks": 6,
+      "seq_threshold": 4096,
       "model": [
         "159",
         0
@@ -484,7 +484,6 @@
         "156",
         0
       ],
-      "enabled": true,
       "steps": 20,
       "warmup_mode": "warmup_ratio",
       "warmup_ratio": 0.2,
@@ -525,6 +524,20 @@
         "127",
         0
       ]
+    }
+  },
+  "970": {
+    "class_type": "SparkVPack",
+    "inputs": {
+      "model": [
+        "160",
+        0
+      ],
+      "positive": [
+        "136",
+        0
+      ],
+      "compression_ratio": "0/5"
     }
   }
 }

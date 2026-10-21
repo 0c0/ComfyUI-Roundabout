@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.47.1` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.48.1` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -218,7 +218,7 @@ MCP 客户端配置（`mcp.json`）：
 
 > **同步回执也带 `size`，而且它是实测值**：图像档读产物字节头（PNG/JPEG/GIF/WebP，产物本就
 > 在内存里，零额外 IO），视频档由工作流内的 `RoundaboutSizeProbe` 节点在解码后把实测宽高随
-> `/history` 报回；两者都取不到才回落到「画布 × `scale`」的换算。**报的是实际落盘的像素尺寸，
+> `/history` 报回；两者都取不到才回落到画布本身（lift 支的画布就是输出尺寸）。**报的是实际落盘的像素尺寸，
 > 不是请求参数的回读** —— 于是两种静默情况都能在回执里当场看出来：漏传 `size`（落模型默认）
 > 与编辑档 `size` 本就不生效（输出跟随参考图）。
 
@@ -273,10 +273,11 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `duration` | float? | 时长 1–15 秒 |
 | `fps` | int? | 帧率 |
 | `num_frames` | int? | 总帧数（部分工作流用帧数而非时长） |
-| `attention` | `"sparse"`\|`"dense"`? | **注意力档位**（更快 ↔ 更高质量，仅 base 五支 H3 视频档）：`sparse`（默认，块稀疏加速，更快、更省显存；画质与致密高度一致、差异只在高频细节）/ `dense`（关闭稀疏，画质优先，耗时回满）。不传 = 保持模板默认（稀疏）。传了报 400（其它模型同样报 400）|
-| `output_size` | string? | **期望输出尺寸**（仅 `minimax-h3-lift` / `-lift-edit`）：格式同 `size`，网关反推放大倍率 `scale = 输出短边 / 画布短边`（输出保持画布宽高比，比例偏差 >5% 报 400 —— 那是换构图不是放大）。与 `scale` 互斥；其它模型传了报 400（输出尺寸就是 `size`）。实际输出尺寸见响应 `size` 回显 |
-| `scale` | float? | **放大倍率**（仅 `minimax-h3-lift` / `-lift-edit`）：输出 = 画布 × scale，默认 1.875 → 2520x1440。与 `output_size` 互斥；其它模型传了报 400 |
-| `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"910.inputs.rho": 0.3}`。`minimax-h3-lift` 的可调项：`910.inputs.rho`（SelfLift-zero 像素锚阻尼，默认 0=纯学习 lift 纹理最强；调高会压高频细节）、`910.inputs.w_min`/`w_max`（阻尼强度上下限，默认 0.5/1.0）。放大倍率 `scale` 已是正式请求参数，不必走透传 |
+| `attention` | `"sparse"`\|`"dense"`? | **注意力档位**（更快 ↔ 更高质量，H3 视频四支）：`sparse`（默认，Spark 稀疏加速，更快、更省显存；画质与致密高度一致、差异只在高频细节）/ `dense`（关闭稀疏，画质优先，耗时回满）。落点是 Spark 节点的 `mode`（`sparse`→`fidelity`、`dense`→`dense`）。不传 = 保持模板默认（稀疏）。其它模型传了报 400 |
+| `output_size` | string? | **期望输出尺寸**（仅 SelfLift 两支 `minimax-h3-lift` / `-lift-edit`）：格式同 `size`，语义也同 `size` —— SelfLift 的输出就是目标尺寸，没有放大倍率。其它模型传了报 400（它们的输出尺寸就是 `size`）。实际输出尺寸见响应 `size` 回显 |
+| `scale` | float? | **已下线**：latent-lift 的放大倍率随 SelfLift 一起移除（输出尺寸 = `size`）。现在任何模型传 `scale` 都报 400，改用 `size` / `output_size`；内部低分辨率前缀用 `lowres_scale` 调 |
+| `highres_tiling` | bool? | **高分辨率阶段分块**（仅 SelfLift 两支 `minimax-h3-lift` / `-lift-edit`）：`true` 让升采样后的高分辨率段按剩余显存切 1–8 块，8 GiB 上峰值显存明显下降、更不容易崩；**实验性**——节点只保留第一块的音频预测，画质与耗时都会变，故默认 `false`、需显式开。其它模型传了报 400 |
+| `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"970.inputs.compression_ratio": "3/5"}`。SelfLift 两支：`lowres_scale` / `transition_step` / `highres_tiling` 已是正式参数，其余如 `125.inputs.rho`（像素锚阻尼，默认 0.15）、`125.inputs.w_min`/`w_max`（默认 1.0/1.0）走透传 |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |
 | `image` | string\|string[]? | 图生视频输入（视频档不收，传了 400 并指路：帧用 `first_frame`/`last_frame`，参考图用 `reference_images`） |
 | `first_frame` | string? | **首帧图**（声明 frame_params 的模型：`minimax-h3` / `-lift`）：成为输出第 1 帧，按画布 size 做 **cover 等比铺满 + 居中裁剪**（不变形）；支持 base64/URL/本地路径。无帧槽的模型传了报 400。⚠️ **模型侧跟随度（09-24 实测）**：base 系 keyframe 需要**足够步数**（8 步不跟随、30 步完美跟随，lift 产物为证）—— 要首帧严格跟随：base 系 ≥20 步即可（09-28 实测默认 20 步下 f0 与源图 cover 裁剪对位良好；8 步不跟随、30 步完美跟随为 09-24 实测） |
@@ -291,7 +292,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 > **外部来源的参考素材会被复制进 ComfyUI 的 `input/`**：`http(s)` / `dataURL` / `base64`，以及**不在 `input/` 目录下**的本地路径（含 `output/`、`temp/`）都要先转存；命名形如 `{请求id}_ref{img|vid|aud}_{槽位序号}.{ext}`（如 `18ae9470d11a-0_refvid_0.mp4`，其中 `18ae9470d11a-0` 是 `请求id-批次号`）。**已经在 `input/` 内的文件免转存、沿用原名**。输入图与 mask 同理，命名为 `{请求id}_src.{ext}` / `{请求id}_mask.{ext}`。这些副本会留在 `input/` 里，需要时自行清理。
 
-**同步响应**（200）：`{ "created", "data":[{ "url" }], "seed", "references":[...], "size":"2528x1440" }`（`size` = 实际输出尺寸，取证口径见上文图像响应里的说明 —— 工作流内尺寸探针实测，探针缺失才回落 latent × scale 换算）。
+**同步响应**（200）：`{ "created", "data":[{ "url" }], "seed", "references":[...], "size":"1376x768" }`（`size` = 实际输出尺寸，取证口径见上文图像响应里的说明 —— 工作流内尺寸探针实测，探针缺失才回落画布）。
 
 **异步响应**（200）：
 
@@ -353,7 +354,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
   "id": "<task_id>", "object": "image_generation.task", "status": "completed",
   "created_at": 1700000000, "model": "minimax-h3-lift",
   "output": { "data": [ { "url": "http://host:8188/v1/videos/files/xxxx.mp4" } ] },
-  "size": "2528x1440"
+  "size": "1376x768"
 }
 ```
 
@@ -390,9 +391,9 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | **`qwen-image-2.1-turbo`** | image | text-to-image / **image-to-image** | 同 `qwen-image-2.1` 的 turbo 版：底模 int8 + 官方抽取 turbo LoRA + ManualSigmas 焊死官方 8 步落点（euler / CFG=1）。默认画布 2048×2048。⚠️ steps/cfg/sampler/scheduler 对本档无效；`turbo_lora`（默认 1.0）别设 0 |
 | **`utility-birefnet-remove-background`** | image | **image-to-image**（promptless） | 去背景独立工具，无 prompt，透明 PNG；专属端点 `/v1/images/remove-background` |
 | `minimax-h3` | video | text-to-video / first-last-frame | H3 首尾帧生视频（base 20 步）：`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@20（网关无 `quality` 分档 —— 它只能表达 size + steps，与直接传参等价） |
-| `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，20 步（支持图/视频/音频参考） |
-| `minimax-h3-lift` | video | text-to-video / first-last-frame | base 骨架 + 确定性放大：`size` = 768p 第一采画布（默认 1344x768），latent lift × `scale`（默认 1.875 → 输出 2520x1440）；`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）；分块参数按本机显存自动分档 |
-| `minimax-h3-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 edit 骨架（Ref2VA 权重，20 步）；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
+| `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，20 步（支持图/视频/音频参考）；带参考视频时默认走 VPack 2/5（`vpack_ratio` 可调） |
+| `minimax-h3-lift` | video | text-to-video / first-last-frame | base 骨架 + SelfLift 一体化精修（8 步 turbo）：`size` 就是输出尺寸（默认 1344x768），内部先按 `lowres_scale`（默认 0.75）跑低分前缀、再一次性升采样到全分辨率，NFE 与普通 8 步档相同、构图零重掷；`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）；`sampler_name` 必须 `euler` |
+| `minimax-h3-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 edit 骨架（ref2va 参考条件 + VPack）；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
 | **`qwen3-tts-voice-design`** | audio | text-to-speech | Qwen3-TTS 1.7B VoiceDesign：文本转语音 + 音色设计（见 [5.3 音频生成](#53-音频生成tts--音色设计)）。端点 `POST /v1/audio/speech`；依赖 custom node TTS-Audio-Suite |
 
 > 完整别名与绑定关系见 `models.yaml`；模型清单与用途对照也见 [README.md](README.md#内置模型)。
@@ -479,7 +480,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `generate_image` | 文生图；支持 `negative_prompt`/`seed`/`size`/`steps`/`cfg`/`workflow_overrides`(JSON 字符串)/`filename_prefix`/`mode`；返回 OpenAI 风格响应（含 `seed` 回显，url 已绝对化）；视频模型自动转视频链路。**编辑图片不要用本工具**（用 `edit_image` / `remove_background`） |
 | `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写）；**多图参考**传 `reference_images`（klein 4 槽 / qwen 6 槽）；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
 | `generate_speech` | 文本转语音 / 音色设计：`input`（要朗读的文本）+ `instructions`（音色描述，不给用模板内置描述）；参数 `model`(默认 `qwen3-tts-voice-design`)/`voice`/`language`/`seed`/`response_format`(交付形态，非编码)/`filename_prefix`/`background`；返回 `{created, data:[{url}], seed, task_id}` |
-| `generate_video` | 文生视频 / 首尾帧生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`first_frame`/`last_frame`/`reference_images|videos|audios`（按模型槽位生效，帧与参考可同传）/`steps`/`attention`/`output_size`/`scale`（仅 lift，互斥）/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
+| `generate_video` | 文生视频 / 首尾帧生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`first_frame`/`last_frame`/`reference_images|videos|audios`（按模型槽位生效，帧与参考可同传）/`steps`/`attention`/`output_size`（`size` 同义，仅 lift）/`scale`（已下线，传了 400）/`vpack_ratio`（仅 edit 两支）/`highres_tiling`（仅 lift 两支）/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
 | `remove_background` | 图片去背景（BiRefNet，独立工具，无需提示词）；参数 `image`(本地路径/URL/dataURL/base64)、`response_format`(默认 url)、`filename_prefix`。**推荐改用 `process_image(action="remove_background")`** |
 | `process_image` | 图像处理统一入口，按 `action` 分发：`upscale`=SeedVR2 7B Int8 放大（`multiplier` 1-8 默认 4，`color_correction` none/lab/wavelet/adain）；`remove_background`=BiRefNet 去背景；`segment`=SAM3 文本提示抠图（需 `prompt`=目标描述，`threshold` 默认 0.5）；通用参数 `image` / `response_format` / `filename_prefix` |
 | `get_task` | 查询异步任务状态与产物（含 `prompt_id`、是否有工作流快照、`output`、`error`）；同步回执里的 `task_id` 同样能查 |

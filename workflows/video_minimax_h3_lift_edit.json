@@ -52,7 +52,7 @@
   "122": {
     "inputs": {
       "samples": [
-        "910",
+        "125",
         0
       ],
       "vae": [
@@ -90,14 +90,27 @@
     }
   },
   "125": {
+    "class_type": "SelfLiftH3Sampler",
     "inputs": {
-      "noise": [
-        "129",
+      "model": [
+        "158",
         0
       ],
-      "guider": [
-        "126",
+      "positive": [
+        "970",
+        1
+      ],
+      "negative": [
+        "300",
         0
+      ],
+      "vae": [
+        "119",
+        0
+      ],
+      "latent_image": [
+        "136",
+        1
       ],
       "sampler": [
         "123",
@@ -107,35 +120,21 @@
         "124",
         0
       ],
-      "latent_image": [
-        "136",
-        1
-      ]
-    },
-    "class_type": "SamplerCustomAdvanced",
-    "_meta": {
-      "title": "自定义采样器（高级）"
-    }
-  },
-  "126": {
-    "inputs": {
-      "model": [
-        "158",
-        0
-      ],
-      "conditioning": [
-        "136",
-        0
-      ]
-    },
-    "class_type": "BasicGuider",
-    "_meta": {
-      "title": "基本引导器"
+      "seed": 555,
+      "cfg": 1.0,
+      "transition_step": 5,
+      "lowres_scale": 0.75,
+      "rho": 0.15,
+      "w_min": 1.0,
+      "w_max": 1.0,
+      "upscaler_model": "minimax_h3_latent_upscaler_3d_fp16.safetensors",
+      "highres_tiling": false,
+      "upscaler_unload": true
     }
   },
   "127": {
     "inputs": {
-      "unet_name": "minimax_h3_ref2va_pruned_w6a8.safetensors",
+      "unet_name": "minimax_h3_hybrid_fl2va_ref2va_b25-49-int8.safetensors",
       "weight_dtype": "default"
     },
     "class_type": "UNETLoader",
@@ -455,7 +454,7 @@
     "inputs": {
       "attention": "comfy kitchen attention",
       "model": [
-        "160",
+        "970",
         0
       ]
     },
@@ -466,8 +465,8 @@
   },
   "158": {
     "inputs": {
-      "chunks": 1,
-      "seq_threshold": 262144,
+      "chunks": 6,
+      "seq_threshold": 4096,
       "model": [
         "159",
         0
@@ -480,23 +479,27 @@
   },
   "159": {
     "inputs": {
-      "selection": "sol-attn",
-      "selection.tau": 1.3,
-      "start_percent": 0.2,
-      "end_percent": 1,
-      "dense_blocks": "",
-      "min_tokens": 12288,
-      "extra_tokens": 256,
-      "sink_conditioning": "exact_kv_and_rows",
-      "verbose": false,
       "model": [
         "156",
         0
-      ]
+      ],
+      "steps": 8,
+      "warmup_mode": "warmup_ratio",
+      "warmup_ratio": 0.0,
+      "warmup_steps": 0,
+      "topk_mode": "topk_ratio",
+      "topk_ratio": 0.2,
+      "topk_blocks": 228,
+      "mode": "speed",
+      "dense_layers": 0,
+      "min_tokens": 12288,
+      "strict": true,
+      "tail_granularity": "query",
+      "reblock_layout": "q_reuse_k"
     },
-    "class_type": "BlockSparseAttention",
+    "class_type": "MiniMaxH3SparkAttentionSM86",
     "_meta": {
-      "title": "块稀疏注意力(sol-attn)"
+      "title": "Spark-H3 稀疏注意力(SM86)"
     }
   },
   "950": {
@@ -522,41 +525,25 @@
       ]
     }
   },
-  "900": {
-    "class_type": "ImageFromBatch",
+  "970": {
+    "class_type": "SparkVPack",
     "inputs": {
-      "image": [
-        "122",
+      "model": [
+        "160",
         0
       ],
-      "batch_index": 60,
-      "length": 1
+      "positive": [
+        "136",
+        0
+      ],
+      "compression_ratio": "0/5"
     }
   },
-  "901": {
-    "class_type": "SaveImage",
+  "300": {
+    "class_type": "ConditioningZeroOut",
     "inputs": {
-      "images": [
-        "900",
-        0
-      ],
-      "filename_prefix": "video/png/H3_Lift"
-    }
-  },
-  "910": {
-    "class_type": "SelfLiftH3LatentLift",
-    "inputs": {
-      "latent_image": [
-        "125",
-        0
-      ],
-      "upscaler_model": "minimax_h3_latent_upscaler_3d_fp16.safetensors",
-      "scale": 1.875,
-      "rho": 0.0,
-      "w_min": 0.5,
-      "w_max": 1.0,
-      "vae": [
-        "119",
+      "conditioning": [
+        "136",
         0
       ]
     }
