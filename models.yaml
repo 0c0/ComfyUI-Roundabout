@@ -1,4 +1,4 @@
-default_model: z-image-turbo
+default_model: qwen-image-2.1
 defaults:
   params:
     negative_prompt: lowres, worst quality, blurry, jpeg artifacts, watermark, text,
@@ -59,214 +59,6 @@ defaults:
     natural:
       prompt_suffix: natural lighting, true-to-life colors, photographic, subtle tones
 models:
-  z-image:
-    workflow: image_z_image_base.json
-    description: Z-Image base —— S3-DiT（单流扩散 Transformer）完整模型，30 步高精度
-    mode: image
-    capabilities:
-    - text-to-image
-    output_node: '95'
-    timeout: 300
-    defaults:
-      width: 1024
-      height: 1024
-      steps: 30
-      cfg: 3
-      sampler_name: res_multistep
-      scheduler: simple
-      denoise: 1
-    bindings:
-      filename_prefix: 95.inputs.filename_prefix
-      prompt: 76:67.inputs.text
-      negative_prompt: 76:71.inputs.text
-      seed: 76:69.inputs.seed
-      steps: 76:69.inputs.steps
-      cfg: 76:69.inputs.cfg
-      sampler_name: 76:69.inputs.sampler_name
-      scheduler: 76:69.inputs.scheduler
-      denoise: 76:69.inputs.denoise
-      width: 76:68.inputs.width
-      height: 76:68.inputs.height
-    aliases:
-    - zimage
-    - z_image
-    - z-image-base
-  z-image-turbo:
-    workflow: image_z_image_turbo.json
-    description: Z-Image Turbo —— S3-DiT（单流扩散 Transformer）的 int8 蒸馏版，8 步出图
-    mode: image
-    capabilities:
-    - text-to-image
-    output_node: '9'
-    timeout: 300
-    defaults:
-      width: 1024
-      height: 1024
-      steps: 8
-      cfg: 1
-      sampler_name: res_multistep
-      scheduler: simple
-      denoise: 1
-    bindings:
-      filename_prefix: 9.inputs.filename_prefix
-      prompt: 57:27.inputs.text
-      seed: 57:3.inputs.seed
-      steps: 57:3.inputs.steps
-      cfg: 57:3.inputs.cfg
-      sampler_name: 57:3.inputs.sampler_name
-      scheduler: 57:3.inputs.scheduler
-      denoise: 57:3.inputs.denoise
-      width: 57:13.inputs.width
-      height: 57:13.inputs.height
-    aliases:
-    - zimage-turbo
-    - z_image_turbo
-  boogu-image-base:
-    workflow: image_boogu_image_base.json
-    description: Boogu Image base —— 30 步高质量文生图
-    mode: image
-    capabilities:
-    - text-to-image
-    output_node: '33'
-    timeout: 300
-    defaults:
-      width: 1024
-      height: 1024
-      steps: 30
-      cfg: 4
-      sampler_name: euler
-      scheduler: simple
-      denoise: 1
-    bindings:
-      filename_prefix: 33.inputs.filename_prefix
-      prompt: 34:11.inputs.text
-      negative_prompt: 34:38.inputs.text
-      seed: 34:32.inputs.seed
-      steps: 34:32.inputs.steps
-      cfg: 34:32.inputs.cfg
-      sampler_name: 34:32.inputs.sampler_name
-      scheduler: 34:32.inputs.scheduler
-      denoise: 34:32.inputs.denoise
-      width: 34:8.inputs.width
-      height: 34:8.inputs.height
-    aliases:
-    - boogu-base
-  boogu-image-base-4step:
-    workflow: image_boogu_image_base_4step.json
-    description: Boogu Image base (4-step) —— 4 步快速预览
-    mode: image
-    capabilities:
-    - text-to-image
-    output_node: '33'
-    timeout: 300
-    defaults:
-      width: 1024
-      height: 1024
-      steps: 4
-      cfg: 1
-      sampler_name: lcm
-      scheduler: sgm_uniform
-      denoise: 1
-    bindings:
-      filename_prefix: 33.inputs.filename_prefix
-      prompt: 34:11.inputs.text
-      seed: 34:32.inputs.seed
-      steps: 34:32.inputs.steps
-      cfg: 34:32.inputs.cfg
-      sampler_name: 34:32.inputs.sampler_name
-      scheduler: 34:32.inputs.scheduler
-      denoise: 34:32.inputs.denoise
-      width: 34:8.inputs.width
-      height: 34:8.inputs.height
-  boogu-image-turbo:
-    workflow: image_boogu_image_turbo.json
-    description: Boogu Image Turbo —— int8 蒸馏 4 步出图
-    mode: image
-    capabilities:
-    - text-to-image
-    output_node: '33'
-    timeout: 300
-    defaults:
-      width: 1024
-      height: 1024
-      steps: 4
-      cfg: 1
-      sampler_name: lcm
-      scheduler: sgm_uniform
-      denoise: 1
-    bindings:
-      filename_prefix: 33.inputs.filename_prefix
-      prompt: 34:11.inputs.text
-      seed: 34:32.inputs.seed
-      steps: 34:32.inputs.steps
-      cfg: 34:32.inputs.cfg
-      sampler_name: 34:32.inputs.sampler_name
-      scheduler: 34:32.inputs.scheduler
-      denoise: 34:32.inputs.denoise
-      width: 34:8.inputs.width
-      height: 34:8.inputs.height
-    aliases:
-    - boogu-turbo
-  boogu-image-edit:
-    workflow: image_boogu_image_edit_base.json
-    description: Boogu Image Edit —— 单图编辑，擅长改写/添加图像内的文字，30 步（必须传 image）
-    mode: image
-    capabilities:
-    - image-to-image
-    output_node: '55'
-    timeout: 300
-    defaults:
-      # 全局默认负向含 text / watermark，与「编辑图中文字」的用途冲突，这里清空
-      negative_prompt: ''
-      steps: 30
-      cfg: 3.5
-      sampler_name: dpmpp_2m
-      scheduler: simple
-      denoise: 1
-    bindings:
-      filename_prefix: 55.inputs.filename_prefix
-      # 尺寸不绑：工作流内 ResizeImageMaskNode 把输入图缩到 1MP，EmptyLatentImage 的宽高来自 GetImageSize
-      image: 32.inputs.image
-      prompt: 45:36.inputs.prompt
-      negative_prompt: 45:36.inputs.negative_prompt
-      seed: 45:21.inputs.noise_seed
-      cfg: 45:21.inputs.cfg
-      steps: 45:26.inputs.steps
-      sampler_name: 45:22.inputs.sampler_name
-      scheduler: 45:26.inputs.scheduler
-      denoise: 45:26.inputs.denoise
-    aliases:
-    - boogu-edit
-    - boogu_image_edit
-  boogu-image-edit-turbo:
-    workflow: image_boogu_image_edit_turbo.json
-    description: Boogu Image Edit Turbo —— 单图编辑 6 步快速版，擅长改写/添加图像内的文字（必须传 image）
-    mode: image
-    capabilities:
-    - image-to-image
-    output_node: '55'
-    timeout: 300
-    defaults:
-      negative_prompt: ''
-      steps: 6
-      cfg: 1
-      sampler_name: euler
-      scheduler: sgm_uniform
-      denoise: 1
-    bindings:
-      filename_prefix: 55.inputs.filename_prefix
-      image: 32.inputs.image
-      prompt: 45:36.inputs.prompt
-      negative_prompt: 45:36.inputs.negative_prompt
-      seed: 45:21.inputs.noise_seed
-      cfg: 45:21.inputs.cfg
-      steps: 45:26.inputs.steps
-      sampler_name: 45:22.inputs.sampler_name
-      scheduler: 45:26.inputs.scheduler
-      denoise: 45:26.inputs.denoise
-    aliases:
-    - boogu-edit-turbo
-    - boogu_image_edit_turbo
   utility-birefnet-remove-background:
     workflow: utility_birefnet_remove_background.json
     description: 图片去背景（BiRefNet matting）—— 独立工具类，无 prompt，只需 image；输出透明 PNG，尺寸跟随输入图
@@ -443,6 +235,63 @@ models:
     - qwen-image
     - qwen-image-2.1-edit   # 旧名，向后兼容
     - qwen-image-edit
+
+  qwen-image-2.1-turbo:
+    workflow: image_qwen_image_2_1_turbo.json
+    description: >-
+      Qwen-Image 2.1 Turbo —— 底模 int8 + Comfy-Org turbo_lora_avg_rank_178（从官方 8 步蒸馏
+      checkpoint 抽取，非第三方另训）+ ManualSigmas 固定官方 sample_sigmas（1.0…0.414568,0）+
+      SamplerCustomAdvanced(euler, CFG=1)。8 步出图（底模档 25 步的 ~3x），文生图 / 多图参考编辑
+      与 qwen-image-2.1 同面（1-6 张参考图，带参考图跟随第 1 张尺寸）。⚠️ steps/cfg/sampler/scheduler
+      参数对本档无效（落点焊死在 ManualSigmas，改步数须改工作流 490 的 sigmas 字符串）；
+      turbo_lora=0 会坏（底模走 8 步官方落点没练过）。Qwen Research License 仅限非商用。
+    mode: image
+    capabilities:
+    - text-to-image
+    - image-to-image
+    output_node: '461'
+    timeout: 600
+    references:
+      aggregator: '474'
+      images:
+      - L1
+      - L2
+      - L3
+      - L4
+      - L5
+      - L6
+      # TextEncodeQwenImage21 的参考槽是 COMFY_AUTOGROW_V3 ⇒ 键名 `images.image_N`（点号平铺）
+      image_keys:
+      - images.image_1
+      - images.image_2
+      - images.image_3
+      - images.image_4
+      - images.image_5
+      - images.image_6
+    defaults:
+      negative_prompt: ''
+      width: 1024
+      height: 1024
+    params:
+      turbo_lora:
+        type: float
+        min: 0
+        max: 1.5
+        default: 1.0
+        bind: '480.inputs.strength_model'
+        description: Turbo LoRA 强度（官方抽取版出厂 1.0）；⚠️ 0 = 底模直跑 8 步官方落点，画质必坏
+    bindings:
+      filename_prefix: 461.inputs.filename_prefix
+      prompt: 474.inputs.prompt
+      negative_prompt: 474.inputs.negative_prompt
+      seed: 491.inputs.noise_seed
+      width: 456.inputs.width
+      height: 456.inputs.height
+      use_custom_size: 468.inputs.switch
+    aliases:
+    - qwen-turbo
+    - qwen-image-turbo
+    - qwen_image_2_1_turbo
 
   # ===================== MiniMax H3 视频系列 =====================
   # 说明：聚合节点固定在 136、输出在 92；两支按「权重类型」分家，节点不同：

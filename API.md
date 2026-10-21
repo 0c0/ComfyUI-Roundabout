@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.46.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.47.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -162,7 +162,7 @@ MCP 客户端配置（`mcp.json`）：
 - **产物 url 绝对化**：`response_format=url` 时返回绝对 `http(s)` 地址。基准顺序：`PUBLIC_BASE_URL` → REST 用请求 host / MCP 用 `comfy_base_url`。若填 `b64_json` 则内联 base64；`file`/`path` 返回磁盘绝对路径。
 - **seed 回显与监控**：生成响应回显本次实际生效 `seed`；队列监控的 running / pending / tasks 三表均带 `seed` 字段，便于区分批量同 prompt 提交。
 - **取消语义**：pending 任务从 ComfyUI 队列移除；running 任务只能 `interrupt`（ComfyUI 无按 id 中断接口，会中断当前正在执行的那个）。本地任务标记为 `cancelled`，且 `complete/fail` 不再覆盖它（防后台协程冲掉）。
-- **编辑模型（`image-to-image`）**：`boogu-image-edit` / `boogu-image-edit-turbo` 与 `flux2-klein-image-edit-turbo`（含别名 `flux2-edit-turbo`、`image_flux2_klein_image_edit_turbo`）**必须传图**（不传返回 400，文案统一是 `requires an input `image`` —— 多图档只传 `reference_images` 也算通过）；`qwen-image-2.1` 是**文生与多图编辑同一支**：6 个参考槽（超上限 400），**一张参考图都不传即纯文生**，是唯一不要求传图的图像模型。它没有 `image` 绑定，但保留了 `image` 单图入口 —— 由网关当作第 1 张参考图接入，等价 `reference_images[0]`（之所以不能给它配绑定：槽一旦被绑定保护就删不掉，纯文生那一支会把模板占位图当参考喂进去）。**klein 的 `image` 与 `reference_images[0]` 落在同一个参考槽上**：先按 `reference_images[i]` 逐槽写入、再套 `image` 的绑定，同节点后者覆盖前者 —— 所以**两者同时传时 `image` 静默失效**（要改第 1 张就写 `reference_images[0]`，别用 `image` 去覆盖它）。boogu 系列擅长**改写 / 添加图像内的文字**，prompt 里可用「图1」指代输入图；flux2 klein 与 qwen 擅长**语义改写**（换背景/材质、增删物体）；klein 与 qwen 都能吃多张参考做组合，输出尺寸跟随输入图（boogu / klein 缩放到 1MP；qwen 按官方默认不重采样、直接跟随第 1 张参考图），此时 `size` 不生效（qwen 只在纯文生那一支用 `size`）；编辑模型均不继承全局默认负向提示词（全局负向含 text / watermark，会与写字的用途冲突）。
+- **编辑模型（`image-to-image`）**：`flux2-klein-image-edit-turbo`（含别名 `flux2-edit-turbo`、`image_flux2_klein_image_edit_turbo`）**必须传图**（不传返回 400，文案统一是 `requires an input `image`` —— 多图档只传 `reference_images` 也算通过）；`qwen-image-2.1` 是**文生与多图编辑同一支**：6 个参考槽（超上限 400），**一张参考图都不传即纯文生**，是唯一不要求传图的图像模型。它没有 `image` 绑定，但保留了 `image` 单图入口 —— 由网关当作第 1 张参考图接入，等价 `reference_images[0]`（之所以不能给它配绑定：槽一旦被绑定保护就删不掉，纯文生那一支会把模板占位图当参考喂进去）。**klein 的 `image` 与 `reference_images[0]` 落在同一个参考槽上**：先按 `reference_images[i]` 逐槽写入、再套 `image` 的绑定，同节点后者覆盖前者 —— 所以**两者同时传时 `image` 静默失效**（要改第 1 张就写 `reference_images[0]`，别用 `image` 去覆盖它）。flux2 klein 擅长**语义改写**（换背景/材质、增删物体）；klein 与 qwen 都能吃多张参考做组合，输出尺寸跟随输入图（klein 缩放到 1MP；qwen 按官方默认不重采样、直接跟随第 1 张参考图），此时 `size` 不生效（qwen 只在纯文生那一支用 `size`）；编辑模型均不继承全局默认负向提示词（全局负向含 text / watermark，会与写字的用途冲突）。
 - **跨模型误用**：给文生图模型传 `image` 会被拒绝，错误信息里列出所有支持输入图的模型名，agent 可据此自助换模型。
 
 ---
@@ -186,8 +186,8 @@ MCP 客户端配置（`mcp.json`）：
 | `negative_prompt` | string? | 反向提示词。**只在 `cfg > 1` 时参与计算**：`cfg = 1` 时 ComfyUI 走 cfg1 优化、整条负向分支根本不执行 —— 传了不报错也不生效。实测同一张图（同 seed 同 prompt）只改负向：`cfg=1` ⇒ MAE `0.0000`，`cfg=4` ⇒ `23.5`（阳性对照）。模板默认 `cfg=1` 的模型（如 `qwen-image-2.1`）要负向起作用就得抬 `cfg`。自动负向分流（`AUTO_SPLIT_NEGATIVE`）同理 |
 | `seed` | int? | 不传/`-1` 随机；`0` 与正整数固定 |
 | `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 采样精调；`denoise` 为图生图重绘幅度 |
-| `image` | string? | 图生图**基图（单张）**，base64 / dataURL / URL / 本地路径。传数组返回 400（改走 `reference_images`）。有 `image` 绑定的模型（klein / boogu）由绑定写进模型声明的落点，**与 `reference_images[0]` 是同一个参考槽的两个入口**（见 §4），两者同时传时 `image` 被静默覆盖；没有 `image` 绑定的模型（`qwen-image-2.1`）由网关把它当作第 1 张参考图接入 |
-| `reference_images` | string[]? | **多图参考**输入（仅声明了 `references` 的图像模型：`qwen-image-2.1` 6 张 / `flux2-klein-image-edit-turbo` 4 张）；按序对应参考槽，超过该模型槽数返回 400。**klein / boogu 编辑档至少要有一张输入**（`image` 或 `reference_images`，谁都不给返回 400 `requires an input image`）；`qwen-image-2.1` 例外 —— 不给参考即纯文生 |
+| `image` | string? | 图生图**基图（单张）**，base64 / dataURL / URL / 本地路径。传数组返回 400（改走 `reference_images`）。有 `image` 绑定的模型（klein）由绑定写进模型声明的落点，**与 `reference_images[0]` 是同一个参考槽的两个入口**（见 §4），两者同时传时 `image` 被静默覆盖；没有 `image` 绑定的模型（`qwen-image-2.1`）由网关把它当作第 1 张参考图接入 |
+| `reference_images` | string[]? | **多图参考**输入（仅声明了 `references` 的图像模型：`qwen-image-2.1` 6 张 / `flux2-klein-image-edit-turbo` 4 张）；按序对应参考槽，超过该模型槽数返回 400。**klein 编辑档至少要有一张输入**（`image` 或 `reference_images`，谁都不给返回 400 `requires an input image`）；`qwen-image-2.1` 例外 —— 不给参考即纯文生 |
 | `mask` | string? | 局部重绘遮罩 |
 | `mode` | string? | 生图模式；仅当模型在 `models.yaml` 声明了 `mode_choices` 时生效（当前内置模型均未声明） |
 | `workflow_overrides` | object? | 直接改写节点，如 `{"3.inputs.cfg": 4.5}` |
@@ -226,23 +226,21 @@ MCP 客户端配置（`mcp.json`）：
 
 OpenAI 标准 multipart 图生图。字段：`image`（文件，可多张）、`mask`（文件，可选）、`prompt`、`model`、`n`、`size`、`response_format`、`user`、`negative_prompt`、`seed`、`steps`、`cfg`、`denoise`。
 
-**单图编辑模型**（改图内文字首选 boogu 系列；风格/内容改写首选 flux2 klein）：
+**编辑模型**（风格/内容语义改写首选 flux2 klein）：
 
 | 模型 | 别名 | 默认步数 / cfg / 采样器 |
 |---|---|---|
-| `boogu-image-edit` | `boogu-edit` | 30 / 3.5 / `dpmpp_2m` + `simple` |
-| `boogu-image-edit-turbo` | `boogu-edit-turbo` | 6 / 1 / `euler` + `sgm_uniform` |
 | `flux2-klein-image-edit-turbo` | `flux2-edit-turbo` | 6 / 1 / `euler` |
 
 ```bash
 curl -X POST http://127.0.0.1:8188/v1/images/edits \
-  -F model=boogu-image-edit-turbo \
+  -F model=flux2-klein-image-edit-turbo \
   -F 'prompt=在主图右上角用白色手写体写上「测试」' \
   -F response_format=path \
   -F image=@input/source.png
 ```
 
-返回落盘路径，如 `{"data":[{"path":"...\\output\\Boogu_image_edit_turbo_00004.png"}],"seed":...}`。
+返回落盘路径，如 `{"data":[{"path":"...\\output\\Qwen_image_2.1_turbo_00001.png"}],"seed":...}`。
 原图内容会保留，只改动 prompt 指定的部分。
 
 #### `POST /v1/images/remove-background`（独立去背景端点）
@@ -387,11 +385,9 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 | 模型 | 模式 | 能力 | 说明 |
 |---|---|---|---|
-| `z-image` / `z-image-turbo` | image | text-to-image | Z-Image base（30 步）/ Turbo（8 步，默认模型） |
-| `boogu-image-base` / `boogu-image-base-4step` / `boogu-image-turbo` | image | text-to-image | Boogu 文生图三档 |
-| **`boogu-image-edit`** / **`boogu-image-edit-turbo`** | image | **image-to-image** | 单图编辑，改图内文字首选（见 5.1） |
 | **`flux2-klein-image-edit-turbo`** | image | **image-to-image** | Flux2 Klein 9B **多图参考**编辑（最多 4 张），语义改写/换背景首选（见 5.1） |
 | **`qwen-image-2.1`** | image | text-to-image / **image-to-image** | Qwen-Image 2.1：**文生与多图参考编辑同一支**（25 步，Qwen3-VL 文本编码）。不带参考图即纯文生，原生 2K 档位、默认 1024x1024（`size` 直传，支持非方图）；带 1–6 张参考图（`reference_images`）即多图编辑，输出尺寸跟随第 1 张参考图 |
+| **`qwen-image-2.1-turbo`** | image | text-to-image / **image-to-image** | 同 `qwen-image-2.1` 的 turbo 版：底模 int8 + 官方抽取 turbo LoRA + ManualSigmas 焊死官方 8 步落点（euler / CFG=1）。⚠️ steps/cfg/sampler/scheduler 对本档无效；`turbo_lora`（默认 1.0）别设 0 |
 | **`utility-birefnet-remove-background`** | image | **image-to-image**（promptless） | 去背景独立工具，无 prompt，透明 PNG；专属端点 `/v1/images/remove-background` |
 | `minimax-h3` | video | text-to-video / first-last-frame | H3 首尾帧生视频（base 20 步）：`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@20（网关无 `quality` 分档 —— 它只能表达 size + steps，与直接传参等价） |
 | `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，20 步（支持图/视频/音频参考） |
@@ -481,7 +477,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `get_tool_info` | **调用结构自描述**（只读、不占 GPU）：逐模型列出每个请求字段的类型 / 区间 / 枚举 / 默认值 / **对本模型是否生效与原因**，加参考槽数量、张数上限、尺寸档位与种子上限。可选 `model` 限定单模型、`include_fields=false` 省掉字段清单。**拿不准「这个模型能不能传某参数」「该用哪个模型」时先调它** |
 | `list_models` | 列出可用模型及其能力 / 模式 / 默认参数 / 别名 |
 | `generate_image` | 文生图；支持 `negative_prompt`/`seed`/`size`/`steps`/`cfg`/`workflow_overrides`(JSON 字符串)/`filename_prefix`/`mode`；返回 OpenAI 风格响应（含 `seed` 回显，url 已绝对化）；视频模型自动转视频链路。**编辑图片不要用本工具**（用 `edit_image` / `remove_background`） |
-| `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写），改图内文字传 `boogu-image-edit-turbo` / `boogu-image-edit`；**多图参考**传 `reference_images`（klein 4 槽 / qwen 6 槽）；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
+| `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写）；**多图参考**传 `reference_images`（klein 4 槽 / qwen 6 槽）；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
 | `generate_speech` | 文本转语音 / 音色设计：`input`（要朗读的文本）+ `instructions`（音色描述，不给用模板内置描述）；参数 `model`(默认 `qwen3-tts-voice-design`)/`voice`/`language`/`seed`/`response_format`(交付形态，非编码)/`filename_prefix`/`background`；返回 `{created, data:[{url}], seed, task_id}` |
 | `generate_video` | 文生视频 / 首尾帧生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`first_frame`/`last_frame`/`reference_images|videos|audios`（按模型槽位生效，帧与参考可同传）/`steps`/`attention`/`output_size`/`scale`（仅 lift，互斥）/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
 | `remove_background` | 图片去背景（BiRefNet，独立工具，无需提示词）；参数 `image`(本地路径/URL/dataURL/base64)、`response_format`(默认 url)、`filename_prefix`。**推荐改用 `process_image(action="remove_background")`** |
@@ -580,7 +576,7 @@ MCP 异步视频任务完成时，服务端通过标准 `notifications/message`�
 curl -X POST http://127.0.0.1:8188/v1/images/generations \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <key>" \
-  -d '{"model":"z-image-turbo","prompt":"a red fox in snow","size":"1024x1024","seed":42}'
+  -d '{"model":"qwen-image-2.1","prompt":"a red fox in snow","size":"1024x1024","seed":42}'
 ```
 
 ### 8.2 REST 语音合成（音色设计，同步）

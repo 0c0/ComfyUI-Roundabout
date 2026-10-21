@@ -22,51 +22,11 @@ rename:
 files:
 
   # ---------- 图像档 ----------
-  - file: z_image_int8_convrot.safetensors
-    dir: diffusion_models
-    repo: Comfy-Org/z_image
-    path: split_files/diffusion_models/z_image_int8_convrot.safetensors
-    size_gb: 6.20
-  - file: z_image_turbo_int8_convrot.safetensors
-    dir: diffusion_models
-    repo: Comfy-Org/z_image_turbo
-    path: split_files/diffusion_models/z_image_turbo_int8_convrot.safetensors
-    size_gb: 6.20
-  - file: qwen_3_4b.safetensors
-    dir: text_encoders
-    repo: Comfy-Org/z_image
-    path: split_files/text_encoders/qwen_3_4b.safetensors
-    size_gb: 8.05
-  - file: boogu_image_base_fp8_scaled.safetensors
-    dir: diffusion_models
-    repo: Comfy-Org/Boogu-Image
-    path: diffusion_models/boogu_image_base_fp8_scaled.safetensors
-    size_gb: 10.31
-  - file: boogu_image_turbo_hotfix_int8_convrot.safetensors
-    dir: diffusion_models
-    repo: Comfy-Org/Boogu-Image
-    path: diffusion_models/boogu_image_turbo_hotfix_int8_convrot.safetensors
-    size_gb: 11.37
-  - file: boogu_image_edit_int8_convrot.safetensors
-    dir: diffusion_models
-    repo: Comfy-Org/Boogu-Image
-    path: diffusion_models/boogu_image_edit_int8_convrot.safetensors
-    size_gb: 11.37
-  - file: boogu_image_turbo_hotfix_lora_rank_128_bf16.safetensors
-    dir: loras
-    repo: Comfy-Org/Boogu-Image
-    path: loras/boogu_image_turbo_hotfix_lora_rank_128_bf16.safetensors
-    size_gb: 1.35
   - file: qwen3vl_8b_fp8_scaled.safetensors
     dir: text_encoders
     repo: Comfy-Org/Boogu-Image
     path: text_encoders/qwen3vl_8b_fp8_scaled.safetensors
     size_gb: 10.59
-  - file: flux1_vae_bf16.safetensors
-    dir: vae
-    repo: Comfy-Org/Boogu-Image
-    path: vae/flux1_vae_bf16.safetensors
-    size_gb: 0.17
   - file: flux-2-klein-9b-kv-fp8.safetensors
     dir: diffusion_models
     repo: black-forest-labs/FLUX.2-klein-9b-kv-fp8
@@ -92,6 +52,11 @@ files:
     repo: Comfy-Org/Qwen-Image-2.1
     path: vae/qwen_image_2.1_vae_bf16.safetensors
     size_gb: 0.68
+  - file: qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors
+    dir: loras
+    repo: Comfy-Org/Qwen-Image-2.1
+    path: loras/qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors
+    size_gb: 0.91
   - file: birefnet.safetensors
     dir: background_removal
     repo: Comfy-Org/BiRefNet

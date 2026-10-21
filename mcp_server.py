@@ -280,7 +280,7 @@ async def generate_image(
     prompt: str,
     model: str = Field(
         default="",
-        description="模型选择（不传=默认 z-image-turbo）；逐模型能力与默认参数查 get_tool_info。",
+        description="模型选择（不传=默认 qwen-image-2.1）；逐模型能力与默认参数查 get_tool_info。",
     ),
     n: int = 1,
     size: str = "",
@@ -328,8 +328,7 @@ async def generate_image(
     name="edit_image",
     description=(
         "提示词驱动的图像编辑（换背景 / 换材质 / 增删物体 / 改图内文字），含多图参考。"
-        "不传 model 默认 flux2-klein-image-edit-turbo；改图内文字用 boogu-image-edit-turbo（快）"
-        "或 boogu-image-edit（高质量）。纯文生图请用 generate_image。"
+        "不传 model 默认 flux2-klein-image-edit-turbo。纯文生图请用 generate_image。"
         "各模型的可编辑性、参考槽数量与生效字段查 get_tool_info。"
     ),
 )

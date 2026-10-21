@@ -983,7 +983,7 @@ def _ref_images(spec: ModelSpec, req: ImageGenerationRequest | VideoGenerationRe
     模型没有 `image` 绑定时（参考槽是唯一入口，如 Qwen 2.1 合并档 —— 它的第 1 槽不能由
     binding 供图，否则槽被「受保护」而删不掉，纯文生那一支会把模板占位图当参考喂进去），
     `image` 在这里充当第 1 张参考图。否则它会被上传却无处注入 —— 静默丢弃。
-    有 `image` 绑定的模型（klein / boogu）不受影响：它们的 `image` 由 bindings 落在自己
+    有 `image` 绑定的模型（klein）不受影响：它们的 `image` 由 bindings 落在自己
     声明的落点上。
 
     接线与剪枝必须用同一份判断，故共用本函数。

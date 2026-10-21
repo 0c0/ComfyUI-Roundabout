@@ -1,0 +1,225 @@
+{
+  "451": {
+    "class_type": "UNETLoader",
+    "inputs": {
+      "unet_name": "qwen_image_2.1_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    }
+  },
+  "480": {
+    "class_type": "LoraLoaderModelOnly",
+    "inputs": {
+      "model": [
+        "451",
+        0
+      ],
+      "lora_name": "qwen_image_2.1_turbo_lora_avg_rank_178_bf16.safetensors",
+      "strength_model": 1.0
+    }
+  },
+  "453": {
+    "class_type": "CLIPLoader",
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    }
+  },
+  "454": {
+    "class_type": "VAELoader",
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    }
+  },
+  "469": {
+    "class_type": "QwenImage21Cache",
+    "inputs": {
+      "model": [
+        "480",
+        0
+      ],
+      "device": "auto",
+      "dtype": "default"
+    }
+  },
+  "474": {
+    "class_type": "TextEncodeQwenImage21",
+    "inputs": {
+      "clip": [
+        "453",
+        0
+      ],
+      "vae": [
+        "454",
+        0
+      ],
+      "prompt": "",
+      "negative_prompt": "",
+      "resolution": 0,
+      "images.image_1": [
+        "L1",
+        0
+      ],
+      "images.image_2": [
+        "L2",
+        0
+      ],
+      "images.image_3": [
+        "L3",
+        0
+      ],
+      "images.image_4": [
+        "L4",
+        0
+      ],
+      "images.image_5": [
+        "L5",
+        0
+      ],
+      "images.image_6": [
+        "L6",
+        0
+      ]
+    }
+  },
+  "456": {
+    "class_type": "EmptyLatentImage",
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    }
+  },
+  "468": {
+    "class_type": "ComfySwitchNode",
+    "inputs": {
+      "switch": false,
+      "on_false": [
+        "474",
+        2
+      ],
+      "on_true": [
+        "456",
+        0
+      ]
+    }
+  },
+  "490": {
+    "class_type": "ManualSigmas",
+    "inputs": {
+      "sigmas": "1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568, 0.0"
+    }
+  },
+  "491": {
+    "class_type": "RandomNoise",
+    "inputs": {
+      "noise_seed": 0
+    }
+  },
+  "492": {
+    "class_type": "KSamplerSelect",
+    "inputs": {
+      "sampler_name": "euler"
+    }
+  },
+  "493": {
+    "class_type": "BasicGuider",
+    "inputs": {
+      "model": [
+        "469",
+        0
+      ],
+      "conditioning": [
+        "474",
+        0
+      ]
+    }
+  },
+  "494": {
+    "class_type": "SamplerCustomAdvanced",
+    "inputs": {
+      "noise": [
+        "491",
+        0
+      ],
+      "guider": [
+        "493",
+        0
+      ],
+      "sampler": [
+        "492",
+        0
+      ],
+      "sigmas": [
+        "490",
+        0
+      ],
+      "latent_image": [
+        "468",
+        0
+      ]
+    }
+  },
+  "457": {
+    "class_type": "VAEDecode",
+    "inputs": {
+      "samples": [
+        "494",
+        0
+      ],
+      "vae": [
+        "454",
+        0
+      ]
+    }
+  },
+  "461": {
+    "class_type": "SaveImageAdvanced",
+    "inputs": {
+      "images": [
+        "457",
+        0
+      ],
+      "filename_prefix": "Qwen_image_2.1_turbo",
+      "format": "png",
+      "format.bit_depth": "8-bit",
+      "format.input_color_space": "sRGB"
+    }
+  },
+  "L1": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__REF_1__.png"
+    }
+  },
+  "L2": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__REF_2__.png"
+    }
+  },
+  "L3": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__REF_3__.png"
+    }
+  },
+  "L4": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__REF_4__.png"
+    }
+  },
+  "L5": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__REF_5__.png"
+    }
+  },
+  "L6": {
+    "class_type": "LoadImage",
+    "inputs": {
+      "image": "__REF_6__.png"
+    }
+  }
+}
