@@ -1,4 +1,4 @@
-default_model: qwen-image-2.1
+default_model: qwen-image-2.1-turbo
 defaults:
   params:
     negative_prompt: lowres, worst quality, blurry, jpeg artifacts, watermark, text,
@@ -270,8 +270,8 @@ models:
       - images.image_6
     defaults:
       negative_prompt: ''
-      width: 1024
-      height: 1024
+      width: 2048
+      height: 2048
     params:
       turbo_lora:
         type: float

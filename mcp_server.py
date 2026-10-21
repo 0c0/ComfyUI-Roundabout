@@ -280,7 +280,7 @@ async def generate_image(
     prompt: str,
     model: str = Field(
         default="",
-        description="模型选择（不传=默认 qwen-image-2.1）；逐模型能力与默认参数查 get_tool_info。",
+        description="模型选择（不传=默认 qwen-image-2.1-turbo，8 步 / 默认 2K 画布）；逐模型能力与默认参数查 get_tool_info。",
     ),
     n: int = 1,
     size: str = "",

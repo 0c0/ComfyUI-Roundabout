@@ -283,12 +283,12 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 
 ## 内置模型
 
-默认 `default_model = qwen-image-2.1`。`model` 可传注册名或任一别名（不区分大小写）；不传则用默认模型。
+默认 `default_model = qwen-image-2.1-turbo`（8 步，默认画布 2048×2048）。`model` 可传注册名或任一别名（不区分大小写）；不传则用默认模型。
 
 | 类型 | 模型 | 用途 |
 |---|---|---|
 | 文生图 / 多图编辑 | `qwen-image-2.1` | 25 步，**文生与多图参考编辑同一支**：不带参考图即纯文生（原生 2K 档位，默认 1024x1024，尺寸直传 `size`）；带 1–6 张参考图（`reference_images`）即多图编辑，输出尺寸跟随第 1 张参考图 |
-| 文生图 / 多图编辑 | `qwen-image-2.1-turbo` | 8 步 turbo（底模 int8 + 官方抽取 turbo LoRA + ManualSigmas 焊死官方落点）：与 `qwen-image-2.1` 同面（1–6 张参考图，跟随第 1 张尺寸）；⚠️ steps/cfg/sampler/scheduler 无效，`turbo_lora=0` 会坏 |
+| 文生图 / 多图编辑（默认） | `qwen-image-2.1-turbo` | 8 步 turbo（底模 int8 + 官方抽取 turbo LoRA + ManualSigmas 焊死官方落点），默认画布 2048×2048：与 `qwen-image-2.1` 同面（1–6 张参考图，跟随第 1 张尺寸）；⚠️ steps/cfg/sampler/scheduler 无效，`turbo_lora=0` 会坏 |
 | 图像编辑 | `flux2-klein-image-edit-turbo` | 语义改写首选：换背景 / 换材质 / 增删物体（`edit_image` 默认）；**多图参考**最多 4 张 |
 | 图像工具 | `utility-birefnet-remove-background` | BiRefNet 抠图，输出透明 PNG（无提示词） |
 | 视频 | `minimax-h3` / `minimax-h3-edit` | MiniMax H3（base / edit 均 20 步）：base 收**首尾帧** `first_frame`/`last_frame`（cover 裁剪），edit 收**参考**（6 图 + 3 视频 + 3 音频）；低显存分块按档位自适应（`vram_adaptive`） |

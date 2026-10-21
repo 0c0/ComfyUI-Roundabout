@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.47.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.47.1` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -155,7 +155,7 @@ MCP 客户端配置（`mcp.json`）：
 
 ## 4. 核心概念
 
-- **模型与别名**：`model` 可传注册名或其任一 `aliases`（不区分大小写）。`default_model` 在 `models.yaml` 顶层配置，本机可用 `models.local.yaml` 覆盖（本机当前 `qwen-image-2.1`）。
+- **模型与别名**：`model` 可传注册名或其任一 `aliases`（不区分大小写）。`default_model` 在 `models.yaml` 顶层配置，本机可用 `models.local.yaml` 覆盖（本机当前 `qwen-image-2.1-turbo`）。
 - **异步任务（三模态通用）**：图像 / 视频 / 音频生成都可带 `background:"pending"` 或 `async:true`，POST 立即返回 `task` 对象（`status:pending`），后台继续生成；分别用 `GET /v1/images/tasks/{id}`、`GET /v1/videos/tasks/{id}`、`GET /v1/audio/tasks/{id}` 查结果（三命名空间同一张任务表）。缺省仍为同步返回（向后兼容）。MCP 面保持同步（长任务建议走 REST 异步）。
 - **任务记录（同步 + 异步都记）**：**每次真正开工的生成请求都会在网关任务表留一条记录**——异步视频是「排队中 → 执行中 → 终态」，同步生图/编辑/视频则直接落终态，成功后附产物地址。这样 agent 用 MCP 或 REST 生成完，视图页上能看到痕迹与产物入口。**前提是请求通过了前置校验**（模型名写错、参数非法这类 400/404 在进入生成链路前就返回了，不留记录）。
 - **记录保留期**：任务记录是进程内存态，终态记录保留 6 小时后自动回收（未完成任务不回收）；重启 ComfyUI 全部清空。
@@ -387,7 +387,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 |---|---|---|---|
 | **`flux2-klein-image-edit-turbo`** | image | **image-to-image** | Flux2 Klein 9B **多图参考**编辑（最多 4 张），语义改写/换背景首选（见 5.1） |
 | **`qwen-image-2.1`** | image | text-to-image / **image-to-image** | Qwen-Image 2.1：**文生与多图参考编辑同一支**（25 步，Qwen3-VL 文本编码）。不带参考图即纯文生，原生 2K 档位、默认 1024x1024（`size` 直传，支持非方图）；带 1–6 张参考图（`reference_images`）即多图编辑，输出尺寸跟随第 1 张参考图 |
-| **`qwen-image-2.1-turbo`** | image | text-to-image / **image-to-image** | 同 `qwen-image-2.1` 的 turbo 版：底模 int8 + 官方抽取 turbo LoRA + ManualSigmas 焊死官方 8 步落点（euler / CFG=1）。⚠️ steps/cfg/sampler/scheduler 对本档无效；`turbo_lora`（默认 1.0）别设 0 |
+| **`qwen-image-2.1-turbo`** | image | text-to-image / **image-to-image** | 同 `qwen-image-2.1` 的 turbo 版：底模 int8 + 官方抽取 turbo LoRA + ManualSigmas 焊死官方 8 步落点（euler / CFG=1）。默认画布 2048×2048。⚠️ steps/cfg/sampler/scheduler 对本档无效；`turbo_lora`（默认 1.0）别设 0 |
 | **`utility-birefnet-remove-background`** | image | **image-to-image**（promptless） | 去背景独立工具，无 prompt，透明 PNG；专属端点 `/v1/images/remove-background` |
 | `minimax-h3` | video | text-to-video / first-last-frame | H3 首尾帧生视频（base 20 步）：`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）。草稿传 `size:"576p-16:9"` + `steps:8`，交付用默认 1344x768@20（网关无 `quality` 分档 —— 它只能表达 size + steps，与直接传参等价） |
 | `minimax-h3-edit` | video | text-to-video / reference-to-video | H3 参考生视频，20 步（支持图/视频/音频参考） |
