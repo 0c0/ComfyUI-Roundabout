@@ -531,11 +531,15 @@ def build_video_values(
             # 声明式 default 必须真正落到 values —— 否则 bindings 注入时拿到 None 直接跳过，
             # 参数看起来有默认值、实际生效的是模板里写死的值（两处漂移）。
             values[pname] = spec.defaults.get(pname)
-    # 视频 flow shift：模板 162 的字面值是 12（基模 20 步的训练/推理值），而 turbo 档挂的
-    # 蒸馏 LoRA 是 768p/6 训练的 —— 同一个模板承载两套 schedule。没显式指定时按 turbo
-    # 开关选，否则「换了 LoRA 忘了改 shift」会静默跑错噪声调度（4 步尤其必坏）。
+    # Turbo 联动（步数 + flow shift 成对出现，缺一个就静默跑错 schedule）：
+    # 模板承载两套 schedule —— 基模 20 步 / shift 12，turbo 档 8 步蒸馏 / shift 6。
+    # 开了 turbo 却没改步数 = 用 20 步跑 8 步蒸馏权重，又慢又糊；shift 同理。所以两者
+    # 都按 turbo 开关给默认值，显式入参一律优先（想跑 4 步之类由调用方自己传）。
+    turbo_on = (values.get("turbo_lora") or 0) > 0
+    if turbo_on and getattr(req, "steps", None) is None:
+        values["steps"] = 8
     if "video_shift" in spec.bindings and getattr(req, "video_shift", None) is None:
-        values["video_shift"] = 6.0 if (values.get("turbo_lora") or 0) > 0 else 12.0
+        values["video_shift"] = 6.0 if turbo_on else 12.0
     # VPack 的 `auto`：只有带参考视频才压缩。SparkVPack.pack 对「conditioning 里没有视频参考」
     # 会直接 ValueError（不是静默直通），所以无视频时必须先降成 0/5；显式要压缩但不给视频
     # 就在网关层报 400，别让错误炸在节点里。

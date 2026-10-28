@@ -7,11 +7,12 @@
     默认 12/3，于是「换了 768p LoRA 但 shift 没跟」会静默跑错调度：8 步还能看，4 步几乎必坏，
     而且不报任何错。这类错误靠肉眼很难归因到 shift。
 
-    锁四件事：
+    锁五件事：
       1. 四支视频模板都有 162，类是 MiniMaxH3SigmaShift，字面值 12 / 3（= 旧行为，零回归）；
       2. 162 插在 160(LoRA) 之后：所有原先吃 160 的下游都改指 162，且没有残留直连 160；
       3. 四支的 turbo LoRA 都是 768p 训练版（v1.1），与「shift 6」这条配方对应；
-      4. registry 声明 video_shift 并绑到 162，显式传值能落到提交图。
+      4. registry 声明 video_shift 并绑到 162，显式传值能落到提交图；
+      5. 开 turbo 且未显式传 steps 时步数自动落到 8（显式传值优先，含 4 步预览）。
 
     纯 JSON + registry 断言，不碰运行中的 ComfyUI、不联网、不落产物。
 
@@ -130,6 +131,35 @@ def main() -> int:
         spec = r.resolve(model)
         check(f"{model}: turbo 默认 1.0（配方前提）", spec.defaults.get("turbo_lora") == 1.0,
               str(spec.defaults.get("turbo_lora")))
+
+    # ---------------------------------------------------------------- 5. turbo 联动步数
+    print("5. 开 turbo 未显式传 steps 时自动 8 步（显式优先）")
+    from gateway.pipeline import build_video_values  # noqa: E402
+    from gateway.schemas import VideoGenerationRequest  # noqa: E402
+
+    for model in VIDEO:
+        spec = r.resolve(model)
+        base = {"model": model, "prompt": "一个女孩站在街上"}
+
+        v = build_video_values(
+            VideoGenerationRequest(**base, turbo_lora=1.0), spec, base["prompt"], None
+        )
+        check(f"{model}: turbo=1.0 不给 steps -> 8", v["steps"] == 8, str(v["steps"]))
+
+        v = build_video_values(
+            VideoGenerationRequest(**base, turbo_lora=1.0, steps=4), spec, base["prompt"], None
+        )
+        check(f"{model}: 显式 4 步不被改写", v["steps"] == 4, str(v["steps"]))
+
+        v = build_video_values(
+            VideoGenerationRequest(**base, turbo_lora=0), spec, base["prompt"], None
+        )
+        # 关掉 turbo 时不碰步数：走模型自己的默认（生成档 20，lift 两支配方本来就是 8）
+        check(
+            f"{model}: turbo=0 -> 模型默认 {spec.defaults['steps']} 步",
+            v["steps"] == spec.defaults["steps"],
+            str(v["steps"]),
+        )
 
     print(f"\n{passed} passed, {failed} failed")
     return 1 if failed else 0

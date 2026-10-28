@@ -379,7 +379,7 @@ models:
         max: 1.5
         default: 0
         bind: '160.inputs.strength_model'
-        description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=8 步蒸馏 Turbo，需配 steps≈8
+        description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=8 步蒸馏（v1.1 768p），未显式传 steps 时自动按 8 步跑
       video_shift:
         type: float
         min: 0.01
@@ -451,7 +451,7 @@ models:
         max: 1.5
         default: 0
         bind: '160.inputs.strength_model'
-        description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=8 步蒸馏 Turbo，需配 steps≈8
+        description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=8 步蒸馏（v1.1 768p），未显式传 steps 时自动按 8 步跑
       video_shift:
         type: float
         min: 0.01

@@ -69,7 +69,7 @@ ComfyUI 画布 → `Workflow` → **`Export (API)`** → 存到 `custom_nodes/Co
 | `duration` / `num_frames` | 你自己链路里的时长/帧数节点 |
 | `chunks` / `seq_threshold` | `MiniMaxChunkFeedForward.chunks` / `.seq_threshold`（KJNodes） |
 | `spark_mode` / `sparse_start_percent` | 对外同一个 `attention: sparse\|dense` 的两个落点：H3 四支全用 `spark_mode` → Spark 节点 `mode`（`sparse`→`fidelity` / `dense`→`dense`，后者完全旁路 Spark）；`sparse_start_percent` 保留给「159 是 BlockSparseAttention」的模板（当前无档使用）。翻译在 `params.resolve_attention`；`attention` 只对 H3 四支有效（其它模型传了报错） |
-| `turbo_lora` | `LoraLoaderModelOnly.strength_model`（节点 160，H3 四支都有绑定）。`minimax-h3` / `-edit` 默认 0（关，不注入开销）；SelfLift 两支默认 **1.0**（配方按 8 步蒸馏轨迹标定，设 0 画质必坏）。1.0=8 步蒸馏 Turbo，**需配 `steps≈8`**；模板挂的是 lightx2v 8step **v1.1 768p**，与 `video_shift` 联动见下 |
+| `turbo_lora` | `LoraLoaderModelOnly.strength_model`（节点 160，H3 四支都有绑定）。`minimax-h3` / `-edit` 默认 0（关，不注入开销）；SelfLift 两支默认 **1.0**（配方按 8 步蒸馏轨迹标定，设 0 画质必坏）。1.0=8 步蒸馏 Turbo（模板挂的是 lightx2v 8step **v1.1 768p**）；不显式传 `steps` 时网关自动按 **8** 跑，与 `video_shift` 联动见下 |
 | `video_shift` | `MiniMaxH3SigmaShift.shift_video`（节点 162，插在 160 LoRA 与 156 之间）。模板字面值 **12**（基模 20 步值，零回归）；不传时网关按 `turbo_lora` 选：>0 → **6**（768p 蒸馏 LoRA 训练值），否则 12。音频维固定 3 |
 | `head_chunks` | **当前无绑定**：唯一消费者 `MiniMaxLowVRAMAttention` 与 `BlockSparseAttention` 硬互斥，已从 6 支视频档撤除。参数名仍在可注入白名单里，把节点挂回去即可复用；档位表里的值不会注入任何工作流 |
 

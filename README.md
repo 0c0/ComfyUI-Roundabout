@@ -376,7 +376,7 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 | `minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16.safetensors` | `loras/` | 1.82 GB | `lightx2v/Minimax-h3-Turbo` | 根目录 |
 | `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors` | `loras/` | 1.82 GB | `Comfy-Org/MiniMax-H3` | `loras/`（**参考项**：544p 训练版，shift 12/3；已被 v1.1 768p 取代） |
 | `minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors` | `loras/` | 1.82 GB | `lightx2v/Minimax-h3-Turbo` | 根目录（**参考项**：已被 v1.1 取代） |
-| `minimax_h3_fl2v_turbo_4step_v1.3_768p_comfyui_bf16.safetensors` | `loras/` | 1.82 GB | `lightx2v/Minimax-h3-Turbo` | 根目录（**参考项**：4 步档，需 `video_shift=6`；内置工作流用 8 步） |
+| `minimax_h3_fl2v_turbo_4step_v1.3_768p_comfyui_bf16.safetensors` | `loras/` | 1.82 GB | `lightx2v/Minimax-h3-Turbo` | 根目录（**参考项**：4 步档，需 `video_shift=6`；实测只在带首帧时有画质，纯文生 4 步会手脸融合——内置工作流统一用 8 步） |
 | `minimax_h3_latent_upscaler_3d_fp16.safetensors` | `latent_upscale_models/` | 0.69 GB | `LBH-123-AI/Minimax_h3_latent_Upscaler` | `minimax_h3_latent_upscaler_3d_conv_v1/`（**需改名**） |
 
 **视频档的三个坑：**

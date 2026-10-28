@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.49.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.49.1` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -276,7 +276,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `attention` | `"sparse"`\|`"dense"`? | **注意力档位**（更快 ↔ 更高质量，H3 视频四支）：`sparse`（默认，Spark 稀疏加速，更快、更省显存；画质与致密高度一致、差异只在高频细节）/ `dense`（关闭稀疏，画质优先，耗时回满）。落点是 Spark 节点的 `mode`（`sparse`→`fidelity`、`dense`→`dense`）。不传 = 保持模板默认（稀疏）。其它模型传了报 400 |
 | `output_size` | string? | **期望输出尺寸**（仅 SelfLift 两支 `minimax-h3-lift` / `-lift-edit`）：格式同 `size`，语义也同 `size` —— SelfLift 的输出就是目标尺寸，没有放大倍率。其它模型传了报 400（它们的输出尺寸就是 `size`）。实际输出尺寸见响应 `size` 回显 |
 | `scale` | float? | **已下线**：latent-lift 的放大倍率随 SelfLift 一起移除（输出尺寸 = `size`）。现在任何模型传 `scale` 都报 400，改用 `size` / `output_size`；内部低分辨率前缀用 `lowres_scale` 调 |
-| `video_shift` | float? | **视频 flow shift**（H3 四支，落点 `162.inputs.shift_video`）：不传按配方自动选 —— 基模 20 步用 `12`（模型默认），开 `turbo_lora` 时用 `6`（lightx2v 768p 蒸馏 LoRA 的训练值）。音频维固定 `3`。**换了 Turbo LoRA 就必须同步 shift**，否则噪声调度不匹配、4 步尤其会崩，且不报错。显式传值优先，仅调试用。其它模型传了报 400 |
+| `video_shift` | float? | **视频 flow shift**（H3 四支，落点 `162.inputs.shift_video`）：不传按配方自动选 —— 基模 20 步用 `12`（模型默认），开 `turbo_lora` 时用 `6`（lightx2v 768p 蒸馏 LoRA 的训练值）。音频维固定 `3`。**换了 Turbo LoRA 就必须同步 shift**，否则噪声调度不匹配、4 步尤其会崩，且不报错。显式传值优先，仅调试用。其它模型传了报 400。`steps` 同理由 `turbo_lora` 决定：>0 且未显式传时按 **8**（蒸馏 LoRA 的配方步数），否则模型默认。**4 步档只在带首帧时有画质**——这支 LoRA 是 first-last-frame 蒸馏，纯文生 4 步会手脸融合、五官溶解，不报错 |
 | `highres_tiling` | bool? | **高分辨率阶段分块**（仅 SelfLift 两支 `minimax-h3-lift` / `-lift-edit`）：`true` 让升采样后的高分辨率段按剩余显存切 1–8 块，8 GiB 上峰值显存明显下降、更不容易崩；**实验性**——节点只保留第一块的音频预测，画质与耗时都会变，故默认 `false`、需显式开。其它模型传了报 400 |
 | `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"970.inputs.compression_ratio": "3/5"}`。SelfLift 两支：`lowres_scale` / `transition_step` / `highres_tiling` 已是正式参数，其余如 `125.inputs.rho`（像素锚阻尼，默认 0.15）、`125.inputs.w_min`/`w_max`（默认 1.0/1.0）走透传 |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |
