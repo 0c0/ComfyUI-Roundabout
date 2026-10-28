@@ -171,7 +171,7 @@ https://github.com/HJH-AILab/ComfyUI-Roundabout
 
 3. 配置（可选）：把 `.env.example` 复制成 `.env`，按需修改。**MCP 默认已启用**，不用额外设置；要关掉就把 `MCP_ENABLED` 改成 `false`。
 
-4. **准备模型权重**：仓库不含权重。内置 11 个工作流共引用 18 个权重文件（清单另列 6 个非内置引用的参考项，共 24 行 / 约 160 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 49 GB**，可以先只下这一族。
+4. **准备模型权重**：仓库不含权重。内置 11 个工作流共引用 18 个权重文件（清单另列 9 个非内置引用的参考项，共 27 行 / 约 165 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 49 GB**，可以先只下这一族。
 
    > **视频档还需要两个第三方节点包**：KJNodes（`MiniMaxChunkFeedForward`，视频档全用）与 `comfyui-SelfLift`（lift 两支的 latent 上采样节点 `SelfLiftH3LatentLift`）。清单见下方[第三方节点依赖](#第三方节点依赖)。
 
@@ -304,7 +304,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 
 ## 权重清单（内置工作流的全部依赖）
 
-**本仓库不包含任何权重文件**（体积与许可原因）。内置的 11 个工作流共引用 **18 个**权重文件，合计约 **105 GB**（图像档约 49 GB / 视频档约 56 GB）；下面两张清单表共 **24 行**，另 6 行是**当前无内置工作流引用**的参考项（2 个旧底模、1 个 w6a8 hybrid、2 个 Acc LoRA、1 个 hyperflow LoRA），仅作参考，计入则约 160 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入上列统计。）
+**本仓库不包含任何权重文件**（体积与许可原因）。内置的 11 个工作流共引用 **18 个**权重文件，合计约 **105 GB**（图像档约 49 GB / 视频档约 56 GB）；下面两张清单表共 **27 行**，另 9 行是**当前无内置工作流引用**的参考项（2 个旧底模、1 个 w6a8 hybrid、2 个 Acc LoRA、1 个 hyperflow LoRA、2 个旧版 turbo LoRA、1 个 4 步 v1.3），仅作参考，计入则约 165 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入上列统计。）
 
 这些文件基本都在 **HuggingFace 的 Comfy-Org 官方仓库**里（少数为模型原厂或社区仓库，已在表中标注）。国区建议把端点换成镜像，repo ID 与 repo 内路径完全一致：
 
@@ -358,7 +358,7 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 - Qwen-Image 2.1 的文本编码器是 `qwen3vl_8b_int8_convrot.safetensors`，与 klein 用的 `qwen3vl_8b_fp8_scaled.safetensors` **同名不同文件、不同仓库**，别互相顶替 —— 跑哪支就下哪支。同仓库里另有 `qwen3.5_9b_qwen_image_2.1_pe_t2i.int8_convrot.safetensors` / `..._pe_i2i...` 一路「PE」编码器，内置工作流**不用**它。
 - 想省显存可以换更小的量化版（`nvfp4` / `pruned_int8_convrot` 等，同仓库同目录下有），但**要同步改工作流 JSON 里的文件名**。
 
-### 视频档（13 行：7 个内置引用 + 6 个参考项，约 56 GB）
+### 视频档（16 行：7 个内置引用 + 9 个参考项，约 56 GB）
 
 | 文件 | 目标目录 | 体积 | 下载源（HF repo） | repo 内路径 |
 |---|---|---|---|---|
@@ -372,14 +372,17 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 | `MiniMax-H3-FL2VA-Acc-8Step.safetensors` | `loras/` | 1.37 GB | `alibaba-pai/MiniMax-H3-Acc-LoRAs` | 根目录 |
 | `MiniMax-H3-Ref2VA-Acc-8Step.safetensors` | `loras/` | 1.37 GB | `alibaba-pai/MiniMax-H3-Acc-LoRAs` | 根目录 |
 | `minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors` | `loras/` | 3.93 GB | `drbaph/MiniMax-H3-Turbo-Lora-ComfyUI` | 根目录（文件仍在盘上，但没有任何内置工作流引用它） |
-| `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors` | `loras/` | 1.82 GB | `Comfy-Org/MiniMax-H3` | `loras/` |
-| `minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors` | `loras/` | 1.82 GB | `lightx2v/Minimax-h3-Turbo` | 根目录 |
+| `minimax_h3_fl2v_turbo_8step_v1.1_768p_comfyui_bf16.safetensors` | `loras/` | 1.82 GB | `lightx2v/Minimax-h3-Turbo` | 根目录 |
+| `minimax_h3_ref2v_turbo_8step_v1.1_768p_comfyui_bf16.safetensors` | `loras/` | 1.82 GB | `lightx2v/Minimax-h3-Turbo` | 根目录 |
+| `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors` | `loras/` | 1.82 GB | `Comfy-Org/MiniMax-H3` | `loras/`（**参考项**：544p 训练版，shift 12/3；已被 v1.1 768p 取代） |
+| `minimax_h3_ref2v_turbo_8step_v1.0_768p_comfyui_bf16.safetensors` | `loras/` | 1.82 GB | `lightx2v/Minimax-h3-Turbo` | 根目录（**参考项**：已被 v1.1 取代） |
+| `minimax_h3_fl2v_turbo_4step_v1.3_768p_comfyui_bf16.safetensors` | `loras/` | 1.82 GB | `lightx2v/Minimax-h3-Turbo` | 根目录（**参考项**：4 步档，需 `video_shift=6`；内置工作流用 8 步） |
 | `minimax_h3_latent_upscaler_3d_fp16.safetensors` | `latent_upscale_models/` | 0.69 GB | `LBH-123-AI/Minimax_h3_latent_Upscaler` | `minimax_h3_latent_upscaler_3d_conv_v1/`（**需改名**） |
 
 **视频档的三个坑：**
 
 - **`minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors` 是社区转换版**（原始版在 `videorebirth/hyperflow`，文件名 `minimax_h3_hyperflow_8step_v1.0.safetensors`，无 `_comfyui_bf16` 后缀）。转换版在重映射 key 时把端点适配器 `endpoint_time_embedder.*` 并进了 `time_embedder.proj_in/proj_out`，本机实测**端点条件进不了模型**（画面出现非单段式晕开）—— 想用完整效果需上游原版 + 专用节点包 `Addis-Pulse-Studio/ComfyUI-HyperFlow`。内置工作流目前挂的是转换版。
-- **Acc LoRA 是 diffusers 命名，普通加载器挂不上**（详见[内置模型](#内置模型)里 `minimax-h3-turbo` 那行）。若要真正加速，改用 `Comfy-Org/MiniMax-H3` 的 `loras/` 下那些 **ComfyUI 命名**的，如 `minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors`。
+- **Acc LoRA 是 diffusers 命名，普通加载器挂不上**（详见[内置模型](#内置模型)里 `minimax-h3-turbo` 那行）。若要真正加速，改用 **ComfyUI 命名**的转换版：内置工作流挂的是 `lightx2v/Minimax-h3-Turbo` 的 `minimax_h3_fl2v_turbo_8step_v1.1_768p_comfyui_bf16.safetensors`（768p，`video_shift=6`）。
 
 ### 一键下载
 

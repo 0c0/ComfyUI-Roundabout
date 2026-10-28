@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.48.1` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.49.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -276,6 +276,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `attention` | `"sparse"`\|`"dense"`? | **注意力档位**（更快 ↔ 更高质量，H3 视频四支）：`sparse`（默认，Spark 稀疏加速，更快、更省显存；画质与致密高度一致、差异只在高频细节）/ `dense`（关闭稀疏，画质优先，耗时回满）。落点是 Spark 节点的 `mode`（`sparse`→`fidelity`、`dense`→`dense`）。不传 = 保持模板默认（稀疏）。其它模型传了报 400 |
 | `output_size` | string? | **期望输出尺寸**（仅 SelfLift 两支 `minimax-h3-lift` / `-lift-edit`）：格式同 `size`，语义也同 `size` —— SelfLift 的输出就是目标尺寸，没有放大倍率。其它模型传了报 400（它们的输出尺寸就是 `size`）。实际输出尺寸见响应 `size` 回显 |
 | `scale` | float? | **已下线**：latent-lift 的放大倍率随 SelfLift 一起移除（输出尺寸 = `size`）。现在任何模型传 `scale` 都报 400，改用 `size` / `output_size`；内部低分辨率前缀用 `lowres_scale` 调 |
+| `video_shift` | float? | **视频 flow shift**（H3 四支，落点 `162.inputs.shift_video`）：不传按配方自动选 —— 基模 20 步用 `12`（模型默认），开 `turbo_lora` 时用 `6`（lightx2v 768p 蒸馏 LoRA 的训练值）。音频维固定 `3`。**换了 Turbo LoRA 就必须同步 shift**，否则噪声调度不匹配、4 步尤其会崩，且不报错。显式传值优先，仅调试用。其它模型传了报 400 |
 | `highres_tiling` | bool? | **高分辨率阶段分块**（仅 SelfLift 两支 `minimax-h3-lift` / `-lift-edit`）：`true` 让升采样后的高分辨率段按剩余显存切 1–8 块，8 GiB 上峰值显存明显下降、更不容易崩；**实验性**——节点只保留第一块的音频预测，画质与耗时都会变，故默认 `false`、需显式开。其它模型传了报 400 |
 | `workflow_overrides` | object? | 厂商特有参数的通用透传（不单设请求字段），如 `{"970.inputs.compression_ratio": "3/5"}`。SelfLift 两支：`lowres_scale` / `transition_step` / `highres_tiling` 已是正式参数，其余如 `125.inputs.rho`（像素锚阻尼，默认 0.15）、`125.inputs.w_min`/`w_max`（默认 1.0/1.0）走透传 |
 | `seed` / `negative_prompt` / `steps` / `cfg` / `sampler_name` / `scheduler` / `denoise` | 各类型? | 同图像精调 |
@@ -480,7 +481,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `generate_image` | 文生图；支持 `negative_prompt`/`seed`/`size`/`steps`/`cfg`/`workflow_overrides`(JSON 字符串)/`filename_prefix`/`mode`；返回 OpenAI 风格响应（含 `seed` 回显，url 已绝对化）；视频模型自动转视频链路。**编辑图片不要用本工具**（用 `edit_image` / `remove_background`） |
 | `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写）；**多图参考**传 `reference_images`（klein 4 槽 / qwen 6 槽）；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
 | `generate_speech` | 文本转语音 / 音色设计：`input`（要朗读的文本）+ `instructions`（音色描述，不给用模板内置描述）；参数 `model`(默认 `qwen3-tts-voice-design`)/`voice`/`language`/`seed`/`response_format`(交付形态，非编码)/`filename_prefix`/`background`；返回 `{created, data:[{url}], seed, task_id}` |
-| `generate_video` | 文生视频 / 首尾帧生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`first_frame`/`last_frame`/`reference_images|videos|audios`（按模型槽位生效，帧与参考可同传）/`steps`/`attention`/`output_size`（`size` 同义，仅 lift）/`scale`（已下线，传了 400）/`vpack_ratio`（仅 edit 两支）/`highres_tiling`（仅 lift 两支）/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
+| `generate_video` | 文生视频 / 首尾帧生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`first_frame`/`last_frame`/`reference_images|videos|audios`（按模型槽位生效，帧与参考可同传）/`steps`/`attention`/`output_size`（`size` 同义，仅 lift）/`scale`（已下线，传了 400）/`vpack_ratio`（仅 edit 两支）/`highres_tiling`（仅 lift 两支）/`video_shift`（H3 四支，不传按 turbo 自动选 12 或 6）/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
 | `remove_background` | 图片去背景（BiRefNet，独立工具，无需提示词）；参数 `image`(本地路径/URL/dataURL/base64)、`response_format`(默认 url)、`filename_prefix`。**推荐改用 `process_image(action="remove_background")`** |
 | `process_image` | 图像处理统一入口，按 `action` 分发：`upscale`=SeedVR2 7B Int8 放大（`multiplier` 1-8 默认 4，`color_correction` none/lab/wavelet/adain）；`remove_background`=BiRefNet 去背景；`segment`=SAM3 文本提示抠图（需 `prompt`=目标描述，`threshold` 默认 0.5）；通用参数 `image` / `response_format` / `filename_prefix` |
 | `get_task` | 查询异步任务状态与产物（含 `prompt_id`、是否有工作流快照、`output`、`error`）；同步回执里的 `task_id` 同样能查 |

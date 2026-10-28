@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # 「模型专属」请求字段：只有 models.yaml `params:` 块（或 bindings）声明了它的模型才接受，
 # 传给未声明的模型一律 400 指路（pipeline 通用拒绝逻辑消费此清单）。
 # 新增模型专属参数时：请求模型加字段 + 这里记一笔 + models.yaml 声明，三处齐。
-MODEL_SPECIFIC_FIELDS = ("turbo_lora", "vpack_ratio", "highres_tiling")
+MODEL_SPECIFIC_FIELDS = ("turbo_lora", "vpack_ratio", "highres_tiling", "video_shift")
 
 
 class ImageGenerationRequest(BaseModel):
@@ -164,6 +164,15 @@ class VideoGenerationRequest(BaseModel):
             "高分辨率阶段分块（SelfLift 升采样后用）：true 按剩余显存选 1–8 块降峰值显存，"
             "8 GiB 上明显更稳；**实验性**——只保留第一块的音频预测、画质与耗时都会变，"
             "故默认 false。仅 lift 两支支持（见 tool-info）。"
+        ),
+    )
+
+    # ---- 视频 flow shift（H3 四支；768p 蒸馏 LoRA 与基模不同 schedule）----
+    video_shift: float | None = Field(
+        None,
+        description=(
+            "视频 flow shift（音频维固定 3）。不传时按配方自动选：基模 20 步 12，"
+            "开 turbo_lora 时 6（768p 蒸馏 LoRA 的训练值）。仅 H3 四支支持（见 tool-info）。"
         ),
     )
 

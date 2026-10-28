@@ -555,6 +555,10 @@ async def generate_video_tool(
         description="参考视频 latent 压缩档（仅 edit 两支）：auto（默认，带参考视频时 2/5、否则 0/5 直通）/ 0/5 / 1/5 / 2/5 / 3/5。只压参考视频时间维；无参考视频时非 0/5 报 400。",
     ),
     attention: str = "",  # "sparse"（默认，稀疏加速）| "dense"（关闭稀疏，画质优先）；仅 base 四支
+    video_shift: float | None = Field(
+        None,
+        description="视频 flow shift（H3 四支）：不传按配方自动选（基模 12 / turbo 6）；显式传值优先，仅调试用。",
+    ),
     highres_tiling: bool | None = Field(
         None,
         description="高分辨率阶段分块（仅 lift 两支，默认 false）：true 按剩余显存切 1–8 块降峰值显存，8 GiB 上更稳；实验性，会改变画质与耗时。",
@@ -586,6 +590,7 @@ async def generate_video_tool(
         response_format=response_format or None,  # type: ignore[arg-type]
         filename_prefix=filename_prefix or None,
         attention=attention or None,  # type: ignore[arg-type]
+        video_shift=video_shift,
         highres_tiling=highres_tiling,
     )
     return await _handle_video(req, ctx)

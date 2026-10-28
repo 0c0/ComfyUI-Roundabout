@@ -380,6 +380,13 @@ models:
         default: 0
         bind: '160.inputs.strength_model'
         description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=8 步蒸馏 Turbo，需配 steps≈8
+      video_shift:
+        type: float
+        min: 0.01
+        max: 100
+        default: 12.0
+        bind: '162.inputs.shift_video'
+        description: 视频 flow shift（音频维固定 3）。基模 20 步用 12（默认）；开 turbo_lora 时自动切 6（768p 蒸馏 LoRA 的训练值），显式传值优先
     bindings:
       filename_prefix: 92.inputs.filename_prefix
       prompt: 138.inputs.value
@@ -445,6 +452,13 @@ models:
         default: 0
         bind: '160.inputs.strength_model'
         description: Turbo LoRA 强度，0=关（默认，零开销）；1.0=8 步蒸馏 Turbo，需配 steps≈8
+      video_shift:
+        type: float
+        min: 0.01
+        max: 100
+        default: 12.0
+        bind: '162.inputs.shift_video'
+        description: 视频 flow shift（音频维固定 3）。基模 20 步用 12（默认）；开 turbo_lora 时自动切 6（768p 蒸馏 LoRA 的训练值），显式传值优先
       vpack_ratio:
         type: str
         default: auto
@@ -539,6 +553,13 @@ models:
         default: 1.0
         bind: '160.inputs.strength_model'
         description: Turbo LoRA 强度。SelfLift 配方按 8 步蒸馏轨迹标定，**默认 1.0**；设 0 会让低分前缀跑在未蒸馏轨迹上，画质必坏
+      video_shift:
+        type: float
+        min: 0.01
+        max: 100
+        default: 12.0
+        bind: '162.inputs.shift_video'
+        description: 视频 flow shift（音频维固定 3）。基模 20 步用 12（默认）；开 turbo_lora 时自动切 6（768p 蒸馏 LoRA 的训练值），显式传值优先
       lowres_scale:
         type: float
         min: 0.25
@@ -627,6 +648,13 @@ models:
         default: 1.0
         bind: '160.inputs.strength_model'
         description: Turbo LoRA 强度。SelfLift 配方按 8 步蒸馏轨迹标定，**默认 1.0**；设 0 会让低分前缀跑在未蒸馏轨迹上，画质必坏
+      video_shift:
+        type: float
+        min: 0.01
+        max: 100
+        default: 12.0
+        bind: '162.inputs.shift_video'
+        description: 视频 flow shift（音频维固定 3）。基模 20 步用 12（默认）；开 turbo_lora 时自动切 6（768p 蒸馏 LoRA 的训练值），显式传值优先
       lowres_scale:
         type: float
         min: 0.25

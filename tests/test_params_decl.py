@@ -110,21 +110,23 @@ def main() -> int:
     edit = r.resolve("minimax-h3-edit")
     lift = r.resolve("minimax-h3-lift")
     lift_edit = r.resolve("minimax-h3-lift-edit")
-    check("h3 只声明 turbo；edit 多一个 VPack 档",
-          set(h3.param_specs) == {"turbo_lora"}
-          and set(edit.param_specs) == {"turbo_lora", "vpack_ratio"})
-    check("SelfLift 两支声明 turbo + lowres_scale + transition_step",
-          set(lift.param_specs) == {"turbo_lora", "lowres_scale", "transition_step", "highres_tiling"}
-          and set(lift_edit.param_specs) == {"turbo_lora", "lowres_scale", "transition_step", "vpack_ratio", "highres_tiling"})
+    check("h3 声明 turbo + video_shift；edit 多一个 VPack 档",
+          set(h3.param_specs) == {"turbo_lora", "video_shift"}
+          and set(edit.param_specs) == {"turbo_lora", "video_shift", "vpack_ratio"})
+    check("SelfLift 两支声明 turbo + video_shift + lowres_scale + transition_step",
+          set(lift.param_specs) == {"turbo_lora", "video_shift", "lowres_scale", "transition_step", "highres_tiling"}
+          and set(lift_edit.param_specs) == {"turbo_lora", "video_shift", "lowres_scale", "transition_step", "vpack_ratio", "highres_tiling"})
     check("SelfLift 的 turbo 默认 1.0（蒸馏配方）",
           lift.defaults.get("turbo_lora") == 1.0 and lift_edit.defaults.get("turbo_lora") == 1.0)
     check("h3 bindings 由声明并入", h3.binds("turbo_lora"))
     check("h3 defaults 取自声明", h3.defaults.get("turbo_lora") == 0)
+    check("video_shift 模板字面值 12（等于旧行为）", h3.defaults.get("video_shift") == 12.0)
+    check("video_shift 绑定可解析", h3.binds("video_shift") is True)
 
     print("== pipeline 拒绝判据 ==")
     from gateway.schemas import MODEL_SPECIFIC_FIELDS
-    check("MODEL_SPECIFIC_FIELDS 覆盖 turbo + vpack + highres_tiling",
-          set(MODEL_SPECIFIC_FIELDS) == {"turbo_lora", "vpack_ratio", "highres_tiling"})
+    check("MODEL_SPECIFIC_FIELDS 覆盖 turbo + vpack + highres_tiling + video_shift",
+          set(MODEL_SPECIFIC_FIELDS) == {"turbo_lora", "vpack_ratio", "highres_tiling", "video_shift"})
 
     print("== tool-info 元数据来自声明 ==")
     entry = toolinfo._model_entry(h3)
