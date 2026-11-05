@@ -173,7 +173,7 @@ https://github.com/HJH-AILab/ComfyUI-Roundabout
 
 4. **准备模型权重**：仓库不含权重。内置 11 个工作流共引用 18 个权重文件（清单另列 9 个非内置引用的参考项，共 27 行 / 约 165 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 49 GB**，可以先只下这一族。
 
-   > **视频档还需要两个第三方节点包**：KJNodes（`MiniMaxChunkFeedForward`，视频档全用）与 `comfyui-SelfLift`（lift 两支的 latent 上采样节点 `SelfLiftH3LatentLift`）。清单见下方[第三方节点依赖](#第三方节点依赖)。
+   > **视频档还需要四个第三方节点包**：KJNodes（`MiniMaxChunkFeedForward`，视频档全用）、`ComfyUI-Spark-H3`（四支视频档的稀疏注意力，须按显卡架构下发布包）、`ComfyUI-VPack`（edit 两支的 `vpack_ratio`）、`comfyui-SelfLift`（lift 两支的 latent 上采样节点 `SelfLiftH3LatentLift`）。安装命令与自检见下方[第三方节点依赖](#第三方节点依赖)。
 
 5. 重启 ComfyUI。启动日志出现 `OpenAI gateway routes registered ... models=...` 即成功。
 
@@ -451,9 +451,50 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 
 ### 第三方节点依赖
 
-> 这些工作流用到的节点**除 lift 系列（`minimax-h3-lift*`）、基础两支 `minimax-h3` / `-edit`（低显存分块节点）外，全部来自 ComfyUI 核心**（`comfy_extras/`），不需要装任何第三方 custom node 包；ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。
-> lift 系列额外依赖一个第三方节点包：`comfyui-SelfLift`（SelfLift 两支用 `SelfLiftH3Sampler` + `latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safetensors`）。
-> 需要 KJNodes 的 `MiniMaxChunkFeedForward` 做 FFN 分块：**全部视频档**。低显存都走两级 —— 注意力档 → `MiniMaxChunkFeedForward`：**四支视频档统一 `Spark-H3`**（`MiniMaxH3SparkAttentionSM86`，依赖 `custom_nodes/ComfyUI-Spark-H3` + 打了 Spark 补丁的 comfy-kitchen）；Spark v0.1.3 起用 `mode` 取代 `enabled`，落点见下面的 `attention` 说明。
+**这些工作流用到的节点绝大多数来自 ComfyUI 核心**（`comfy_extras/`），ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。**视频档另有四个第三方包**，按档位装 —— 只跑图像档的话一个都不用：
+
+| 包 | 提供什么 | 哪些档需要 |
+|---|---|---|
+| [ComfyUI-KJNodes](https://github.com/kijai/ComfyUI-KJNodes) | `MiniMaxChunkFeedForward`（FFN 分块） | **全部视频档** |
+| [ComfyUI-Spark-H3](https://github.com/zechengtang/Spark-H3) | `MiniMaxH3SparkAttentionSM86/89/120`（稀疏注意力）+ 匹配架构的 comfy-kitchen wheel | **全部视频档** |
+| [ComfyUI-VPack](https://github.com/zechengtang/VPack) | `VPack` 节点 —— `vpack_ratio` 的落点，压缩参考视频 latent | `minimax-h3-edit` / `-lift-edit` |
+| [comfyui-SelfLift](https://github.com/0c0/comfyui-SelfLift) | `SelfLiftH3Sampler` + 3D latent 上采样 | `minimax-h3-lift` / `-lift-edit` |
+
+#### Spark-H3：按显卡架构下发布包，别用 clone 顶替
+
+Spark-H3 依赖**打了 Spark 补丁的 comfy-kitchen**。`git clone` 只拿到节点代码、拿不到那个 wheel，采样时才报缺 kernel，所以走发布包：
+
+1. 打开 [releases/tag/comfyui-v0.1.5](https://github.com/zechengtang/Spark-H3/releases/tag/comfyui-v0.1.5)，按显卡挑 zip —— 文件名里的 `sm` 号必须对上（`cu130` 要求 `torch.version.cuda >= 13.0`）：
+
+   | GPU | Windows 包名 |
+   |---|---|
+   | RTX 30 系 · SM86 | `ComfyUI-Spark-H3-0.1.5-windows-x86_64-sm86-cu130.zip` |
+   | RTX 40 系 · SM89 | `ComfyUI-Spark-H3-0.1.5-windows-x86_64-sm89-cu130.zip` |
+   | RTX 50 系 · SM120 | `ComfyUI-Spark-H3-0.1.5-windows-x86_64-sm120-cu130.zip` |
+
+   Linux 把 `windows` 换成 `linux`。
+
+2. **先完全关掉 ComfyUI**，再解压到 `custom_nodes/`。层级必须是 `custom_nodes/ComfyUI-Spark-H3/install.py`；套成两层同名目录（`ComfyUI-Spark-H3/ComfyUI-Spark-H3/`）会装不上。
+
+3. 用**启动 ComfyUI 的那个 python** 执行安装器（不是双击、也不是系统 python），它会挑匹配架构的 kitchen wheel 装进去：
+
+   ```bash
+   "<ComfyUI>/python/python.exe" custom_nodes/ComfyUI-Spark-H3/install.py
+   ```
+
+4. 自检三条：`pip show comfy-kitchen` 的版本串必须带 `+spark.h3.<架构>`（如 RTX 3070Ti / SM86 是 `0.2.40+spark.h3.sm86.cu130.1`）；**且版本号 ≥ `0.2.37`** —— 安装器按 ComfyUI 版本挑 wheel，可能挑到包内的 `0.2.36`，那个版本叠 LoRA patch 会崩（见下方版本下限那条），低了就用 `pip install --force-reinstall` 换成 0.2.37 以上、**同架构**的 wheel；启动日志里对应架构的 Spark 节点注册成功。**架构对不上时节点会硬校验 capability 后报错，不是静默降级。**
+
+其余三个直接 clone（VPack 无额外 pip 依赖）：
+
+```bash
+cd ComfyUI/custom_nodes
+git clone https://github.com/kijai/ComfyUI-KJNodes.git
+git clone https://github.com/zechengtang/VPack.git
+git clone https://github.com/0c0/comfyui-SelfLift.git
+```
+
+> 换卡部署时节点类型名带算力后缀（`MiniMaxH3SparkAttentionSM86` / `SM89` / `SM120`），必须同步改工作流里的节点类型，否则加载即报错。`manage_workflows` 的 `list`/`deploy` 会顺带给出这条 `hints`。
+
 > ⛔ **不要在视频档里接 KJNodes 的 `MiniMaxLowVRAMAttention`**：它替换 `block.forward`，而 `BlockSparseAttention` 的 block patch 会无条件补传 `attention=` 关键字（`comfy/ldm/minimax/model.py`），签名对不上 ⇒ 实测 `TypeError`。两者**硬互斥**，因此 base 四支原先的 LowVRAM 节点已于 2026-09-21 撤除（`head_chunks` 档位值随之失去消费者，保留在表里仅为复原方便）。
 > 稀疏节点的参数（`tau` / `min_tokens` / `dense_blocks` …）不在可注入白名单；其中 `tau` 的键名是 `selection.tau`（含点号），按 `.` 切分的路径解析寻址不到，要调只能改工作流 JSON 再 `/admin/reload`。**但「更快 ↔ 更高质量」这一档有正式请求参数**：`attention`（`sparse` 默认 / `dense` 关闭稀疏换致密画质）。落点：H3 四支全落 Spark 节点的 `mode`（`sparse`→`fidelity`，`dense`→`dense`，后者让节点完全旁路 Spark）。**这一档只给 H3 四支**（`minimax-h3` / `-edit` / `-lift` / `-lift-edit`）；其它模型传 `attention` 会报 400。
 > 全部视频档的 `ModelAttentionBackend` 统一用 `comfy kitchen attention`（comfy_kitchen 的 INT8 实现，省显存）。要换 `pytorch attention` 得改工作流模板里那个节点的值；它不在 `bindings` 白名单里，但**可以**用 `workflow_overrides` 在运行时点改（`{"156.inputs.attention": "pytorch attention"}`）—— `workflow_overrides` 是任意路径注入，与白名单无关。
