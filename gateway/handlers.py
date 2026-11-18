@@ -20,7 +20,7 @@ from .auth import verify
 from .comfy_client import ComfyClient
 from .config import settings
 from .errors import APIError, error_response
-from .pipeline import generate, generate_audio, generate_video, new_request_id
+from .pipeline import generate, generate_audio, generate_music, generate_video, new_request_id
 from .registry import registry
 from .tasks import task_store
 from .schemas import (
@@ -28,6 +28,7 @@ from .schemas import (
     ImageGenerationRequest,
     ModelCard,
     ModelList,
+    MusicGenerationRequest,
     VideoGenerationRequest,
 )
 from .store import store
@@ -188,6 +189,24 @@ async def generate_audio_tracked(req: AudioSpeechRequest):
     return result
 
 
+async def generate_music_tracked(req: MusicGenerationRequest):
+    """同步生成音乐，同时在任务表留一条记录（同 generate_tracked 的理由）。"""
+    task_id, request_id = _new_task(req.model)
+    try:
+        result = await generate_music(
+            req,
+            comfy,
+            request_id=request_id,
+            on_submit=lambda pid, wf: task_store.attach_prompt(task_id, pid, wf),
+        )
+    except Exception as exc:  # noqa: BLE001
+        _record_failure(task_id, exc)
+        raise
+    task_store.complete(task_id, result.model_dump(exclude_none=True))
+    result.task_id = task_id
+    return result
+
+
 async def generate_video_tracked(req: VideoGenerationRequest):
     """同步生视频，同时在任务表留一条记录（异步链路自带记录，见 _run_video_task）。"""
     task_id, request_id = _new_task(req.model)
@@ -228,6 +247,12 @@ async def images_generations(request: web.Request) -> web.Response:
         if areq.is_async:
             return _start_async_task(_run_audio_task, areq, log_label="audio")
         result = await generate_audio_tracked(areq)
+        return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))
+    if spec.is_music:
+        mreq = MusicGenerationRequest.model_validate(body)
+        if mreq.is_async:
+            return _start_async_task(_run_music_task, mreq, log_label="music")
+        result = await generate_music_tracked(mreq)
         return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))
     if req.is_async:
         return _start_async_task(_run_image_task, req, log_label="image")
@@ -358,6 +383,42 @@ async def _run_audio_task(task_id: str, req: AudioSpeechRequest, request_id: str
         task_store.fail(task_id, exc.message, exc.status_code)
     except Exception as exc:  # noqa: BLE001
         log.exception("async audio task %s failed: %s", task_id, exc)
+        task_store.fail(task_id, "Internal server error during generation.", 500)
+
+
+@gateway_handler
+async def music_generations(request: web.Request) -> web.Response:
+    """文生音乐（text2music，扩展端点，结构沿用 audio 档）。
+
+    `prompt`（或 `tags`）= 风格描述（必填）；`lyrics` = 歌词（留空 = 纯音乐）。
+    任务命名空间与音频档共用 /v1/audio/tasks/{id}（产物形态相同，不另开一套）。
+    """
+    verify(request)
+    body = await _parse_json(request)
+    req = MusicGenerationRequest.model_validate(body)
+
+    if req.is_async:
+        return _start_async_task(_run_music_task, req, log_label="music")
+
+    result = await generate_music_tracked(req)
+    return web.json_response(_absolutize(result.model_dump(exclude_none=True), request))
+
+
+async def _run_music_task(task_id: str, req: MusicGenerationRequest, request_id: str) -> None:
+    """异步音乐任务执行体（与 _run_audio_task 同构）：结果写入 task_store。"""
+    task_store.mark_processing(task_id)
+    try:
+        result = await generate_music(
+            req,
+            comfy,
+            request_id=request_id,
+            on_submit=lambda pid, wf: task_store.attach_prompt(task_id, pid, wf),
+        )
+        task_store.complete(task_id, result.model_dump(exclude_none=True))
+    except APIError as exc:
+        task_store.fail(task_id, exc.message, exc.status_code)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("async music task %s failed: %s", task_id, exc)
         task_store.fail(task_id, "Internal server error during generation.", 500)
 
 

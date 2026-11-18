@@ -363,6 +363,72 @@ class AudioResponse(BaseModel):
     task_id: str | None = None
 
 
+# ============================================================================
+#  音乐生成（text2music）：POST /v1/audio/music。字段对齐 ACE-Step / YuE2 的
+#  共同语义：prompt(=tags/style) 是风格描述（必填），lyrics 是歌词（可空 = 纯音乐）。
+#  乐理/采样参数（bpm / key_scale / temperature / …）各模型能力不同，走
+#  models.yaml `params:` 块自述；schema 里声明的是两支模型共有的字段。
+# ============================================================================
+class MusicGenerationRequest(BaseModel):
+    """文生音乐。
+
+    与 TTS 的关键差别：`prompt` 在这里装**风格/氛围描述**（ACE-Step 的 `tags`、
+    YuE2 的 `style`），`lyrics` 装歌词 —— 留空即纯音乐（instrumental）。时长语义
+    两支模型不同：ACE-Step 的 `duration` 是精确目标秒数；YuE2 的 `max_duration`
+    只是上限，实际时长由模型按歌词结构自定。
+    """
+
+    model_config = ConfigDict(extra="allow", protected_namespaces=())
+
+    model: str | None = Field(None, description="映射到某个 ComfyUI 音乐 workflow 模板（如 ace-step-1.5-turbo / yue2-3b）")
+    # ---------- 文本落点 ----------
+    prompt: str | None = Field(None, description="风格/氛围/乐器/曲速描述（ACE-Step 的 tags、YuE2 的 style）")
+    tags: str | None = Field(None, description="`prompt` 的别名（ACE-Step 节点输入名），二选一")
+    lyrics: str | None = Field(None, description="歌词，可带 [Verse]/[Chorus]/[Bridge] 结构标签；留空 = 纯音乐")
+    # ---------- 结构 ----------
+    duration: int | None = Field(None, ge=1, le=900, description="目标时长（秒，ACE-Step：精确生成这么长）；YuE2 忽略，用 max_duration")
+    max_duration: float | None = Field(None, ge=1, le=900, description="时长上限（秒，YuE2：模型按歌词自定实际时长）；ACE-Step 忽略，用 duration")
+    mode: str | None = Field(None, description="作曲模式（YuE2：full=旋律+和声 / melody=仅旋律；ACE-Step 无此概念）")
+    # ---------- 采样（默认值由各模型 params: 声明）----------
+    seed: int | None = Field(None, description="随机种子；0 = 交给引擎自己的随机行为，正整数 = 固定")
+    steps: int | None = Field(None, ge=1, description="扩散步数")
+    cfg: float | None = Field(None, ge=0.0, description="扩散引导强度（KSampler 侧，ACE-Step turbo 档固定 1）")
+    sampler_name: str | None = Field(None, description="采样器")
+    scheduler: str | None = Field(None, description="调度器")
+    language: str | None = Field(None, description="歌词语言提示（如 en / zh / Auto）")
+    temperature: float | None = Field(None, ge=0.0, description="采样温度")
+    top_p: float | None = Field(None, ge=0.0, le=1.0, description="核采样")
+    top_k: int | None = Field(None, ge=0, description="Top-K 采样（0 = 关）")
+    min_p: float | None = Field(None, ge=0.0, le=1.0, description="Min-P 采样（ACE-Step）")
+    cfg_scale: float | None = Field(None, ge=0.0, description="编码器侧引导强度（ACE-Step 的 cfg_scale）")
+    # ---------- 交付 ----------
+    response_format: str | None = Field(
+        None,
+        description='产物形态："url"（默认，可打开的地址）/ "file" | "path"（磁盘绝对路径）/ "b64_json"（内联字节）。'
+                    "⚠️ 不是音频编码 —— 编码由工作流的 SaveAudio 节点决定（ace-step 档 mp3 / yue2 档 flac）",
+    )
+    user: str | None = None
+    n: int = Field(1, ge=1, description="生成条数（串行多次提交，种子递增）")
+    filename_prefix: str | None = Field(None, description="保存文件名前缀；不传则用工作流模板自带的前缀")
+    workflow_overrides: dict[str, Any] | None = Field(None, description="直接改写工作流节点，形如 {\"94.inputs.bpm\": 100}")
+
+    # ---- 异步任务模式（与视频/音频档同契约）----
+    background: str | None = Field(
+        None,
+        description='OpenAI 标准异步开关："pending" 异步立即返回 task 对象；缺省同步',
+    )
+    async_mode: bool = Field(False, alias="async", description="异步任务模式兼容别名：true 等价于 background=pending")
+
+    @property
+    def is_async(self) -> bool:
+        return self.background == "pending" or bool(self.async_mode)
+
+    @property
+    def style_text(self) -> str:
+        """风格描述：`prompt` 优先，回落 `tags`（两者语义等价）。"""
+        return (self.prompt or self.tags or "").strip()
+
+
 class ModelCard(BaseModel):
     id: str
     object: str = "model"

@@ -69,6 +69,8 @@ for line in readme_text.splitlines():
         section = "图像档"
     elif line.startswith("### 视频档"):
         section = "视频档"
+    elif line.startswith("### 音乐档"):
+        section = "音乐档"
     m = ROW_RE.match(line)
     if m:
         rows[m.group(1)] = (m.group(2), m.group(3), m.group(4), m.group(5))

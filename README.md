@@ -116,7 +116,7 @@ git clone https://github.com/HJH-AILab/qwen-image2.1-prompt-writing-skill.git <a
 **两套接入层，共享同一个引擎**
 
 - **OpenAI 兼容 REST**：`/v1/images/generations`（文生图 / 图生图）、`/v1/images/edits`（multipart 标准编辑）、`/v1/images/remove-background`（去背景）、`/v1/videos/generations`（视频，支持异步）。返回格式可选 `b64_json` / `url` / `file` / `path`，可直接替换 OpenAI 官方地址使用。
-- **MCP 服务（19 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `process_image` / `generate_speech` / `generate_video`，查询类 `get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills` / `manage_workflows`，看板类 `view_board`（单入口按 action 分发：pin / remove / clear / get / history / load）。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 钉到看板」全流程。
+- **MCP 服务（20 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `process_image` / `generate_speech` / `generate_music` / `generate_video`，查询类 `get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills` / `manage_workflows`，看板类 `view_board`（单入口按 action 分发：pin / remove / clear / get / history / load）。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 钉到看板」全流程。
 - **共享端口**：MCP 端点 `/mcp` 直接挂在 ComfyUI 同一端口（`http://<comfyui>:8188/mcp`），不用额外开端口、不用另起进程；REST 与 MCP 共用同一份注册表、生成链路与任务表。
 
 **声明式模型注册**
@@ -295,6 +295,8 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 | 视频 | `minimax-h3-lift` | **base 骨架 + SelfLift 一体化精修**（8 步 turbo，构图零重掷）：`size` 就是输出尺寸，内部按 `lowres_scale`（默认 0.75）跑低分辨率前缀、再用一次性学习式升采样拉满；NFE 与普通 8 步档相同；支持首尾帧（`first_frame`/`last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧，cover 裁剪）；`sampler_name` 必须 `euler`，`turbo_lora` 默认 1.0 |
 | 视频 | `minimax-h3-lift-edit` | 同上，改用 **edit 骨架**：ref2va 参考条件 + VPack（带参考视频默认 2/5）+ 参考槽全套 6 图 / 3 视频 / 3 音频 |
 | **音频（TTS）** | `qwen3-tts-voice-design` | **文本转语音 + 音色设计**（Qwen3-TTS 1.7B VoiceDesign）：`POST /v1/audio/speech`，`input` = 要朗读的文本、`instructions` = 音色描述（年龄/性别/语速/气质…）；产物 mp3 落 `audio/`。依赖 custom node **TTS-Audio-Suite**（引擎默认跑 Shared Runtime，首次调用要准备运行时） |
+| **音乐（text2music）** | `ace-step-1.5-turbo` | **文生音乐**（ACE-Step 1.5 Turbo 4B）：`POST /v1/audio/music`，`prompt` = 风格描述（必填）、`lyrics` = 歌词（留空 = 纯音乐）、`duration` = 精确目标秒数（≤240）；`bpm` / `key_scale` / `language` 等乐理参数可调。产物 mp3(V0)。全部 comfy-core 内置节点，无第三方依赖 |
+| **音乐（text2music）** | `yue2-3b` | **文生音乐**（YuE2 3B，ABC 规划 + 整曲生成）：`POST /v1/audio/music`，`prompt` = 风格、`lyrics` = 歌词；实际时长由模型按歌词结构自定（`max_duration` 只是上限），产物 flac。整曲较慢（3 分钟歌 ≈ 10+ 分钟），建议 `background="pending"`。comfy-core 内置节点 |
 
 - 编辑类模型**必须传图**：单图模型传 `image`；**多图模型**（`flux2-klein-image-edit-turbo` 4 张 / `qwen-image-2.1` 6 张）传 `reference_images` 按序喂槽，单图也可以直接传 `image`（等价第 1 张）。输出尺寸跟随输入图（klein 缩放到 1MP；qwen 按官方默认不做重采样，直接跟随第 1 张参考图），此时 `size` 不生效 —— `qwen-image-2.1` 是**文生与编辑同一支**，一张参考图都不传就是纯文生，那一支才用 `size`。
 - 给文生图模型传 `image` 会被拒绝，错误信息里会列出所有支持输入图的模型名。
@@ -304,7 +306,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 
 ## 权重清单（内置工作流的全部依赖）
 
-**本仓库不包含任何权重文件**（体积与许可原因）。内置的 11 个工作流共引用 **18 个**权重文件，合计约 **105 GB**（图像档约 49 GB / 视频档约 56 GB）；下面两张清单表共 **27 行**，另 9 行是**当前无内置工作流引用**的参考项（2 个旧底模、1 个 w6a8 hybrid、2 个 Acc LoRA、1 个 hyperflow LoRA、2 个旧版 turbo LoRA、1 个 4 步 v1.3），仅作参考，计入则约 165 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入上列统计。）
+**本仓库不包含任何权重文件**（体积与许可原因）。内置的 13 个工作流共引用 **23 个**权重文件，合计约 **124 GB**（图像档约 49 GB / 视频档约 56 GB / 音乐档约 19 GB）；下面两张清单表共 **32 行**，另 9 行是**当前无内置工作流引用**的参考项（2 个旧底模、1 个 w6a8 hybrid、2 个 Acc LoRA、1 个 hyperflow LoRA、2 个旧版 turbo LoRA、1 个 4 步 v1.3），仅作参考，计入则约 184 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入上列统计。）
 
 这些文件基本都在 **HuggingFace 的 Comfy-Org 官方仓库**里（少数为模型原厂或社区仓库，已在表中标注）。国区建议把端点换成镜像，repo ID 与 repo 内路径完全一致：
 
@@ -384,12 +386,36 @@ export HF_ENDPOINT=https://hf-mirror.com       # Linux / macOS
 - **`minimax_h3_hyperflow_8step_v1.0_comfyui_bf16.safetensors` 是社区转换版**（原始版在 `videorebirth/hyperflow`，文件名 `minimax_h3_hyperflow_8step_v1.0.safetensors`，无 `_comfyui_bf16` 后缀）。转换版在重映射 key 时把端点适配器 `endpoint_time_embedder.*` 并进了 `time_embedder.proj_in/proj_out`，本机实测**端点条件进不了模型**（画面出现非单段式晕开）—— 想用完整效果需上游原版 + 专用节点包 `Addis-Pulse-Studio/ComfyUI-HyperFlow`。内置工作流目前挂的是转换版。
 - **Acc LoRA 是 diffusers 命名，普通加载器挂不上**（详见[内置模型](#内置模型)里 `minimax-h3-turbo` 那行）。若要真正加速，改用 **ComfyUI 命名**的转换版：内置工作流挂的是 `lightx2v/Minimax-h3-Turbo` 的 `minimax_h3_fl2v_turbo_8step_v1.1_768p_comfyui_bf16.safetensors`（768p，`video_shift=6`）。
 
+### 音乐档（5 个文件，约 19 GB）
+
+全部来自 Comfy-Org 官方 repack / 官方 ComfyUI 集成仓库，无需任何第三方节点（comfy-core 0.42+ 内置 ACE-Step 1.5 与 YuE2 节点）。
+
+| 文件 | 目标目录 | 体积 | 下载源（HF repo） | repo 内路径 |
+|---|---|---|---|---|
+| `acestep_v1.5_turbo.safetensors` | `diffusion_models/` | 4.79 GB | `Comfy-Org/ace_step_1.5_ComfyUI_files` | `split_files/diffusion_models/` |
+| `qwen_0.6b_ace15.safetensors` | `text_encoders/` | 1.19 GB | `Comfy-Org/ace_step_1.5_ComfyUI_files` | `split_files/text_encoders/` |
+| `qwen_4b_ace15.safetensors` | `text_encoders/` | 8.38 GB | `Comfy-Org/ace_step_1.5_ComfyUI_files` | `split_files/text_encoders/` |
+| `ace_1.5_vae.safetensors` | `vae/` | 0.34 GB | `Comfy-Org/ace_step_1.5_ComfyUI_files` | `split_files/vae/` |
+| `yue2_3b_int8_convrot.safetensors` | `checkpoints/` | 3.96 GB | `Comfy-Org/YuE2` | `checkpoints/` |
+
 ### 一键下载
 
 在 **ComfyUI 根目录**执行（`models/` 就在当前目录下）。按族分组，只下你要用的族即可。仓库内路径与 HF 一致；`hf-mirror` 之外，**ModelScope** 也可作备用源（同一份仓库，把 `$B/<repo>/resolve/main/<路径>` 换成 `https://modelscope.cn/models/<repo>/resolve/master/<路径>` 即可）。
 
 ```bash
 B=https://hf-mirror.com          # 走官方就换成 https://huggingface.co
+
+# ---------- 音乐（text2music：ACE-Step 1.5 Turbo + YuE2 3B，约 19 GB）----------
+curl -L -o models/diffusion_models/acestep_v1.5_turbo.safetensors \
+  $B/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/diffusion_models/acestep_v1.5_turbo.safetensors
+curl -L -o models/text_encoders/qwen_0.6b_ace15.safetensors \
+  $B/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/text_encoders/qwen_0.6b_ace15.safetensors
+curl -L -o models/text_encoders/qwen_4b_ace15.safetensors \
+  $B/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/text_encoders/qwen_4b_ace15.safetensors
+curl -L -o models/vae/ace_1.5_vae.safetensors \
+  $B/Comfy-Org/ace_step_1.5_ComfyUI_files/resolve/main/split_files/vae/ace_1.5_vae.safetensors
+curl -L -o models/checkpoints/yue2_3b_int8_convrot.safetensors \
+  $B/Comfy-Org/YuE2/resolve/main/checkpoints/yue2_3b_int8_convrot.safetensors
 
 # ---------- FLUX.2 Klein 图像编辑 + BiRefNet 抠图（约 11 GB）----------
 curl -L -o models/diffusion_models/flux-2-klein-9b-kv-fp8.safetensors \
@@ -448,10 +474,12 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 | `utility-birefnet-remove-background` | `background_removal/` `birefnet.safetensors` |
 | `minimax-h3` / `minimax-h3-edit` | `diffusion_models/` `minimax_h3_fl2va_pruned_w6a8.safetensors`、`minimax_h3_ref2va_pruned_w6a8.safetensors` · `text_encoders/` `qwen3vl_32b_minimax_h3_int8_convrot.safetensors` · `vae/` `minimax_h3_video_vae_int8_convrot.safetensors`、`minimax_h3_audio_vae_fp32.safetensors` |
 | `minimax-h3-lift` / `-lift-edit` | 同 `minimax-h3` / `minimax-h3-edit`，另需 `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors`（**不需要** `loras/`） |
+| `ace-step-1.5-turbo` | `diffusion_models/` `acestep_v1.5_turbo.safetensors` · `text_encoders/` `qwen_0.6b_ace15.safetensors`、`qwen_4b_ace15.safetensors` · `vae/` `ace_1.5_vae.safetensors` |
+| `yue2-3b` | `checkpoints/` `yue2_3b_int8_convrot.safetensors` |
 
 ### 第三方节点依赖
 
-**这些工作流用到的节点绝大多数来自 ComfyUI 核心**（`comfy_extras/`），ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。**视频档另有四个第三方包**，按档位装 —— 只跑图像档的话一个都不用：
+**这些工作流用到的节点绝大多数来自 ComfyUI 核心**（`comfy_extras/`），ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。**音乐档（ACE-Step 1.5 / YuE2）同样全部 comfy-core 内置**，但要求 ComfyUI ≥ 0.42（YuE2 节点 0.35+、ACE-Step 1.5 节点随 0.42 进入核心）。**视频档另有四个第三方包**，按档位装 —— 只跑图像档的话一个都不用：
 
 | 包 | 提供什么 | 哪些档需要 |
 |---|---|---|
@@ -593,7 +621,7 @@ MCP_PORT_MAP=[8188,888],[8189,999]
 ```
 ComfyUI-Roundabout/
 ├── __init__.py            # ComfyUI 节点入口（启动网关、加载模型）
-├── mcp_server.py          # MCP 服务（18 工具）+ 共享端口嵌入启动
+├── mcp_server.py          # MCP 服务（20 工具）+ 共享端口嵌入启动
 ├── gateway/               # REST 网关
 │   ├── config.py          # 配置（.env / 环境变量）
 │   ├── registry.py        # models.yaml 解析、绑定校验、热加载

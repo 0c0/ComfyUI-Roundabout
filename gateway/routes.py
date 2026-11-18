@@ -35,6 +35,8 @@ def register_routes(app) -> None:
         ("POST", "/v1/images/remove-background", handlers.images_remove_background),
         # 音频（TTS / 音色设计）：OpenAI /v1/audio/speech 形态
         ("POST", "/v1/audio/speech", handlers.audio_speech),
+        # 音乐（text2music）：任务与文件命名空间复用 audio 档（产物形态相同）
+        ("POST", "/v1/audio/music", handlers.music_generations),
         ("GET", "/v1/audio/tasks/{id}", handlers.video_task),
         ("DELETE", "/v1/audio/tasks/{id}", handlers.cancel_video_task),
         ("GET", "/v1/audio/files/{name}", handlers.get_audio_file),

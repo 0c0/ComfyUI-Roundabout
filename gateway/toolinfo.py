@@ -30,7 +30,7 @@ from .params import (
     _RES_TIERS,
 )
 from .registry import registry
-from .schemas import AudioSpeechRequest, ImageGenerationRequest, VideoGenerationRequest
+from .schemas import AudioSpeechRequest, ImageGenerationRequest, MusicGenerationRequest, VideoGenerationRequest
 
 _API_VERSION = "roundabout-tool-info-1"
 
@@ -126,8 +126,9 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
         # 模型自述参数（params: 块声明）：声明即生效，元数据也来自声明。
         return True, None
     if name in ("prompt", "input"):
-        if spec.is_audio:
+        if spec.is_audio or spec.is_music:
             # 音频档：文本落点是「要朗读的文本」（`input` 与 `prompt` 同一处）。
+            # 音乐档：`prompt` 是风格/氛围描述（`tags`/`style` 的落点），同样是必填文本。
             if spec.promptless:
                 return False, "promptless tool model (no text)"
             if spec.binds("prompt"):
@@ -136,6 +137,16 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
         if spec.promptless:
             return False, "promptless tool model (no prompt)"
         return True, None
+    if spec.is_music and name == "tags":
+        # `prompt` 的别名（ACE-Step 节点输入名）：只要模型绑了 prompt 就生效。
+        if spec.binds("prompt"):
+            return True, None
+        return False, "model declares no text binding"
+    if spec.is_music and name == "lyrics":
+        # 歌词：留空 = 纯音乐，所以「绑了落点」就生效，空串也会被显式注入。
+        if spec.binds("lyrics"):
+            return True, None
+        return False, "model declares no lyrics binding (fixed by the template)"
     if spec.is_audio and name in ("instructions", "voice_instruction"):
         if spec.binds("voice_instruction"):
             return True, None
@@ -215,14 +226,18 @@ def _applies(spec, name: str) -> tuple[bool, str | None]:
             return True, None
         return False, f"model declares no {cat} reference slots"
     if name in ("background", "async_mode"):
-        # 异步任务模式：视频与音频两条链路都支持（音频长文本同样会跑很久）
-        if spec.is_video or spec.is_audio:
+        # 异步任务模式：视频/音频/音乐三条链路都支持（长任务都可能跑很久）
+        if spec.is_video or spec.is_audio or spec.is_music:
             return True, None
         return False, "video/audio-only"
-    if name in ("fps", "num_frames", "duration"):
+    if name in ("fps", "num_frames"):
         if spec.is_video:
             return True, None
         return False, "video-only"
+    if name == "duration":
+        if spec.is_video or spec.binds("duration"):
+            return True, None
+        return False, "model declares no duration binding"
     if spec.binds(name):
         return True, None
     return False, "model declares no binding for this parameter"
@@ -235,6 +250,8 @@ def _request_model(spec):
         return VideoGenerationRequest
     if spec.is_audio:
         return AudioSpeechRequest
+    if spec.is_music:
+        return MusicGenerationRequest
     return ImageGenerationRequest
 
 
@@ -312,6 +329,7 @@ def _endpoints() -> dict[str, list[str]]:
             "POST /v1/images/edits",
             "POST /v1/images/remove-background",
             "POST /v1/audio/speech",
+            "POST /v1/audio/music",
             "POST /v1/videos/generations",
             "GET /v1/models",
             "GET /v1/images/tasks/{id}",
@@ -335,7 +353,7 @@ def _endpoints() -> dict[str, list[str]]:
         ],
         "mcp": [
             "list_models", "generate_image", "edit_image", "remove_background",
-            "process_image", "generate_speech",
+            "process_image", "generate_speech", "generate_music",
             "generate_video", "get_task", "cancel_task", "queue_status",
             "get_workflow", "reload", "health", "get_view_url", "get_skills",
             "check_weights", "get_tool_info",
@@ -389,6 +407,11 @@ def _surface() -> dict[str, Any]:
             "response_format": ["b64_json", "url", "file", "path"],
             "note": "`response_format` 是交付形态不是音频编码；编码由工作流的 SaveAudio 节点决定（当前档位 mp3）。`input`/`prompt` = 要朗读的文本，`instructions`/`voice_instruction` = 音色描述",
         },
+        "music": {
+            "endpoint": "POST /v1/audio/music",
+            "response_format": ["b64_json", "url", "file", "path"],
+            "note": "`prompt`/`tags` = 风格描述（必填），`lyrics` = 歌词（留空 = 纯音乐）。`response_format` 是交付形态不是音频编码；编码由工作流的 SaveAudio 节点决定（ace-step 档 mp3 / yue2 档 flac）。ace-step 的 `duration` 是精确目标秒数，yue2 的 `max_duration` 只是上限（实际时长由模型按歌词自定）",
+        },
     }
 
 
@@ -404,6 +427,7 @@ def build() -> dict[str, Any]:
             "image": list(ImageGenerationRequest.model_fields),
             "video": list(VideoGenerationRequest.model_fields),
             "audio": list(AudioSpeechRequest.model_fields),
+            "music": list(MusicGenerationRequest.model_fields),
         },
         "models": [_model_entry(s) for s in registry.all()],
     }

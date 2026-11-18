@@ -2,7 +2,7 @@
 
 > 一份干净的接口契约。**REST 网关** 与 **MCP 网关** 两套接入层，共享同一份 `models.yaml` 注册表、同一套生成链路、同一个异步任务表。
 >
-> 当前版本：`1.49.1` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
+> 当前版本：`1.50.0` ｜ 网关即 ComfyUI 自身（custom node），随 ComfyUI 启动自动加载。
 >
 > 用法与安装见 [README.md](README.md)；接入自己的工作流见 [WORKFLOWS.md](WORKFLOWS.md)。
 
@@ -20,7 +20,7 @@
                           │        ▼                                     │
                           │   内部 uvicorn (127.0.0.1, streamable-http)   │
                           │        端口由系统分配或按映射表指定          │
-                          │        = MCP Server (19 tools)               │
+                          │        = MCP Server (20 tools)               │
                           └───────────────┬──────────────────────────────┘
                                           │ 复用
                           ┌───────────────▼──────────────────────────────┐
@@ -341,6 +341,45 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 > 依赖 custom node **TTS-Audio-Suite**（`Qwen3TTSEngineNode` / `UnifiedVoiceDesignerNode`）；引擎默认跑在
 > **Shared Runtime**（隔离的 Transformers 4 栈），首次调用会准备运行时、耗时明显偏长。
 
+### 5.3b 音乐生成（text2music）
+
+#### `POST /v1/audio/music`
+
+文生音乐。**第四类 mode（music）**：产物同为音频文件（ace-step 档 mp3 / yue2 档 flac），
+任务与文件命名空间复用音频档（`/v1/audio/tasks/{id}`、`/v1/audio/files/{name}`）。
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `prompt` | string | **风格/氛围描述**（必填）：曲风 / 情绪 / 乐器 / 人声 / 曲速，如「轻快励志流行摇滚，120 BPM，阳光热血」 |
+| `tags` | string? | `prompt` 的别名（ACE-Step 节点输入名），二者二选一 |
+| `lyrics` | string? | 歌词，可带 `[Verse]` / `[Chorus]` / `[Bridge]` / `[Outro]` 结构标签；**留空 = 纯音乐**（instrumental） |
+| `model` | string? | 默认 `ace-step-1.5-turbo`；另一个档 `yue2-3b` |
+| `duration` | int? | 目标时长秒数（仅 ace-step，1–240：精确生成这么长） |
+| `max_duration` | float? | 时长上限秒数（仅 yue2，4–900：实际时长由模型按歌词结构自定） |
+| `mode` | string? | 作曲模式（仅 yue2）：`full`（默认，旋律+和声）/ `melody`（仅旋律，适合翻唱） |
+| `bpm` / `key_scale` / `timesignature` / `language` | 各类型? | 乐理参数（仅 ace-step）：曲速 40–240（默认 120）、调式（默认 C major）、拍号（默认 4/4）、歌词语言（默认 en） |
+| `temperature` / `top_p` / `top_k` / `min_p` / `cfg_scale` | 各类型? | 采样精调（各档默认值查 tool-info：ace-step 0.85/0.9/0/0/2.0，yue2 1.0/0.95/100/—/1.0） |
+| `seed` / `steps` / `cfg` / `sampler_name` / `scheduler` | 各类型? | 扩散采样参数（ace-step turbo 档默认 8 步 euler/simple，`cfg` 固定 1） |
+| `response_format` | enum? | `url`（默认）/ `b64_json` / `file` / `path`。⚠️ 交付形态不是编码 |
+| `filename_prefix` | string? | 落盘前缀；不传用模板默认（`audio/ComfyUI` / `audio/YuE2`） |
+| `n` | int? | 生成条数（串行多次提交，种子递增） |
+| `background` / `async` | ? | 异步触发，与音频档同契约 |
+
+**模型选择**：`ace-step-1.5-turbo` 快（4 分钟歌几分钟出片，mp3 V0）；`yue2-3b` 先生成 ABC 乐谱再整曲渲染，质感更完整但慢得多（3 分钟歌 ≈ 10+ 分钟，建议 `background="pending"`）。
+
+```bash
+curl -X POST http://host:8188/v1/audio/music -H "Content-Type: application/json" -d '{
+  "model": "ace-step-1.5-turbo",
+  "prompt": "轻快励志流行摇滚，120 BPM，阳光热血，充满希望",
+  "lyrics": "[Verse]\n清晨阳光洒满街巷……\n\n[Chorus]\n一路向前闯……",
+  "duration": 60, "seed": 1
+}'
+# → {"created":…,"data":[{"url":"/view?filename=…mp3&subfolder=audio&type=output"}],"seed":1,"task_id":"…"}
+```
+
+> 两个模型都不需要第三方节点（comfy-core ≥ 0.42 内置 ACE-Step 1.5 与 YuE2 节点）。
+> 音乐模型也可打到 `/v1/images/generations`（自动转音乐链路）。
+
 ### 5.4 异步任务查询与取消
 
 #### `GET /v1/videos/tasks/{id}`  /  `GET /v1/audio/tasks/{id}`  /  `GET /v1/images/tasks/{id}`
@@ -396,6 +435,8 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `minimax-h3-lift` | video | text-to-video / first-last-frame | base 骨架 + SelfLift 一体化精修（8 步 turbo）：`size` 就是输出尺寸（默认 1344x768），内部先按 `lowres_scale`（默认 0.75）跑低分前缀、再一次性升采样到全分辨率，NFE 与普通 8 步档相同、构图零重掷；`first_frame` / `last_frame` 传 0 / 1 / 2 张 = 文生 / 首帧 / 首尾帧（按画布 cover 裁剪）；`sampler_name` 必须 `euler` |
 | `minimax-h3-lift-edit` | video | text-to-video / reference-to-video | 同上，改用 edit 骨架（ref2va 参考条件 + VPack）；参考槽全套 6 图 + 3 视频 + 3 音频，按请求实际提供的数量裁剪 |
 | **`qwen3-tts-voice-design`** | audio | text-to-speech | Qwen3-TTS 1.7B VoiceDesign：文本转语音 + 音色设计（见 [5.3 音频生成](#53-音频生成tts--音色设计)）。端点 `POST /v1/audio/speech`；依赖 custom node TTS-Audio-Suite |
+| **`ace-step-1.5-turbo`** | music | text-to-music | ACE-Step 1.5 Turbo 4B：文生音乐（见 [5.3b 音乐生成](#53b-音乐生成text2music)）。`prompt`=风格描述、`lyrics`=歌词（空=纯音乐）、`duration`=精确秒数；端点 `POST /v1/audio/music`，产物 mp3(V0)；comfy-core 内置节点，无第三方依赖 |
+| **`yue2-3b`** | music | text-to-music | YuE2 3B：文生音乐（ABC 规划 + 整曲渲染，见 [5.3b](#53b-音乐生成text2music)）。实际时长按歌词自定（`max_duration` 上限）；产物 flac；整曲较慢建议异步 |
 
 > 完整别名与绑定关系见 `models.yaml`；模型清单与用途对照也见 [README.md](README.md#内置模型)。
 
@@ -461,13 +502,13 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 
 ---
 
-## 7. MCP 网关（19 个工具）
+## 7. MCP 网关（20 个工具）
 
 **默认启用**（`MCP_ENABLED` 默认 `true`）：装好 `mcp` / `uvicorn`、重启 ComfyUI 即可用，不需要任何配置。
 
 传输：`streamable-http`，端点 `/mcp`（共享端口挂在 ComfyUI 端口，或 `MCP_HOST:<MCP_PORT>` 独立，端口由 `MCP_PORT` / `MCP_PORT_MAP` 决定）。与 REST 完全互通。
 
-工具分四类：**生成**（`generate_image` / `edit_image` / `remove_background` / `process_image` / `generate_speech` / `generate_video`）、**查询与控制**（`get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights` / `manage_workflows`）、**运维**（`reload` / `get_view_url` / `get_skills`）、**看板**（`view_board`，单入口按 `action` 分发：pin / remove / clear / get / history / load）。
+工具分四类：**生成**（`generate_image` / `edit_image` / `remove_background` / `process_image` / `generate_speech` / `generate_music` / `generate_video`）、**查询与控制**（`get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights` / `manage_workflows`）、**运维**（`reload` / `get_view_url` / `get_skills`）、**看板**（`view_board`，单入口按 `action` 分发：pin / remove / clear / get / history / load）。
 
 > 工具的 `description` **只保留一句话定位**；参数细节（逐模型生效性、区间、枚举、默认值、参考槽
 > 数量、尺寸档位）一律查 `get_tool_info`。该工具与 REST 的 `/roundabout/admin/tool-info` 同源，
@@ -481,6 +522,7 @@ curl -X POST http://127.0.0.1:8188/v1/images/remove-background \
 | `generate_image` | 文生图；支持 `negative_prompt`/`seed`/`size`/`steps`/`cfg`/`workflow_overrides`(JSON 字符串)/`filename_prefix`/`mode`；返回 OpenAI 风格响应（含 `seed` 回显，url 已绝对化）；视频模型自动转视频链路。**编辑图片不要用本工具**（用 `edit_image` / `remove_background`） |
 | `edit_image` | 编辑已有图片（独立工具）：`prompt` + `image`（路径/URL/dataURL/base64）；`model` 默认 `flux2-klein-image-edit-turbo`（语义改写）；**多图参考**传 `reference_images`（klein 4 槽 / qwen 6 槽）；传文生图/视频模型会被 400 拒绝并列出可用编辑模型 |
 | `generate_speech` | 文本转语音 / 音色设计：`input`（要朗读的文本）+ `instructions`（音色描述，不给用模板内置描述）；参数 `model`(默认 `qwen3-tts-voice-design`)/`voice`/`language`/`seed`/`response_format`(交付形态，非编码)/`filename_prefix`/`background`；返回 `{created, data:[{url}], seed, task_id}` |
+| `generate_music` | 文生音乐 / text2music：`prompt`（风格描述，必填）+ `lyrics`（歌词，留空 = 纯音乐）；参数 `model`(默认 `ace-step-1.5-turbo`，另有 `yue2-3b`)/`duration`(ace-step 精确秒数)/`max_duration`(yue2 上限)/`bpm`/`language`/`seed`/`response_format`/`filename_prefix`/`background`；整曲较慢，建议异步；返回 `{created, data:[{url}], seed, task_id}` |
 | `generate_video` | 文生视频 / 首尾帧生视频 / 参考生视频；参数 `prompt`/`model`(默认 `minimax-h3`)/`duration`/`fps`/`size`/`seed`/`negative_prompt`/`first_frame`/`last_frame`/`reference_images|videos|audios`（按模型槽位生效，帧与参考可同传）/`steps`/`attention`/`output_size`（`size` 同义，仅 lift）/`scale`（已下线，传了 400）/`vpack_ratio`（仅 edit 两支）/`highres_tiling`（仅 lift 两支）/`video_shift`（H3 四支，不传按 turbo 自动选 12 或 6）/`filename_prefix`/`response_format`/`background`；`background:"pending"` 异步，再查 `get_task` |
 | `remove_background` | 图片去背景（BiRefNet，独立工具，无需提示词）；参数 `image`(本地路径/URL/dataURL/base64)、`response_format`(默认 url)、`filename_prefix`。**推荐改用 `process_image(action="remove_background")`** |
 | `process_image` | 图像处理统一入口，按 `action` 分发：`upscale`=SeedVR2 7B Int8 放大（`multiplier` 1-8 默认 4，`color_correction` none/lab/wavelet/adain）；`remove_background`=BiRefNet 去背景；`segment`=SAM3 文本提示抠图（需 `prompt`=目标描述，`threshold` 默认 0.5）；通用参数 `image` / `response_format` / `filename_prefix` |

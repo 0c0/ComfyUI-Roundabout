@@ -1,0 +1,254 @@
+{
+  "10": {
+    "inputs": {
+      "filename_prefix": "audio/YuE2",
+      "format": "flac",
+      "audio": [
+        "52",
+        0
+      ]
+    },
+    "class_type": "SaveAudioAdvanced",
+    "_meta": {
+      "title": "保存音频（高级）"
+    }
+  },
+  "41": {
+    "inputs": {
+      "ckpt_name": "yue2_3b_int8_convrot.safetensors"
+    },
+    "class_type": "CheckpointLoaderSimple",
+    "_meta": {
+      "title": "Checkpoint加载器（简易）"
+    }
+  },
+  "42": {
+    "inputs": {
+      "style": [
+        "54",
+        0
+      ],
+      "lyrics": [
+        "55",
+        0
+      ],
+      "seed": [
+        "53",
+        0
+      ],
+      "mode": "full",
+      "max_abc_tokens": 8192,
+      "temperature": 0.7,
+      "top_p": 0.9,
+      "top_k": 30,
+      "repetition_penalty": 1.005,
+      "penalty_window": 100,
+      "clip": [
+        "41",
+        1
+      ]
+    },
+    "class_type": "YuE2GenerateABC",
+    "_meta": {
+      "title": "YuE2 生成 ABC"
+    }
+  },
+  "43": {
+    "inputs": {
+      "source": [
+        "44",
+        0
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "预览任意"
+    }
+  },
+  "44": {
+    "inputs": {
+      "switch": [
+        "47",
+        0
+      ],
+      "on_false": [
+        "45",
+        0
+      ],
+      "on_true": [
+        "42",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "切换"
+    }
+  },
+  "45": {
+    "inputs": {
+      "value": ""
+    },
+    "class_type": "PrimitiveString",
+    "_meta": {
+      "title": "Text (Empty ABC)"
+    }
+  },
+  "46": {
+    "inputs": {
+      "style": [
+        "54",
+        0
+      ],
+      "lyrics": [
+        "55",
+        0
+      ],
+      "abc": [
+        "43",
+        0
+      ],
+      "seed": [
+        "53",
+        0
+      ],
+      "mode": "full",
+      "max_duration": 240,
+      "temperature": 1,
+      "top_p": 0.95,
+      "top_k": 100,
+      "repetition_penalty": 1.2,
+      "cfg_scale": 1,
+      "clip": [
+        "41",
+        1
+      ]
+    },
+    "class_type": "YuE2GenerateMusic",
+    "_meta": {
+      "title": "YuE2 生成音乐"
+    }
+  },
+  "47": {
+    "inputs": {
+      "value": true
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "Boolean (ABC planning)"
+    }
+  },
+  "48": {
+    "inputs": {
+      "conditioning": [
+        "46",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut",
+    "_meta": {
+      "title": "条件零化"
+    }
+  },
+  "49": {
+    "inputs": {
+      "source": [
+        "46",
+        1
+      ]
+    },
+    "class_type": "PreviewAny",
+    "_meta": {
+      "title": "预览任意"
+    }
+  },
+  "50": {
+    "inputs": {
+      "seed": [
+        "53",
+        0
+      ],
+      "steps": 32,
+      "cfg": 1,
+      "sampler_name": "dpm_2",
+      "scheduler": "sgm_uniform",
+      "denoise": 1,
+      "model": [
+        "41",
+        0
+      ],
+      "positive": [
+        "46",
+        0
+      ],
+      "negative": [
+        "48",
+        0
+      ],
+      "latent_image": [
+        "51",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "51": {
+    "inputs": {
+      "seconds": [
+        "46",
+        1
+      ],
+      "batch_size": 1
+    },
+    "class_type": "EmptyYuE2LatentAudio",
+    "_meta": {
+      "title": "空 YuE2 潜空间音频"
+    }
+  },
+  "52": {
+    "inputs": {
+      "samples": [
+        "50",
+        0
+      ],
+      "vae": [
+        "41",
+        2
+      ]
+    },
+    "class_type": "VAEDecodeAudio",
+    "_meta": {
+      "title": "VAE解码（音频）"
+    }
+  },
+  "53": {
+    "inputs": {
+      "seed": 0
+    },
+    "class_type": "SeedNode",
+    "_meta": {
+      "title": "种子"
+    }
+  },
+  "54": {
+    "inputs": {
+      "value": "风格：轻快热血流行摇滚｜城市烟火气｜节奏欢快｜朗朗上口"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Text (Style)"
+    }
+  },
+  "55": {
+    "inputs": {
+      "value": "【主歌 1】\n清晨徐州，街巷飘着香  \n一碗饣它汤，暖透了心房  \n烙馍卷馓子，咬一口酥香  \n辣汤配油条，幸福在荡漾  \n\n【预副歌】\n彭城的烟火，热闹了街巷  \n地锅鸡翻滚，香气飘四方  \n羊肉汤滚烫，喝一口难忘  \n徐州的味道，越品越有样  \n\n【副歌】\n徐州徐州，越吃越上头  \n烧烤配啤酒，快乐不用愁  \n羊肉串滋滋，香得直流口水  \n一口接一口，幸福心中留  \n\n徐州徐州，美味吃不够  \n烙馍卷一切，快乐跟着走  \n从清晨到夜晚，香味不停留  \n爱上这彭城，爱上这春秋  \n\n【主歌 2】\n夜幕降临，烧烤摊正忙  \n羊肉串冒油，炭火闪着光  \n把子肉软烂，入口满嘴香  \n米线热腾腾，吃得心欢畅  \n\n【预副歌】\n朋友围一桌，笑声多响亮  \n一盘辣炒鸡，越辣越疯狂  \n再来碗凉皮，酸辣又爽朗  \n徐州的热情，刻在我心上  \n\n【副歌】\n徐州徐州，越吃越上头  \n烧烤配啤酒，快乐不用愁  \n羊肉串滋滋，香得直流口水  \n一口接一口，幸福心中留  \n\n徐州徐州，美味吃不够  \n烙馍卷一切，快乐跟着走  \n从清晨到夜晚，香味不停留  \n爱上这彭城，爱上这春秋  \n\n【桥段】\n云龙湖的风，吹过老街口  \n户部山的灯，照亮了街头  \n走遍千山万水，尝过万般滋味  \n最爱的那一口，还是徐州味  \n\n【终段副歌】\n徐州徐州，越吃越上头  \n一城烟火气，暖在我心头  \n地锅鸡配烙馍，香飘千万里  \n豪爽的徐州人，热情永不休  \n\n徐州徐州，美味吃不够  \n千年古彭城，故事说不休  \n一口徐州味，一生都记得  \n有空来徐州，咱们喝一口！"
+    },
+    "class_type": "PrimitiveStringMultiline",
+    "_meta": {
+      "title": "Text (Lyrics)"
+    }
+  }
+}
