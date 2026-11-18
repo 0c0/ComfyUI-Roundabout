@@ -173,7 +173,7 @@ https://github.com/HJH-AILab/ComfyUI-Roundabout
 
 4. **准备模型权重**：仓库不含权重。内置 11 个工作流共引用 18 个权重文件（清单另列 9 个非内置引用的参考项，共 27 行 / 约 165 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 49 GB**，可以先只下这一族。
 
-   > **视频档还需要四个第三方节点包**：KJNodes（`MiniMaxChunkFeedForward`，视频档全用）、`ComfyUI-Spark-H3`（四支视频档的稀疏注意力，须按显卡架构下发布包）、`ComfyUI-VPack`（edit 两支的 `vpack_ratio`）、`comfyui-SelfLift`（lift 两支的 latent 上采样节点 `SelfLiftH3LatentLift`）。安装命令与自检见下方[第三方节点依赖](#第三方节点依赖)。
+   > **视频档还需要四个第三方节点包**：KJNodes（`MiniMaxChunkFeedForward`，视频档全用）、`ComfyUI-Spark-H3`（四支视频档的稀疏注意力，须按显卡架构下发布包）、`ComfyUI-VPack`（edit 两支的 `vpack_ratio`）、`comfyui-SelfLift`（lift 两支的 latent 上采样节点 `SelfLiftH3LatentLift`）。安装命令与自检见下方[第三方节点依赖](#第三方节点依赖)。  
 
 5. 重启 ComfyUI。启动日志出现 `OpenAI gateway routes registered ... models=...` 即成功。
 
@@ -479,7 +479,7 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 
 ### 第三方节点依赖
 
-**这些工作流用到的节点绝大多数来自 ComfyUI 核心**（`comfy_extras/`），ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。**音乐档（ACE-Step 1.5 / YuE2）同样全部 comfy-core 内置**，但要求 ComfyUI ≥ 0.42（YuE2 节点 0.35+、ACE-Step 1.5 节点随 0.42 进入核心）。**视频档另有四个第三方包**，按档位装 —— 只跑图像档的话一个都不用：
+**这些工作流用到的节点绝大多数来自 ComfyUI 核心**（`comfy_extras/`），ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。**视频档另有四个第三方包**，按档位装 —— 只跑图像档的话一个都不用：
 
 | 包 | 提供什么 | 哪些档需要 |
 |---|---|---|
