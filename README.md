@@ -12,7 +12,7 @@
 
 **1. 让 ComfyUI 成为 agent 的 AIGC 后端**
 
-ComfyUI 已经有模型、显存和队列，缺的只是一层 agent 能听懂的接口。Roundabout 把它包成 **OpenAI 兼容 REST**（`base_url` 指过来即可，任何 OpenAI SDK / 客户端零改动接入）和 **MCP 服务**（agent 直接调工具）。本地算力因此变成一个私有、按次调用不计费的图像 / 视频后端。
+ComfyUI 已经有模型、显存和队列，缺的只是一层 agent 能听懂的接口。Roundabout 把它包成 **OpenAI 兼容 REST**（`base_url` 指过来即可，任何 OpenAI SDK / 客户端零改动接入）和 **MCP 服务**（agent 直接调工具）。本地算力因此变成一个私有、按次调用不计费的图像 / 视频 / 语音 / 音乐后端。
 
 **2. 嵌入 ComfyUI，无需额外维护**
 
@@ -82,7 +82,7 @@ agent 全程**看不到也用不着**工作流 JSON。它只传语义参数，�
 
 | skill | 内容 | 什么时候用 |
 |---|---|---|
-| [`roundabout-skill`](https://github.com/HJH-AILab/roundabout-skill) | 本插件的**总入口**：选模型、走 REST / MCP 生成、把工作流接进网关或下线、权重下载、排障运维、核对「文档与实现是否一致」 | agent 要驱动本机 ComfyUI 出图出视频，或要改 `models.yaml` / 加工作流时 |
+| [`roundabout-skill`](https://github.com/HJH-AILab/roundabout-skill) | 本插件的**总入口**：选模型、走 REST / MCP 生成（图 / 视频 / 语音 / 音乐）、把工作流接进网关或下线、权重下载、排障运维、核对「文档与实现是否一致」 | agent 要驱动本机 ComfyUI 出图出视频出音频，或要改 `models.yaml` / 加工作流时 |
 | [`h3-playbook-skill`](https://github.com/HJH-AILab/h3-playbook-skill) | MiniMax H3 的**单一入口**（官方使用手册口径 + 官方 h3-prompt-writing 契约合并版）：三段式公式、五类模式判定（T2VA / I2VA / FL2VA / L2VA / Ref2VA）、Ref2VA 六段改写格式、素材用途标签、时长与宽高比边界、踩坑表 | 写 / 改 H3 提示词，或判断某个需求 H3 能不能做、排查口型 / 切镜 / 乱码时 |
 | [`qwen-image2.1-prompt-writing-skill`](https://github.com/HJH-AILab/qwen-image2.1-prompt-writing-skill) | Qwen-Image-2.1 官方 Prompt Enhancer 契约的手写替身：t2i 观察者报告与 edit 改写指令，产出 `rewritten_prompt` + `wh_ratio` / `ratio_follow` 结构 | 用网关 `qwen-image-2.1` 档出图 / 改图，或要把一句粗糙需求扩写成该模型能吃的描述前必查 |
 
@@ -115,15 +115,15 @@ git clone https://github.com/HJH-AILab/qwen-image2.1-prompt-writing-skill.git <a
 
 **两套接入层，共享同一个引擎**
 
-- **OpenAI 兼容 REST**：`/v1/images/generations`（文生图 / 图生图）、`/v1/images/edits`（multipart 标准编辑）、`/v1/images/remove-background`（去背景）、`/v1/videos/generations`（视频，支持异步）。返回格式可选 `b64_json` / `url` / `file` / `path`，可直接替换 OpenAI 官方地址使用。
+- **OpenAI 兼容 REST**：`/v1/images/generations`（文生图 / 图生图）、`/v1/images/edits`（multipart 标准编辑）、`/v1/images/remove-background`（去背景）、`/v1/videos/generations`（视频，支持异步）、`/v1/audio/speech`（文本转语音 + 音色设计）、`/v1/audio/music`（文生音乐，支持异步）。返回格式可选 `b64_json` / `url` / `file` / `path`，可直接替换 OpenAI 官方地址使用。
 - **MCP 服务（20 个工具）**：生成类 `generate_image` / `edit_image` / `remove_background` / `process_image` / `generate_speech` / `generate_music` / `generate_video`，查询类 `get_tool_info` / `list_models` / `get_task` / `cancel_task` / `queue_status` / `get_workflow` / `health` / `check_weights`，运维类 `reload` / `get_view_url` / `get_skills` / `manage_workflows`，看板类 `view_board`（单入口按 action 分发：pin / remove / clear / get / history / load）。agent 用一组工具就能完成「查模型 → 体检权重 → 生成 → 跟踪进度 → 钉到看板」全流程。
 - **共享端口**：MCP 端点 `/mcp` 直接挂在 ComfyUI 同一端口（`http://<comfyui>:8188/mcp`），不用额外开端口、不用另起进程；REST 与 MCP 共用同一份注册表、生成链路与任务表。
 
 **声明式模型注册**
 
-- `models.yaml` 登记模型：工作流文件 + 参数绑定路径 + 默认值 + 别名 + 能力（文生图 / 图生图 / 视频）。
+- `models.yaml` 登记模型：工作流文件 + 参数绑定路径 + 默认值 + 别名 + 能力（文生图 / 图生图 / 视频 / 语音 / 音乐）。
 - 新增、修改模型只改 YAML，`POST /admin/reload` 热加载，**不用重启 ComfyUI、不用写代码**。
-- 内置 15 个开箱可用的工作流（8 图像 + 6 视频 + 1 工具），也全部可以作为你写映射时的参照。
+- 内置 13 个开箱可用的工作流（3 图像 + 4 视频 + 1 TTS + 2 音乐 + 3 工具），也全部可以作为你写映射时的参照。
 
 **按机器自适应**
 
@@ -171,9 +171,10 @@ https://github.com/HJH-AILab/ComfyUI-Roundabout
 
 3. 配置（可选）：把 `.env.example` 复制成 `.env`，按需修改。**MCP 默认已启用**，不用额外设置；要关掉就把 `MCP_ENABLED` 改成 `false`。
 
-4. **准备模型权重**：仓库不含权重。内置 11 个工作流共引用 18 个权重文件（清单另列 9 个非内置引用的参考项，共 27 行 / 约 165 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 49 GB**，可以先只下这一族。
+4. **准备模型权重**：仓库不含权重。内置 13 个工作流共引用 23 个权重文件（清单另列 9 个非内置引用的参考项，共 32 行 / 约 184 GB），全部来自 HuggingFace 上的 `Comfy-Org` 等官方仓库，逐条的下载命令与存放目录见下方[权重清单](#权重清单内置工作流的全部依赖)。**只想跑图像档的话约 49 GB**，可以先只下这一族；想出 BGM 就再加**音乐档约 19 GB**。
+   > 音频（TTS）档的 Qwen3-TTS 权重（`models/TTS/`，约 15 GB）不在上列统计里 —— 由 **TTS-Audio-Suite** 首次调用时自动下载与自管，无需手动下载。
 
-   > **视频档还需要四个第三方节点包**：KJNodes（`MiniMaxChunkFeedForward`，视频档全用）、`ComfyUI-Spark-H3`（四支视频档的稀疏注意力，须按显卡架构下发布包）、`ComfyUI-VPack`（edit 两支的 `vpack_ratio`）、`comfyui-SelfLift`（lift 两支的 latent 上采样节点 `SelfLiftH3LatentLift`）。安装命令与自检见下方[第三方节点依赖](#第三方节点依赖)。  
+   > **视频档还需要四个第三方节点包**：KJNodes（`MiniMaxChunkFeedForward`，视频档全用）、`ComfyUI-Spark-H3`（四支视频档的稀疏注意力，须按显卡架构下发布包）、`ComfyUI-VPack`（edit 两支的 `vpack_ratio`）、`comfyui-SelfLift`（lift 两支的 latent 上采样节点 `SelfLiftH3LatentLift`）。安装命令与自检见下方[第三方节点依赖](#第三方节点依赖)。**音频档需要一个包**（TTS-Audio-Suite）；**音乐档零第三方依赖**（comfy-core 0.42+ 内置 ACE-Step 1.5 与 YuE2 节点）。  
 
 5. 重启 ComfyUI。启动日志出现 `OpenAI gateway routes registered ... models=...` 即成功。
 
@@ -193,7 +194,7 @@ https://github.com/HJH-AILab/ComfyUI-Roundabout
 
 ### 2. REST 接口（脚本 / OpenAI 客户端）
 
-> 下面是四个最常用的最小示例；完整字段表、响应结构与错误码见 **[API.md](API.md)**。
+> 下面是六个最常用的最小示例；完整字段表、响应结构与错误码见 **[API.md](API.md)**。
 
 **文生图**
 
@@ -235,6 +236,29 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 
 ⚠️ **`1440p` 是大显存档**（2560×1440 ≈ 768p 的 3.6 倍像素）：8GB 卡**直接生跑不动**，要更大画面请优先走 `minimax-h3-lift`（768p 画布 × 1.875 = 2528×1440）。
 
+**语音**（文本转语音 + 音色设计）
+
+```bash
+curl -X POST http://127.0.0.1:8188/v1/audio/speech \
+  -H "Content-Type: application/json" \
+  -d '{"model":"qwen3-tts-voice-design","input":"肿瘤早期有哪些常见的警示症状？","instructions":"成熟中年男声，低沉醇厚，语速平缓","response_format":"path"}'
+```
+
+> ⚠️ 这里的 `response_format` 是**交付形态**（url / path / b64_json），不是音频编码 —— 编码由工作流的 SaveAudio 节点决定（mp3）。音频编码值（`mp3` / `wav` 等）会被 400 拒绝并说明原因。
+
+**音乐**（文生音乐，`lyrics` 留空 = 纯音乐）
+
+```bash
+# 纯音乐 BGM（30 秒，ACE-Step turbo 实测约 15 秒出片）
+curl -X POST http://127.0.0.1:8188/v1/audio/music \
+  -H "Content-Type: application/json" \
+  -d '{"model":"ace-step-1.5-turbo","prompt":"轻快励志流行摇滚，120 BPM，明亮的电吉他","duration":30,"response_format":"path"}'
+# 带歌词（结构标签 [Verse]/[Chorus] 可用，19 语种）
+curl -X POST http://127.0.0.1:8188/v1/audio/music \
+  -H "Content-Type: application/json" \
+  -d '{"model":"ace-step-1.5-turbo","prompt":"温暖治愈的民谣，木吉他，90 BPM，轻柔女声","lyrics":"[Verse]\n清晨的风吹过山谷\n\n[Chorus]\n跟着光走吧","duration":30,"response_format":"path"}'
+```
+
 ### 3. MCP（给 agent 用）
 
 **MCP 默认启用**——装好依赖、重启 ComfyUI，端点就在 `http://<comfyui>:8188/mcp`，无需任何配置。
@@ -268,7 +292,7 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 > URL 里的主机端口 = 你访问 ComfyUI 的地址，路径固定 `/mcp`。远程访问换成 `http://192.168.1.10:8188/mcp` 即可，其余不变。
 > 工具参数、完成推送（`notifications/message`，需显式 `MCP_STATELESS=false`）与助手侧注意事项见 [API.md §7](API.md)。
 
-**agent 典型流程**：`list_models` 看有什么 → `generate_image` / `generate_video` 生成 → 异步任务用 `get_task` 轮询（默认无状态模式；设了 `MCP_STATELESS=false` 才可等服务端推送）→ 产物地址交给用户 → `get_view_url` 给出可视化页面。
+**agent 典型流程**：`list_models` 看有什么 → `generate_image` / `generate_speech` / `generate_music` / `generate_video` 生成 → 异步任务用 `get_task` 轮询（默认无状态模式；设了 `MCP_STATELESS=false` 才可等服务端推送）→ 产物地址交给用户 → `get_view_url` 给出可视化页面。
 > agent 侧的操作手册（调用姿势、注册与下档、权重坑位、排障）见上方[配套 skills](#配套-skills) —— 装了 skill 的 agent 不必通读本仓库文档。
 
 ### 4. 可视化页面
@@ -307,6 +331,8 @@ curl http://127.0.0.1:8188/v1/videos/tasks/<id>
 ## 权重清单（内置工作流的全部依赖）
 
 **本仓库不包含任何权重文件**（体积与许可原因）。内置的 13 个工作流共引用 **23 个**权重文件，合计约 **124 GB**（图像档约 49 GB / 视频档约 56 GB / 音乐档约 19 GB）；下面两张清单表共 **32 行**，另 9 行是**当前无内置工作流引用**的参考项（2 个旧底模、1 个 w6a8 hybrid、2 个 Acc LoRA、1 个 hyperflow LoRA、2 个旧版 turbo LoRA、1 个 4 步 v1.3），仅作参考，计入则约 184 GB。缺文件时报错形如 `value not in list: <字段>: <文件名>` —— 网关会把这条报错**改写成可执行的下载指引**（该文件放哪个目录、`curl` 命令是什么），agent 收到即可照做；也可以主动体检当前缺哪些：`GET /roundabout/admin/weights`，或 MCP 工具 `check_weights`（只读、不占 GPU）。逐条来源即下方清单，同源数据在 `weights.yaml`，由网关与体检读取。（`workflows/example_txt2img.json` 是接入样本，用你自己的 checkpoint，不计入上列统计。）
+
+> **音频（TTS）档不在上列统计里**：`qwen3-tts-voice-design` 的 Qwen3-TTS 权重（`models/TTS/qwen3_tts/`，约 15 GB）由 **TTS-Audio-Suite** 首次调用时自动下载并自管，`check_weights` 也不体检它 —— 缺了就在跑 TTS 时看节点报错按指引下。
 
 这些文件基本都在 **HuggingFace 的 Comfy-Org 官方仓库**里（少数为模型原厂或社区仓库，已在表中标注）。国区建议把端点换成镜像，repo ID 与 repo 内路径完全一致：
 
@@ -476,10 +502,11 @@ curl -L -o models/latent_upscale_models/minimax_h3_latent_upscaler_3d_fp16.safet
 | `minimax-h3-lift` / `-lift-edit` | 同 `minimax-h3` / `minimax-h3-edit`，另需 `latent_upscale_models/` `minimax_h3_latent_upscaler_3d_fp16.safetensors`（**不需要** `loras/`） |
 | `ace-step-1.5-turbo` | `diffusion_models/` `acestep_v1.5_turbo.safetensors` · `text_encoders/` `qwen_0.6b_ace15.safetensors`、`qwen_4b_ace15.safetensors` · `vae/` `ace_1.5_vae.safetensors` |
 | `yue2-3b` | `checkpoints/` `yue2_3b_int8_convrot.safetensors` |
+| `qwen3-tts-voice-design` | **无需手动下载** —— TTS-Audio-Suite 首次调用自动下载 Qwen3-TTS 权重（约 15 GB，落 `models/TTS/qwen3_tts/`），详见[权重清单](#权重清单内置工作流的全部依赖)开头的说明 |
 
 ### 第三方节点依赖
 
-**这些工作流用到的节点绝大多数来自 ComfyUI 核心**（`comfy_extras/`），ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。**视频档另有四个第三方包**，按档位装 —— 只跑图像档的话一个都不用：
+**这些工作流用到的节点绝大多数来自 ComfyUI 核心**（`comfy_extras/`），ComfyUI 版本太老会缺 `MiniMaxH3UnifiedToVideo`（Roundabout 自带，随包加载）/ `LoadBackgroundRemovalModel` / `Flux2Scheduler` / `TextEncodeQwenImage21` 等节点。**视频档另有四个第三方包**，按档位装 —— 只跑图像档的话一个都不用；**音乐档一个第三方包都不要**（ACE-Step 1.5 与 YuE2 节点在 comfy-core 0.42+ 里）；**音频（TTS）档要装 [TTS-Audio-Suite](https://github.com/diodiogod/TTS-Audio-Suite)**（`Qwen3TTSEngineNode` / `UnifiedVoiceDesignerNode`，首次调用自动准备隔离运行时与权重）：
 
 | 包 | 提供什么 | 哪些档需要 |
 |---|---|---|
@@ -613,6 +640,8 @@ MCP_PORT_MAP=[8188,888],[8189,999]
 ```
 
 于是 `--port 8188` 的实例用 `888`、`--port 8189` 的实例用 `999`，互不干扰。不配映射也不会冲突（自动分配空闲端口），配了映射更可控；映射端口恰好被别的程序占用时会自动回落到空闲端口并在日志里告警，端点不会因此失效。
+
+> ⚠️ **双实例共存还要各用独立的 `--database-url`**（ComfyUI 0.42+ 的资产库 sqlite 是独占锁）：两个实例同时指向同一个 db（如默认的 `sqlite:///ComfyUI/user/comfyui.db`）时，后启动的那个会直接 `ERROR: [Assets] ASSETS_STARTUP_FAILED: … in_use` 退出（2026-11-18 实测）。给第二个实例加 `--database-url sqlite:///ComfyUI/user/comfyui2.db` 这样的独立路径即可。
 
 ---
 
