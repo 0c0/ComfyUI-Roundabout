@@ -87,7 +87,12 @@ _inject_versions()
 
 
 def build_skills_payload(server_version: str) -> dict[str, Any]:
-    """组装 get_skills 的返回体（server / version / skills[] / note）。"""
+    """组装 get_skills 的返回体（server / version / skills[] / note）。
+
+    组包前重读一次 manifest：`gen-manifest` 只改 json，不该为一个版本号重启进程
+    （重启前 get_skills 会一直报旧版本，部署端据此判「无需更新」就自我锁死了）。
+    """
+    _inject_versions()
     missing = [e["name"] for e in SKILLS
                if e.get("source") == "roundabout" and not e.get("skill_version")]
     if missing:
