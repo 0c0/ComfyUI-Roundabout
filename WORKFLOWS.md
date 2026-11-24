@@ -101,7 +101,7 @@ models:
   my-model:                                     # 对外暴露的 model 名
     workflow: example_txt2img.json              # workflows/ 下的文件名
     description: 我的 SDXL 文生图                # 面板与 /v1/models 展示
-    mode: image                                 # image | video | audio | music（默认 image）
+    mode: image                                 # image | video | audio（默认 image）
     capabilities: [text-to-image]                # 纯编辑模型只写 image-to-image
     output_node: '9'                            # 产物在哪个节点（SaveImage/SaveVideo 的 id）
     timeout: 300
@@ -132,7 +132,7 @@ models:
 | `bindings` | ✅ | 参数 → 路径（或路径列表）。**启动即校验路径存在**，写错会拒绝加载并指出是哪一条 |
 | `output_node` | 建议 | 产物节点 id；不填则从整图里找产物 |
 | `prompt` 绑定 | ✅ | 不绑 `prompt` 就必须显式 `promptless: true`（工具类工作流） |
-| `mode` | | `image` / `video` / `audio` / `music`，影响走哪套端点（`POST /v1/images/generations` / `/v1/videos/generations` / `/v1/audio/speech` / `/v1/audio/music`）与参数校验。音频与音乐档都要求工作流里有 `SaveAudio*` 节点并把它设为 `output_node`（产物收集口径同为 history 的 `audio` 键） |
+| `mode` | | `image` / `video` / `audio`，影响走哪套端点（`POST /v1/images/generations` / `/v1/videos/generations` / `/v1/audio/speech`）与参数校验。音频档要求工作流里有 `SaveAudio*` 节点并把它设为 `output_node` |
 | `capabilities` | | `text-to-image` / `image-to-image`。**只写 `image-to-image` 的模型会被强制要求传 `image`** |
 | `defaults` | | 参数默认值，与顶层 `defaults.params` 合并（模型级优先） |
 | `timeout` | | 单任务超时秒数 |

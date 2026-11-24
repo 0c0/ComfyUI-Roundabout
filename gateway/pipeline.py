@@ -41,7 +41,6 @@ from .schemas import (
     MODEL_SPECIFIC_FIELDS,
     AudioSpeechRequest,
     AudioResponse,
-    MusicGenerationRequest,
     ImageGenerationRequest,
     ImageResponse,
     VideoGenerationRequest,
@@ -284,12 +283,6 @@ async def generate(
     if spec.is_audio:
         raise APIError(
             f"Model `{spec.name}` is an audio model. Use POST /v1/audio/speech.",
-            param="model",
-        )
-    # 音乐模型走 generate_music（产物同为 SaveAudio* 的 audio 键，语义是作曲不是配音）。
-    if spec.is_music:
-        raise APIError(
-            f"Model `{spec.name}` is a music model. Use POST /v1/audio/music.",
             param="model",
         )
     n = _validate_n(req.n)
@@ -932,147 +925,6 @@ async def generate_audio(
     rendered = rendered[:n]
     log.info(
         "req=%s model=%s n=%d audios=%d elapsed=%.1fs",
-        request_id, spec.name, n, len(rendered), time.monotonic() - t0,
-    )
-
-    data = []
-    for au in rendered:
-        if response_format in ("file", "path"):
-            native = _native_abs_path(au.ref) if au.ref else None
-            if native:
-                data.append({"path": native})
-            else:
-                name = store.save(au.data, au.ext)
-                abs_path = store.path(name)
-                data.append({"path": str(abs_path) if abs_path else f"/v1/audio/files/{name}"})
-        elif response_format == "b64_json":
-            data.append({"b64_json": base64.b64encode(au.data).decode("ascii")})
-        else:
-            if au.ref:
-                data.append({"url": _native_view_url(au.ref)})
-            else:
-                name = store.save(au.data, au.ext)
-                data.append({"url": f"/v1/audio/files/{name}"})
-
-    seed_field: int | list[int] | None = used_seeds[0] if len(used_seeds) == 1 else used_seeds
-    return AudioResponse(created=int(time.time()), data=data, seed=seed_field)  # type: ignore[arg-type]
-
-
-def build_music_values(
-    req: MusicGenerationRequest,
-    spec: ModelSpec,
-    style: str,
-) -> dict[str, Any]:
-    """组装音乐请求的语义参数（与 build_audio_values 同构，见其注释）。
-
-    `lyrics` 与 `voice_instruction` 同理**不参与**「None 回落 defaults」，但方向相反：
-    它要被**显式覆盖成空串** —— 两支模板里都写着示例歌词，None 回落会让「不传歌词」
-    静默唱出模板占位词；空串才是调用方明确表达的「纯音乐」。
-    """
-    values: dict[str, Any] = {
-        "prompt": style,
-        "filename_prefix": req.filename_prefix,  # 透传：None 时回落模板默认前缀
-        "steps": req.steps,
-        "cfg": req.cfg,
-        "sampler_name": req.sampler_name,
-        "scheduler": req.scheduler,
-        "duration": req.duration,
-        "max_duration": req.max_duration,
-        "mode": req.mode,
-        "language": req.language,
-        "temperature": req.temperature,
-        "top_p": req.top_p,
-        "top_k": req.top_k,
-        "min_p": req.min_p,
-        "cfg_scale": req.cfg_scale,
-    }
-    for pname, ps in spec.param_specs.items():
-        v = getattr(req, pname, None)
-        if v is not None:
-            values[pname] = ps.validate(v)
-        elif values.get(pname) is None:
-            values[pname] = spec.defaults.get(pname)
-    values["lyrics"] = (req.lyrics or "").strip()  # None → 空串：覆盖模板示例歌词（纯音乐）
-    return values
-
-
-async def generate_music(
-    req: MusicGenerationRequest,
-    client: ComfyClient,
-    *,
-    request_id: str,
-    on_submit: Any | None = None,
-) -> AudioResponse:
-    """文生音乐（text2music）。
-
-    与 generate_audio 同构：工作流注入 → 提交 → 从 history 的 `audio` 键收集
-    SaveAudio* 产物 → 按 response_format 组装响应。差别只有三处：模型按
-    `mode: music` 解析；文本必填项是**风格描述**（`prompt`/`tags`）而非朗读文本；
-    `lyrics` 可空（空 = 纯音乐，且必须覆盖掉模板占位歌词）。
-
-    ``on_submit(prompt_id, workflow)`` 在提交给 ComfyUI 成功后调用（异步任务回填）。
-    """
-    spec = registry.resolve(req.model, mode="music")
-    if not spec.is_music:
-        raise APIError(
-            f"Model `{spec.name}` is not a music model (mode={spec.mode}). "
-            "Use /v1/audio/music with a music model.",
-            param="model",
-        )
-    n = _validate_n(req.n)
-    response_format = (req.response_format or "url").lower()
-    if response_format not in AUDIO_DELIVERY_FORMATS:
-        raise APIError(
-            f"Invalid `response_format` {req.response_format!r}: expected one of "
-            f"{', '.join(AUDIO_DELIVERY_FORMATS)}. It selects how the audio is **delivered**, "
-            "not the codec — the codec is fixed by the workflow's SaveAudio node "
-            f"(mp3 for ace-step, flac for yue2).",
-            param="response_format",
-        )
-
-    style = req.style_text
-    if not style:
-        raise APIError(
-            "`prompt` (style/genre description) is required; leave `lyrics` empty for instrumental.",
-            param="prompt",
-        )
-
-    log.info(
-        "req=%s | MUSIC gen | model=%s n=%d fmt=%s lyrics=%s style=%s",
-        request_id, spec.name, n, response_format,
-        f"{len((req.lyrics or '').strip())} chars" if (req.lyrics or "").strip() else "instrumental",
-        _trunc(style),
-    )
-
-    values = build_music_values(req, spec, style)
-
-    # JOB_TIMEOUT=0（或不传正 timeout）→ 无限等待，由 ComfyUI 任务状态判定健康。
-    timeout = 0.0 if (settings.job_timeout and settings.job_timeout <= 0) else (spec.timeout or settings.job_timeout)
-
-    t0 = time.monotonic()
-    rendered: list[RenderedImage] = []
-    used_seeds: list[int] = []
-    for i in range(n):
-        values["seed"] = resolve_seed(req.seed, i)
-        used_seeds.append(values["seed"])
-        rendered_part, _, _ = await _run_once(
-            spec, values, req.workflow_overrides, client, timeout,
-            f"{request_id}-{i}", req_refs=None, on_submit=on_submit,
-        )
-        rendered += rendered_part
-
-    if not rendered:
-        raise APIError(
-            f"Music workflow `{spec.name}` finished but produced no audio. "
-            "Check that the workflow contains a SaveAudio node (or set `output_node` in models.yaml).",
-            status_code=502,
-            err_type="api_error",
-            code="no_output",
-        )
-
-    rendered = rendered[:n]
-    log.info(
-        "req=%s model=%s n=%d tracks=%d elapsed=%.1fs",
         request_id, spec.name, n, len(rendered), time.monotonic() - t0,
     )
 

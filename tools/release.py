@@ -172,19 +172,26 @@ def check() -> None:
         bad += 0 if ok else 1
         head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo),
                               capture_output=True, text=True).stdout.strip()
+        remote, reason = "", ""
         try:
-            subprocess.run(["git", "fetch", "-q", "origin"], cwd=str(repo),
-                           capture_output=True, timeout=60)
-            remote = subprocess.run(["git", "rev-parse", "@{upstream}"], cwd=str(repo),
-                                    capture_output=True, text=True).stdout.strip()
+            fetched = subprocess.run(["git", "fetch", "-q", "origin"], cwd=str(repo),
+                                     capture_output=True, timeout=60)
+            if fetched.returncode == 0:
+                remote = subprocess.run(["git", "rev-parse", "@{upstream}"], cwd=str(repo),
+                                        capture_output=True, text=True).stdout.strip()
+            else:
+                reason = "fetch 失败（github 不通或离线）"
         except subprocess.TimeoutExpired:
-            remote = ""
+            reason = "fetch 超时"
         if head and remote:
             ok = head == remote
             print(f"  [{'PASS' if ok else 'FAIL'}] {name} 已推送（HEAD == origin/{remote[:7]}）")
             bad += 0 if ok else 1
         else:
-            print(f"  [SKIP] {name} 无远端上游或 fetch 失败（离线？）—— 远端一致性未验")
+            # fetch 不通时 @{upstream} 指向的是过期引用，拿它比会谎报 FAIL（2026-11-24 实测：
+            # 内容已由 gh_api_push.py 推上去，check 却报 FAIL）。此时只能如实标「未验」。
+            # 推送走 API 后，用 .workbuddy/gh_fetch_commit.py 把远端 commit 拉回本地更新跟踪引用。
+            print(f"  [SKIP] {name} 远端一致性未验（{reason or '无上游'}）")
     print(f"\n {'ALL CHECKS PASSED' if not bad else str(bad) + ' CHECK(S) FAILED'}")
     sys.exit(1 if bad else 0)
 

@@ -74,15 +74,6 @@ KNOWN_PARAMS = {
     # 不进这份白名单；这里只留显式 schema 字段的落点。
     "voice_instruction",  # 音色设计描述（age/gender/timbre/pace…），OpenAI 同名概念 instructions
     "voice",  # 引擎预设音色（CustomVoice 档生效；VoiceDesign 档忽略）
-    # ---- 音乐档（text2music：ACE-Step 1.5 / YuE2）----
-    # `prompt` 落在风格/氛围描述（ACE 的 tags / YuE2 的 style），与图像档共用「必须有文本落点」校验。
-    # lyrics 必须可空（空 = 纯音乐），build_music_values 会把 None 显式覆盖成空串 ——
-    # 否则模板里的示例歌词会静默生效。bpm / key_scale / timesignature / language /
-    # temperature / top_p / top_k / cfg_scale 等采样与乐理参数由各模型 `params:` 块自述
-    # （bind 自动并入 bindings），不进这份白名单；这里只放 schema 显式字段的落点。
-    "lyrics",  # 歌词（[Verse]/[Chorus] 结构标签可选）；空 = 纯音乐
-    "tags",  # `prompt` 的别名（ACE-Step 节点输入名），两处绑定通常只声明其一
-    "max_duration",  # YuE2 的时长上限（实际时长由模型按歌词自定，与 duration 是两个概念）
     # ---- 尺寸来源开关（Qwen 2.1 合并档）----
     # 落到 ComfySwitchNode.switch：latent 要么跟参考图（聚合节点的 latent 输出），
     # 要么用 width/height 直传的空 latent。值由 pipeline 按「有没有参考素材」推导，
@@ -224,9 +215,8 @@ class ModelSpec:
     capabilities: set[str] = field(default_factory=lambda: {CAP_TXT2IMG})
     output_node: str | None = None
     description: str = ""
-    # "image" | "video" | "audio" | "music"：决定走哪条 pipeline
-    # （generate / generate_video / generate_audio / generate_music）
-    # 与产物收集口径（images / gifs / audio —— music 产物同为 SaveAudio* 的 audio 键）。
+    # "image" | "video" | "audio"：决定走哪条 pipeline（generate / generate_video / generate_audio）
+    # 与产物收集口径（images / gifs / audio）。
     mode: str = "image"
     style_presets: dict[str, dict[str, Any]] = field(default_factory=dict)
     size_choices: list[str] = field(default_factory=list)
@@ -270,10 +260,6 @@ class ModelSpec:
     @property
     def is_audio(self) -> bool:
         return self.mode == "audio"
-
-    @property
-    def is_music(self) -> bool:
-        return self.mode == "music"
 
     def binds(self, key: str) -> bool:
         return key in self.bindings
@@ -509,8 +495,8 @@ class Registry:
                 caps.add(CAP_IMG2IMG)
 
             mode = str(cfg.get("mode") or "image").lower()
-            if mode not in {"image", "video", "audio", "music"}:
-                raise RuntimeError(f"model `{name}`: invalid `mode` {mode!r} (expected image|video|audio|music)")
+            if mode not in {"image", "video", "audio"}:
+                raise RuntimeError(f"model `{name}`: invalid `mode` {mode!r} (expected image|video|audio)")
 
             ref = cfg.get("references")
             if ref:

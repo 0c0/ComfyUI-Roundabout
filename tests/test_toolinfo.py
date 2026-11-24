@@ -32,7 +32,6 @@ from rb_gateway.registry import registry  # noqa: E402
 from rb_gateway.schemas import (  # noqa: E402
     AudioSpeechRequest,
     ImageGenerationRequest,
-    MusicGenerationRequest,
     VideoGenerationRequest,
 )
 from rb_gateway import toolinfo  # noqa: E402
@@ -72,8 +71,6 @@ for name, entry in MODELS.items():
     spec = registry.resolve(name)
     if spec.is_audio:
         want = AudioSpeechRequest
-    elif spec.is_music:
-        want = MusicGenerationRequest
     elif spec.is_video:
         want = VideoGenerationRequest
     else:
@@ -98,8 +95,6 @@ for name, entry in MODELS.items():
     spec = registry.resolve(name)
     if spec.is_audio:
         model = AudioSpeechRequest
-    elif spec.is_music:
-        model = MusicGenerationRequest
     elif spec.is_video:
         model = VideoGenerationRequest
     else:
@@ -138,9 +133,8 @@ for name, slots in (("flux2-klein-image-edit-turbo", 4), ("qwen-image-2.1", 6)):
 for name, entry in MODELS.items():
     if entry["reference_slots"]["images"] != 0:
         continue
-    # 音频 / 音乐档没有参考槽概念（输入是文本），且请求模型没有 reference_images 字段，跳过
-    spec5 = registry.resolve(name)
-    if spec5.is_audio or spec5.is_music:
+    # 音频档没有参考槽概念（输入是文本），跳过
+    if registry.resolve(name).is_audio:
         continue
     ri = [f for f in entry["fields"] if f["name"] == "reference_images"][0]
     check(f"{name} 无槽 → reference_images 不生效", ri["applies"] is False, ri)
@@ -151,8 +145,8 @@ for name, entry in MODELS.items():
 #     （`image` 改由网关落成第 1 张参考图，`pipeline._ref_images`。）
 for name, entry in MODELS.items():
     spec = registry.resolve(name)
-    if spec.is_video or spec.is_audio or spec.is_music:
-        continue  # 音频 / 音乐档没有 `image` 字段（输入是文本）
+    if spec.is_video or spec.is_audio:
+        continue  # 音频档没有 `image` 字段（输入是文本）
     img = [f for f in entry["fields"] if f["name"] == "image"][0]
     check(f"{name} image 生效性 = 声明了 image 绑定", img["applies"] is spec.binds("image"), img)
 
@@ -230,7 +224,7 @@ declared = set(PAYLOAD["endpoints"]["mcp"])
 check("端点清单与 @mcp.tool 注册集完全一致",
       declared == registered,
       f"清单缺 {sorted(registered - declared)} / 清单多 {sorted(declared - registered)}")
-check("MCP 工具数为 20", len(registered) == 20, sorted(registered))
+check("MCP 工具数为 19", len(registered) == 19, sorted(registered))
 
 rest_src = (ROOT / "gateway" / "routes.py").read_text(encoding="utf-8")
 for path in PAYLOAD["endpoints"]["rest"]:

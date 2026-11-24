@@ -171,30 +171,3 @@ files:
     repo: Comfy-Org/sam3.1
     path: checkpoints/sam3.1_multiplex_fp16.safetensors
     size_gb: 1.63
-
-  # ---------- 音乐档（text2music：ACE-Step 1.5 / YuE2，全部 comfy-core 内置节点）----------
-  - file: acestep_v1.5_turbo.safetensors
-    dir: diffusion_models
-    repo: Comfy-Org/ace_step_1.5_ComfyUI_files
-    path: split_files/diffusion_models/acestep_v1.5_turbo.safetensors
-    size_gb: 4.79
-  - file: qwen_0.6b_ace15.safetensors
-    dir: text_encoders
-    repo: Comfy-Org/ace_step_1.5_ComfyUI_files
-    path: split_files/text_encoders/qwen_0.6b_ace15.safetensors
-    size_gb: 1.19
-  - file: qwen_4b_ace15.safetensors
-    dir: text_encoders
-    repo: Comfy-Org/ace_step_1.5_ComfyUI_files
-    path: split_files/text_encoders/qwen_4b_ace15.safetensors
-    size_gb: 8.38
-  - file: ace_1.5_vae.safetensors
-    dir: vae
-    repo: Comfy-Org/ace_step_1.5_ComfyUI_files
-    path: split_files/vae/ace_1.5_vae.safetensors
-    size_gb: 0.34
-  - file: yue2_3b_int8_convrot.safetensors
-    dir: checkpoints
-    repo: Comfy-Org/YuE2
-    path: checkpoints/yue2_3b_int8_convrot.safetensors
-    size_gb: 3.96

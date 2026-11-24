@@ -27,7 +27,6 @@ task_store 异步任务表、ComfyClient 后端客户端），本文件只做协
     remove_background 图片去背景（BiRefNet，无需提示词）
     process_image     图像处理统一入口（action: upscale=SeedVR2 放大 / remove_background=去背景 / segment=SAM3 文本抠图）
     generate_speech   文本转语音 / 音色设计（Qwen3-TTS VoiceDesign，同步或异步）
-    generate_music    文生音乐 / text2music（ACE-Step 1.5 / YuE2，同步或异步）
     generate_video    文生视频 / 参考生视频（同步或异步，异步返回 task 对象）
     get_task          查询异步任务状态与产物（含 prompt_id / 工作流快照）
     cancel_task       取消 ComfyUI 中运行的任务
@@ -73,11 +72,9 @@ if __package__:
     from .gateway.errors import APIError  # noqa: E402
     from .gateway.handlers import (  # noqa: E402
         _run_audio_task,
-        _run_music_task,
         _run_video_task,
         cancel_task as _cancel_task,
         generate_audio_tracked,
-        generate_music_tracked,
         generate_tracked,
         generate_video_tracked,
     )
@@ -86,7 +83,6 @@ if __package__:
     from .gateway.schemas import (  # noqa: E402
         AudioSpeechRequest,
         ImageGenerationRequest,
-        MusicGenerationRequest,
         VideoGenerationRequest,
     )
     from .gateway.skills import build_skills_payload  # noqa: E402
@@ -101,11 +97,9 @@ else:
     from gateway.errors import APIError  # noqa: E402
     from gateway.handlers import (  # noqa: E402
         _run_audio_task,
-        _run_music_task,
         _run_video_task,
         cancel_task as _cancel_task,
         generate_audio_tracked,
-        generate_music_tracked,
         generate_tracked,
         generate_video_tracked,
     )
@@ -115,7 +109,6 @@ else:
     from gateway.schemas import (  # noqa: E402
         AudioSpeechRequest,
         ImageGenerationRequest,
-        MusicGenerationRequest,
         VideoGenerationRequest,
     )
     from gateway.tasks import task_store  # noqa: E402
@@ -505,71 +498,6 @@ async def generate_speech(
         asyncio.create_task(_run_audio_task(task_id, req, request_id))
         return _task_payload(task_id, req.model, "pending")
     result = await generate_audio_tracked(req)
-    return _absolutize_urls(result.model_dump(exclude_none=True))
-
-
-# ---- 工具 5d：generate_music ----------------------------------------------
-@mcp.tool(
-    name="generate_music",
-    description=(
-        "文生音乐 / text2music：`prompt` = 风格描述（曲风/氛围/乐器/曲速，必填），"
-        "`lyrics` = 歌词（可带 [Verse]/[Chorus] 结构标签；留空 = 纯音乐 BGM）。"
-        "ace-step-1.5-turbo 出 mp3（duration 精确秒数）、yue2-3b 出 flac（max_duration 上限，实际时长按歌词自定）。"
-        "默认同步返回 url；整曲生成较慢，建议 background=\"pending\" 异步再查 get_task。"
-        "各字段生效性查 get_tool_info。"
-    ),
-)
-async def generate_music_tool(
-    prompt: str = Field(
-        description="风格/氛围描述（如「轻快励志流行摇滚，120 BPM，阳光热血」）。",
-    ),
-    lyrics: str = Field(
-        "",
-        description="歌词，可带 [Verse]/[Chorus]/[Bridge]/[Outro] 结构标签。留空 = 纯音乐（instrumental）。",
-    ),
-    model: str = Field(
-        default="ace-step-1.5-turbo",
-        description="音乐模型：ace-step-1.5-turbo（快，mp3）/ yue2-3b（整曲规划，flac）；逐模型生效字段查 get_tool_info。",
-    ),
-    duration: int | None = Field(
-        None,
-        description="目标时长（秒，仅 ace-step：精确生成这么长，≤240）。",
-    ),
-    max_duration: float | None = Field(
-        None,
-        description="时长上限（秒，仅 yue2：实际时长由模型按歌词结构自定）。",
-    ),
-    bpm: int | None = Field(None, description="曲速 BPM（40–240；仅 ace-step）"),
-    language: str = Field("", description="歌词语言提示（仅 ace-step，如 en / zh）"),
-    seed: int | None = None,
-    response_format: str = Field(
-        "",
-        description='产物形态："url"（默认）/ "file"|"path"（磁盘绝对路径）/ "b64_json"。⚠️ 不是音频编码 —— 编码由工作流 SaveAudio 节点决定（ace-step mp3 / yue2 flac）。',
-    ),
-    filename_prefix: str = "",
-    background: str = "",  # "pending" 触发异步
-    ctx: Context = None,  # type: ignore[assignment]  # MCP SDK 按注解自动注入
-) -> dict[str, Any]:
-    req = MusicGenerationRequest(
-        prompt=prompt or None,
-        lyrics=lyrics or None,
-        model=model or None,
-        duration=duration,
-        max_duration=max_duration,
-        bpm=bpm,
-        language=language or None,
-        seed=seed,
-        response_format=response_format or None,
-        filename_prefix=filename_prefix or None,
-        background=background or None,
-    )
-    if req.is_async:
-        task_id = uuid.uuid4().hex
-        request_id = _new_request_id()
-        task_store.create(task_id, model=req.model, request_id=request_id)
-        asyncio.create_task(_run_music_task(task_id, req, request_id))
-        return _task_payload(task_id, req.model, "pending")
-    result = await generate_music_tracked(req)
     return _absolutize_urls(result.model_dump(exclude_none=True))
 
 
